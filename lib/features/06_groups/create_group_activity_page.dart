@@ -2,28 +2,21 @@ import 'package:flutter/material.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 
-class CreateActivityPage extends StatefulWidget {
-  final String day;
-  final String hour;
-  final String? groupId;
-  final String? groupName;
+class CreateGroupActivityPage extends StatefulWidget {
+  final String groupId;
+  final String groupName;
 
-  const CreateActivityPage({
+  const CreateGroupActivityPage({
     super.key,
-    required this.day,
-    required this.hour,
-    this.groupId,
-    this.groupName,
+    required this.groupId,
+    required this.groupName,
   });
 
-  bool get isGroupActivity =>
-      groupId != null && groupId!.trim().isNotEmpty;
-
   @override
-  State<CreateActivityPage> createState() => _CreateActivityPageState();
+  State<CreateGroupActivityPage> createState() => _CreateGroupActivityPageState();
 }
 
-class _CreateActivityPageState extends State<CreateActivityPage> {
+class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
   final TextEditingController titleController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
   final TextEditingController locationController = TextEditingController();
@@ -32,10 +25,10 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
   final ActivityRepository activityRepository = ActivityRepository();
 
+  String selectedDay = 'Lundi';
   String category = 'Sport';
   String level = 'Tous niveaux';
-  String groupType = 'Ouvert à tous';
-  String visibility = ActivityVisibilityValues.public;
+  String groupType = 'Privé';
   String groupActivityAccess = 'group_only';
 
   late String startTime;
@@ -43,7 +36,17 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
   bool isSaving = false;
 
-  final List<String> categories = [
+  final List<String> days = const [
+    'Lundi',
+    'Mardi',
+    'Mercredi',
+    'Jeudi',
+    'Vendredi',
+    'Samedi',
+    'Dimanche',
+  ];
+
+  final List<String> categories = const [
     'Sport',
     'Sortie',
     'Culture',
@@ -54,34 +57,19 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     'Autre',
   ];
 
-  final List<String> levels = [
+  final List<String> levels = const [
     'Débutant',
     'Intermédiaire',
     'Confirmé',
     'Tous niveaux',
   ];
 
-  final List<String> groupTypes = [
+  final List<String> groupTypes = const [
+    'Privé',
     'Ouvert à tous',
     'Femmes uniquement',
     'Hommes uniquement',
     'Non mixte',
-    'Privé',
-  ];
-
-  final List<Map<String, String>> visibilityOptions = const [
-    {
-      'value': ActivityVisibilityValues.public,
-      'label': 'Publique',
-    },
-    {
-      'value': ActivityVisibilityValues.private,
-      'label': 'Privée',
-    },
-    {
-      'value': ActivityVisibilityValues.inviteOnly,
-      'label': 'Sur invitation',
-    },
   ];
 
   final List<Map<String, String>> groupActivityAccessOptions = const [
@@ -124,32 +112,17 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
   }
 
   String _groupActivityInfoText() {
-    final hasGroupName =
-        widget.groupName != null && widget.groupName!.trim().isNotEmpty;
-    final displayedGroupName = hasGroupName ? widget.groupName!.trim() : '';
-
     if (groupActivityAccess == 'group_and_public') {
-      return hasGroupName
-          ? 'Activité liée au groupe "$displayedGroupName" et ouverte à de nouveaux participants.'
-          : 'Activité liée à un groupe et ouverte à de nouveaux participants.';
+      return 'Activité liée au groupe "${widget.groupName}" et ouverte à de nouveaux participants.';
     }
-
-    return hasGroupName
-        ? 'Activité réservée aux membres du groupe "$displayedGroupName".'
-        : 'Activité réservée aux membres du groupe.';
+    return 'Activité réservée uniquement aux membres du groupe "${widget.groupName}".';
   }
 
   @override
   void initState() {
     super.initState();
-    startTime = widget.hour;
-    endTime = getNextSlot(widget.hour);
-
-    if (widget.isGroupActivity) {
-      visibility = ActivityVisibilityValues.private;
-      groupType = 'Privé';
-      groupActivityAccess = 'group_only';
-    }
+    startTime = '18:00';
+    endTime = getNextSlot(startTime);
   }
 
   @override
@@ -211,11 +184,10 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
       }
     }
 
-    final effectiveVisibility = widget.isGroupActivity
-        ? (groupActivityAccess == 'group_and_public'
+    final effectiveVisibility =
+        groupActivityAccess == 'group_and_public'
             ? ActivityVisibilityValues.public
-            : ActivityVisibilityValues.private)
-        : visibility;
+            : ActivityVisibilityValues.private;
 
     setState(() {
       isSaving = true;
@@ -226,7 +198,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
         title: trimmedTitle,
         description: trimmedDescription,
         category: category,
-        day: widget.day,
+        day: selectedDay,
         startTime: startTime,
         endTime: endTime,
         location: trimmedLocation,
@@ -241,12 +213,8 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            widget.isGroupActivity
-                ? 'Activité de groupe enregistrée'
-                : 'Activité enregistrée',
-          ),
+        const SnackBar(
+          content: Text('Activité de groupe enregistrée'),
         ),
       );
 
@@ -255,7 +223,9 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur lors de l’enregistrement : $e')),
+        SnackBar(
+          content: Text('Erreur lors de l’enregistrement : $e'),
+        ),
       );
     } finally {
       if (mounted) {
@@ -272,36 +242,52 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.isGroupActivity
-              ? 'Créer une activité de groupe'
-              : 'Créer une activité',
-        ),
+        title: const Text('Créer une activité de groupe'),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            if (widget.isGroupActivity) ...[
-              Card(
-                color: Colors.blue.shade50,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.groups),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(_groupActivityInfoText()),
-                      ),
-                    ],
-                  ),
+            Card(
+              color: Colors.blue.shade50,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    const Icon(Icons.groups),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(_groupActivityInfoText()),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 16),
-            ],
-            Text('Jour sélectionné : ${widget.day}'),
-            const SizedBox(height: 20),
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<String>(
+              initialValue: selectedDay,
+              items: days
+                  .map(
+                    (day) => DropdownMenuItem(
+                      value: day,
+                      child: Text(day),
+                    ),
+                  )
+                  .toList(),
+              onChanged: isSaving
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() {
+                        selectedDay = value;
+                      });
+                    },
+              decoration: const InputDecoration(
+                labelText: 'Jour',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 15),
             DropdownButtonFormField<String>(
               initialValue: startTime,
               items: timeSlots
@@ -348,7 +334,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                   ? null
                   : (value) {
                       if (value == null) return;
-
                       setState(() {
                         endTime = value;
                       });
@@ -392,7 +377,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                   ? null
                   : (value) {
                       if (value == null) return;
-
                       setState(() {
                         category = value;
                       });
@@ -436,7 +420,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                   ? null
                   : (value) {
                       if (value == null) return;
-
                       setState(() {
                         level = value;
                       });
@@ -461,7 +444,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                   ? null
                   : (value) {
                       if (value == null) return;
-
                       setState(() {
                         groupType = value;
                       });
@@ -471,58 +453,30 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                 border: OutlineInputBorder(),
               ),
             ),
-            if (widget.isGroupActivity) ...[
-              const SizedBox(height: 15),
-              DropdownButtonFormField<String>(
-                initialValue: groupActivityAccess,
-                items: groupActivityAccessOptions
-                    .map(
-                      (option) => DropdownMenuItem(
-                        value: option['value']!,
-                        child: Text(option['label']!),
-                      ),
-                    )
-                    .toList(),
-                onChanged: isSaving
-                    ? null
-                    : (value) {
-                        if (value == null) return;
-                        setState(() {
-                          groupActivityAccess = value;
-                        });
-                      },
-                decoration: const InputDecoration(
-                  labelText: 'Accès à l’activité',
-                  border: OutlineInputBorder(),
-                ),
+            const SizedBox(height: 15),
+            DropdownButtonFormField<String>(
+              initialValue: groupActivityAccess,
+              items: groupActivityAccessOptions
+                  .map(
+                    (option) => DropdownMenuItem(
+                      value: option['value']!,
+                      child: Text(option['label']!),
+                    ),
+                  )
+                  .toList(),
+              onChanged: isSaving
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() {
+                        groupActivityAccess = value;
+                      });
+                    },
+              decoration: const InputDecoration(
+                labelText: 'Accès à l’activité',
+                border: OutlineInputBorder(),
               ),
-            ],
-            if (!widget.isGroupActivity) ...[
-              const SizedBox(height: 15),
-              DropdownButtonFormField<String>(
-                initialValue: visibility,
-                items: visibilityOptions
-                    .map(
-                      (option) => DropdownMenuItem(
-                        value: option['value']!,
-                        child: Text(option['label']!),
-                      ),
-                    )
-                    .toList(),
-                onChanged: isSaving
-                    ? null
-                    : (value) {
-                        if (value == null) return;
-                        setState(() {
-                          visibility = value;
-                        });
-                      },
-                decoration: const InputDecoration(
-                  labelText: 'Visibilité',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
+            ),
             const SizedBox(height: 25),
             SizedBox(
               width: double.infinity,
@@ -534,11 +488,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                         width: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(
-                        widget.isGroupActivity
-                            ? 'Créer l’activité du groupe'
-                            : 'Créer l’activité',
-                      ),
+                    : const Text('Créer l’activité du groupe'),
               ),
             ),
           ],

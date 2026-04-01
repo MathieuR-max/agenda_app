@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:agenda_app/features/02_calendar/calendar_page.dart';
 import 'package:agenda_app/services/current_user.dart';
 
 class TestUserSelectorPage extends StatefulWidget {
@@ -21,7 +22,7 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
         itemCount: testUsers.length,
         itemBuilder: (context, index) {
           final String userId = testUsers[index];
-          final bool isSelected = CurrentUser.id == userId;
+          final bool isSelected = CurrentUser.isSet && CurrentUser.id == userId;
 
           return ListTile(
             leading: Icon(
@@ -34,13 +35,24 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
                 ? const Text('Utilisateur actuellement connecté')
                 : null,
             onTap: () {
-              if (CurrentUser.id == userId) {
-                Navigator.pop(context, false);
+              if (CurrentUser.isSet && CurrentUser.id == userId) {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const CalendarPage(),
+                  ),
+                );
                 return;
               }
 
               CurrentUser.setUser(userId);
-              Navigator.pop(context, true);
+
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const CalendarPage(),
+                ),
+              );
             },
           );
         },

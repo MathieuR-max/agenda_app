@@ -95,6 +95,170 @@ class ActivityDetailPage extends StatelessWidget {
     }
   }
 
+  Color _activityTypeColor(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return Colors.teal.shade100;
+    }
+    if (activity.isGroupActivity) {
+      return Colors.indigo.shade100;
+    }
+    if (activity.visibility == Activity.visibilityPublic) {
+      return Colors.blue.shade100;
+    }
+    return Colors.grey.shade300;
+  }
+
+  String _activityTypeLabel(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return 'Groupe + Public';
+    }
+    if (activity.isGroupPrivateActivity) {
+      return 'Activité de groupe';
+    }
+    if (activity.visibility == Activity.visibilityPublic) {
+      return 'Activité publique';
+    }
+    return 'Privée';
+  }
+
+  String _groupInfoText(Activity activity) {
+    final groupName = (activity.groupName ?? '').trim();
+
+    if (groupName.isNotEmpty) {
+      return activity.isMixedGroupActivity
+          ? 'Activité liée au groupe "$groupName" et ouverte à de nouveaux participants'
+          : 'Activité réservée au groupe "$groupName"';
+    }
+
+    return activity.isMixedGroupActivity
+        ? 'Activité liée à un groupe et ouverte à de nouveaux participants'
+        : 'Activité réservée à un groupe';
+  }
+
+  String _joinButtonLabel({
+    required Activity activity,
+    required bool isCancelled,
+    required bool isDone,
+    required bool isInviteOnly,
+    required bool isFull,
+  }) {
+    if (isCancelled) return 'Activité annulée';
+    if (isDone) return 'Activité terminée';
+    if (isInviteOnly) return 'Sur invitation';
+    if (isFull) return 'Activité complète';
+    if (activity.isMixedGroupActivity) {
+      return 'Rejoindre l’activité groupe + public';
+    }
+    if (activity.isGroupPrivateActivity) {
+      return 'Rejoindre l’activité du groupe';
+    }
+    return 'Rejoindre l’activité';
+  }
+
+  Future<bool> _confirmAction({
+    required BuildContext context,
+    required String title,
+    required String content,
+    required String confirmLabel,
+  }) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(content),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(confirmLabel),
+            ),
+          ],
+        );
+      },
+    );
+
+    return result == true;
+  }
+
+  Future<void> _confirmLeaveActivity(
+    BuildContext context,
+    ActivityRepository activityRepository,
+    String activityId,
+    bool isOwner,
+  ) async {
+    final confirmed = await _confirmAction(
+      context: context,
+      title: isOwner
+          ? 'Quitter en tant qu’organisateur'
+          : 'Quitter l’activité',
+      content: isOwner
+          ? 'Voulez-vous vraiment quitter cette activité en tant qu’organisateur ?'
+          : 'Voulez-vous vraiment quitter cette activité ?',
+      confirmLabel: 'Quitter',
+    );
+
+    if (!confirmed) return;
+
+    await activityRepository.leaveActivityWithOwnerHandling(activityId);
+
+    if (!context.mounted) return;
+
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isOwner
+              ? 'Vous avez quitté l’activité en tant qu’organisateur'
+              : 'Vous avez quitté l’activité',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteActivity(
+    BuildContext context,
+    ActivityFirestoreService activityService,
+    String activityId,
+  ) async {
+    final confirmed = await _confirmAction(
+      context: context,
+      title: 'Supprimer l’activité',
+      content: 'Voulez-vous vraiment supprimer cette activité ?',
+      confirmLabel: 'Supprimer',
+    );
+
+    if (!confirmed) return;
+
+    final deleted = await activityService.deleteActivityIfNoParticipants(
+      activityId,
+    );
+
+    if (!context.mounted) return;
+
+    if (deleted) {
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Activité supprimée'),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Impossible de supprimer : d’autres participants sont encore inscrits',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final activityService = ActivityFirestoreService();
@@ -147,6 +311,7 @@ class ActivityDetailPage extends StatelessWidget {
           final int maxParticipants = currentActivity.maxParticipants;
           final String status = currentActivity.status;
           final String visibility = currentActivity.visibility;
+          final bool isGroupActivity = currentActivity.isGroupActivity;
 
           final String currentUserId = CurrentUser.id;
           final bool isOwner = currentOwnerId == currentUserId;
@@ -172,7 +337,7 @@ class ActivityDetailPage extends StatelessWidget {
 
                 final String displayedMaxParticipants = maxParticipants > 0
                     ? maxParticipants.toString()
-                    : 'Non défini';
+                    : 'Illimité';
 
                 final int? remainingPlaces = maxParticipants > 0
                     ? (maxParticipants - participantCount)
@@ -207,491 +372,526 @@ class ActivityDetailPage extends StatelessWidget {
                     final bool isDone = currentActivity.isDone;
                     final bool isInviteOnly = currentActivity.isInviteOnly;
 
-                    final bool canJoin = !ownerPending &&
-                        !isParticipant &&
-                        !isOwner &&
-                        !isFull &&
-                        !isCancelled &&
-                        !isDone &&
-                        !isInviteOnly;
-
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                    return SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            title,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _statusChipBackground(status),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                _statusLabel(status),
-                                style: TextStyle(
-                                  color: _statusChipTextColor(status),
-                                  fontWeight: FontWeight.w600,
+                          const SizedBox(height: 10),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _statusChipBackground(status),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  _statusLabel(status),
+                                  style: TextStyle(
+                                    color: _statusChipTextColor(status),
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _visibilityChipBackground(visibility),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                _visibilityLabel(visibility),
-                                style: TextStyle(
-                                  color: _visibilityChipTextColor(visibility),
-                                  fontWeight: FontWeight.w600,
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _visibilityChipBackground(visibility),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  _visibilityLabel(visibility),
+                                  style: TextStyle(
+                                    color: _visibilityChipTextColor(visibility),
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        if (ownerPending)
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            margin: const EdgeInsets.only(bottom: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: Colors.orange.shade300,
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _activityTypeColor(currentActivity),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  _activityTypeLabel(currentActivity),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
-                            ),
-                            child: const Text(
-                              'Cette activité n’a plus d’organisateur.\nUn participant peut reprendre le rôle.',
-                            ),
-                          )
-                        else if (currentOwnerId.isNotEmpty)
-                          FutureBuilder<Map<String, dynamic>?>(
-                            future: userService.getUserById(currentOwnerId),
-                            builder: (context, ownerSnapshot) {
-                              if (ownerSnapshot.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const Padding(
-                                  padding: EdgeInsets.only(bottom: 10),
-                                  child: Text('Chargement de l’organisateur...'),
-                                );
-                              }
-
-                              String ownerName = currentOwnerPseudo.trim();
-
-                              final owner = ownerSnapshot.data;
-                              if (ownerName.isEmpty && owner != null) {
-                                final String pseudo =
-                                    (owner['pseudo'] ?? '').toString().trim();
-                                final String prenom =
-                                    (owner['prenom'] ?? '').toString().trim();
-
-                                ownerName = pseudo.isNotEmpty
-                                    ? pseudo
-                                    : (prenom.isNotEmpty
-                                        ? prenom
-                                        : 'Utilisateur inconnu');
-                              }
-
-                              if (ownerName.isEmpty) {
-                                ownerName = 'Utilisateur inconnu';
-                              }
-
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: InkWell(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => UserProfilePage(
-                                          userId: currentOwnerId,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                  child: Text(
-                                    'Organisé par : $ownerName',
-                                    style: const TextStyle(
-                                      color: Colors.blue,
-                                      decoration: TextDecoration.underline,
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          if (isGroupActivity)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.blue.shade200,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.groups),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _groupInfoText(currentActivity),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                        if (description.trim().isNotEmpty) ...[
-                          Text(description),
-                          const SizedBox(height: 10),
-                        ],
-                        Text('$day • $startTime - $endTime'),
-                        const SizedBox(height: 4),
-                        Text(location),
-                        const SizedBox(height: 4),
-                        Text('Catégorie : $category'),
-                        const SizedBox(height: 8),
-                        Text(
-                          maxParticipants > 0
-                              ? 'Participants : $participantCount / $displayedMaxParticipants'
-                              : 'Participants : $participantCount',
-                        ),
-                        if (remainingPlaces != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              remainingPlaces > 0
-                                  ? 'Places restantes : $remainingPlaces'
-                                  : 'Activité complète',
-                              style: TextStyle(
-                                color: remainingPlaces > 0
-                                    ? Colors.green
-                                    : Colors.red,
-                                fontWeight: FontWeight.w600,
+                                ],
                               ),
                             ),
-                          ),
-                        if (isCancelled) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            'Cette activité est annulée.',
-                            style: TextStyle(
-                              color: Colors.red.shade700,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                        if (isDone) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            'Cette activité est terminée.',
-                            style: TextStyle(
-                              color: Colors.grey.shade700,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                        if (isInviteOnly && !isParticipant && !isOwner) ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            'Cette activité est accessible uniquement sur invitation.',
-                            style: TextStyle(
-                              color: Colors.purple.shade700,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => ActivityChatPage(
-                                    activity: currentActivity,
-                                  ),
+                          if (ownerPending)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 10),
+                              decoration: BoxDecoration(
+                                color: Colors.orange.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: Colors.orange.shade300,
                                 ),
-                              );
-                            },
-                            icon: const Icon(Icons.chat_bubble_outline),
-                            label: const Text('Ouvrir le chat'),
-                          ),
-                        ),
-                        if (isOwner && !isCancelled && !isDone) ...[
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: () async {
-                                await Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => InviteUserPage(
-                                      activity: currentActivity,
+                              ),
+                              child: const Text(
+                                'Cette activité n’a plus d’organisateur.\nUn participant peut reprendre le rôle.',
+                              ),
+                            )
+                          else if (currentOwnerId.isNotEmpty)
+                            FutureBuilder<Map<String, dynamic>?>(
+                              future: userService.getUserById(currentOwnerId),
+                              builder: (context, ownerSnapshot) {
+                                if (ownerSnapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return const Padding(
+                                    padding: EdgeInsets.only(bottom: 10),
+                                    child: Text('Chargement de l’organisateur...'),
+                                  );
+                                }
+
+                                String ownerName = currentOwnerPseudo.trim();
+
+                                final owner = ownerSnapshot.data;
+                                if (ownerName.isEmpty && owner != null) {
+                                  final String pseudo =
+                                      (owner['pseudo'] ?? '').toString().trim();
+                                  final String prenom =
+                                      (owner['prenom'] ?? '').toString().trim();
+
+                                  ownerName = pseudo.isNotEmpty
+                                      ? pseudo
+                                      : (prenom.isNotEmpty
+                                          ? prenom
+                                          : 'Utilisateur inconnu');
+                                }
+
+                                if (ownerName.isEmpty) {
+                                  ownerName = 'Utilisateur inconnu';
+                                }
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: InkWell(
+                                    onTap: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => UserProfilePage(
+                                            userId: currentOwnerId,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: Text(
+                                      'Organisé par : $ownerName',
+                                      style: const TextStyle(
+                                        color: Colors.blue,
+                                        decoration: TextDecoration.underline,
+                                      ),
                                     ),
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.person_add_alt_1),
-                              label: const Text('Inviter un utilisateur'),
                             ),
+                          if (description.trim().isNotEmpty) ...[
+                            Text(description),
+                            const SizedBox(height: 10),
+                          ],
+                          Text('$day • $startTime - $endTime'),
+                          const SizedBox(height: 4),
+                          Text(location),
+                          const SizedBox(height: 4),
+                          Text('Catégorie : $category'),
+                          const SizedBox(height: 8),
+                          Text(
+                            currentActivity.hasUnlimitedPlaces
+                                ? 'Participants : $participantCount (illimité)'
+                                : 'Participants : $participantCount / $displayedMaxParticipants',
                           ),
-                          const SizedBox(height: 12),
+                          if (remainingPlaces != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                remainingPlaces > 0
+                                    ? 'Places restantes : $remainingPlaces'
+                                    : 'Activité complète',
+                                style: TextStyle(
+                                  color: remainingPlaces > 0
+                                      ? Colors.green
+                                      : Colors.red,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          if (isCancelled) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              'Cette activité est annulée.',
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          if (isDone) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              'Cette activité est terminée.',
+                              style: TextStyle(
+                                color: Colors.grey.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          if (isInviteOnly && !isParticipant && !isOwner) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              'Cette activité est accessible uniquement sur invitation.',
+                              style: TextStyle(
+                                color: Colors.purple.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          if (isGroupActivity && !isParticipant && !isOwner) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              currentActivity.isMixedGroupActivity
+                                  ? 'Cette activité est liée à un groupe, mais elle accepte aussi de nouveaux participants.'
+                                  : 'Cette activité est réservée aux membres du groupe.',
+                              style: TextStyle(
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
                           SizedBox(
                             width: double.infinity,
-                            child: OutlinedButton.icon(
+                            child: ElevatedButton.icon(
                               onPressed: () {
                                 Navigator.push(
                                   context,
                                   MaterialPageRoute(
-                                    builder: (_) => SentInvitationsPage(
+                                    builder: (_) => ActivityChatPage(
                                       activity: currentActivity,
                                     ),
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.outgoing_mail),
-                              label: const Text('Voir les invitations envoyées'),
+                              icon: const Icon(Icons.chat_bubble_outline),
+                              label: const Text('Ouvrir le chat'),
                             ),
                           ),
-                        ],
-                        if (ownerPending && isParticipant && !isOwner) ...[
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                final accepted = await activityRepository
-                                    .claimOwnership(activity.id);
-
-                                if (!context.mounted) return;
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      accepted
-                                          ? 'Vous êtes devenu organisateur'
-                                          : 'Un autre participant a déjà repris le rôle',
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: const Text('Je deviens organisateur'),
-                            ),
-                          ),
-                        ],
-                        if (!ownerPending && !isParticipant && !isOwner) ...[
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: canJoin
-                                  ? () async {
-                                      final joined = await activityRepository
-                                          .joinActivity(currentActivity);
-
-                                      if (!context.mounted) return;
-
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            joined
-                                                ? 'Vous avez rejoint l’activité'
-                                                : 'Impossible de rejoindre l’activité',
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  : null,
-                              child: Text(
-                                isCancelled
-                                    ? 'Activité annulée'
-                                    : isDone
-                                        ? 'Activité terminée'
-                                        : isInviteOnly
-                                            ? 'Sur invitation'
-                                            : isFull
-                                                ? 'Activité complète'
-                                                : 'Rejoindre l’activité',
-                              ),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Participants',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        Expanded(
-                          child: StreamBuilder<List<Map<String, dynamic>>>(
-                            stream: activityService.getParticipantUsers(
-                              activity.id,
-                            ),
-                            builder: (context, participantsSnapshot) {
-                              if (participantsSnapshot.hasError) {
-                                return Text(
-                                  'Erreur participants : ${participantsSnapshot.error}',
-                                );
-                              }
-
-                              if (!participantsSnapshot.hasData) {
-                                return const Center(
-                                  child: CircularProgressIndicator(),
-                                );
-                              }
-
-                              final participants =
-                                  participantsSnapshot.data ?? [];
-
-                              if (participants.isEmpty) {
-                                return const Text('Aucun participant trouvé');
-                              }
-
-                              return ListView.builder(
-                                itemCount: participants.length,
-                                itemBuilder: (context, index) {
-                                  final user = participants[index];
-
-                                  final String userId =
-                                      (user['id'] ?? '').toString();
-                                  final String pseudo =
-                                      (user['pseudo'] ?? '').toString();
-                                  final String prenom =
-                                      (user['prenom'] ?? '').toString();
-                                  final String lieu =
-                                      (user['lieu'] ?? '').toString();
-
-                                  String participantTitle = pseudo.trim();
-                                  if (participantTitle.isEmpty) {
-                                    participantTitle = prenom.trim().isNotEmpty
-                                        ? prenom
-                                        : 'Utilisateur';
-                                  }
-
-                                  final bool participantIsOwner =
-                                      userId == currentOwnerId && !ownerPending;
-
-                                  return ListTile(
-                                    leading: const Icon(Icons.person),
-                                    title: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(participantTitle),
-                                        ),
-                                        if (participantIsOwner)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: Colors.blue.shade100,
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            child: Text(
-                                              'Organisateur',
-                                              style: TextStyle(
-                                                color: Colors.blue.shade800,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    subtitle: Text(
-                                      lieu.trim().isNotEmpty
-                                          ? lieu
-                                          : 'Lieu non renseigné',
-                                    ),
-                                    trailing: const Icon(Icons.chevron_right),
-                                    onTap: userId.isEmpty
-                                        ? null
-                                        : () {
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (_) => UserProfilePage(
-                                                  userId: userId,
-                                                ),
-                                              ),
-                                            );
-                                          },
-                                  );
-                                },
-                              );
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        if (isParticipant)
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                await activityRepository
-                                    .leaveActivityWithOwnerHandling(activity.id);
-
-                                if (!context.mounted) return;
-
-                                Navigator.pop(context);
-
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      isOwner
-                                          ? 'Vous avez quitté l’activité en tant qu’organisateur'
-                                          : 'Vous avez quitté l’activité',
-                                    ),
-                                  ),
-                                );
-                              },
-                              child: Text(
-                                isOwner
-                                    ? 'Quitter en tant qu’organisateur'
-                                    : 'Quitter l’activité',
-                              ),
-                            ),
-                          ),
-                        if (isOwner) ...[
-                          const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: () async {
-                                final deleted = await activityService
-                                    .deleteActivityIfNoParticipants(activity.id);
-
-                                if (!context.mounted) return;
-
-                                if (deleted) {
-                                  Navigator.pop(context);
-
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Activité supprimée'),
-                                    ),
-                                  );
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
-                                        'Impossible de supprimer : d’autres participants sont encore inscrits',
+                          if (isOwner &&
+                              !isCancelled &&
+                              !isDone &&
+                              !isGroupActivity) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  await Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => InviteUserPage(
+                                        activity: currentActivity,
                                       ),
                                     ),
                                   );
+                                },
+                                icon: const Icon(Icons.person_add_alt_1),
+                                label: const Text('Inviter un utilisateur'),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => SentInvitationsPage(
+                                        activity: currentActivity,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.outgoing_mail),
+                                label: const Text('Voir les invitations envoyées'),
+                              ),
+                            ),
+                          ],
+                          if (ownerPending && isParticipant && !isOwner) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () async {
+                                  final accepted = await activityRepository
+                                      .claimOwnership(activity.id);
+
+                                  if (!context.mounted) return;
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        accepted
+                                            ? 'Vous êtes devenu organisateur'
+                                            : 'Un autre participant a déjà repris le rôle',
+                                      ),
+                                    ),
+                                  );
+                                },
+                                child: const Text('Je deviens organisateur'),
+                              ),
+                            ),
+                          ],
+                          if (!ownerPending && !isParticipant && !isOwner) ...[
+                            const SizedBox(height: 12),
+                            FutureBuilder<bool>(
+                              future: activityRepository
+                                  .canJoinActivity(currentActivity),
+                              builder: (context, joinSnapshot) {
+                                if (!joinSnapshot.hasData) {
+                                  return const Center(
+                                    child: CircularProgressIndicator(),
+                                  );
                                 }
+
+                                final canJoin = joinSnapshot.data ?? false;
+
+                                return SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: canJoin
+                                        ? () async {
+                                            final joined =
+                                                await activityRepository
+                                                    .joinActivity(
+                                              currentActivity,
+                                            );
+
+                                            if (!context.mounted) return;
+
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  joined
+                                                      ? 'Vous avez rejoint l’activité'
+                                                      : 'Impossible de rejoindre l’activité',
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        : null,
+                                    child: Text(
+                                      _joinButtonLabel(
+                                        activity: currentActivity,
+                                        isCancelled: isCancelled,
+                                        isDone: isDone,
+                                        isInviteOnly: isInviteOnly,
+                                        isFull: isFull,
+                                      ),
+                                    ),
+                                  ),
+                                );
                               },
-                              child: const Text('Supprimer l’activité'),
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Participants',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
+                          const SizedBox(height: 10),
+                          SizedBox(
+                            height: 250,
+                            child: StreamBuilder<List<Map<String, dynamic>>>(
+                              stream: activityService.getParticipantUsers(
+                                activity.id,
+                              ),
+                              builder: (context, participantsSnapshot) {
+                                if (participantsSnapshot.hasError) {
+                                  return Text(
+                                    'Erreur participants : ${participantsSnapshot.error}',
+                                  );
+                                }
+
+                                if (!participantsSnapshot.hasData) {
+                                  return const Center(
+                                    child: CircularProgressIndicator(),
+                                  );
+                                }
+
+                                final participants =
+                                    participantsSnapshot.data ?? [];
+
+                                if (participants.isEmpty) {
+                                  return const Text('Aucun participant trouvé');
+                                }
+
+                                return ListView.builder(
+                                  itemCount: participants.length,
+                                  itemBuilder: (context, index) {
+                                    final user = participants[index];
+
+                                    final String userId =
+                                        (user['id'] ?? '').toString();
+                                    final String pseudo =
+                                        (user['pseudo'] ?? '').toString();
+                                    final String prenom =
+                                        (user['prenom'] ?? '').toString();
+                                    final String lieu =
+                                        (user['lieu'] ?? '').toString();
+
+                                    String participantTitle = pseudo.trim();
+                                    if (participantTitle.isEmpty) {
+                                      participantTitle = prenom.trim().isNotEmpty
+                                          ? prenom
+                                          : 'Utilisateur';
+                                    }
+
+                                    final bool participantIsOwner =
+                                        userId == currentOwnerId && !ownerPending;
+
+                                    return ListTile(
+                                      leading: const Icon(Icons.person),
+                                      title: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(participantTitle),
+                                          ),
+                                          if (participantIsOwner)
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 8,
+                                                vertical: 4,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.blue.shade100,
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              child: Text(
+                                                'Organisateur',
+                                                style: TextStyle(
+                                                  color: Colors.blue.shade800,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                      subtitle: Text(
+                                        lieu.trim().isNotEmpty
+                                            ? lieu
+                                            : 'Lieu non renseigné',
+                                      ),
+                                      trailing: const Icon(Icons.chevron_right),
+                                      onTap: userId.isEmpty
+                                          ? null
+                                          : () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) => UserProfilePage(
+                                                    userId: userId,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          if (isParticipant)
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () => _confirmLeaveActivity(
+                                  context,
+                                  activityRepository,
+                                  activity.id,
+                                  isOwner,
+                                ),
+                                child: Text(
+                                  isOwner
+                                      ? 'Quitter en tant qu’organisateur'
+                                      : 'Quitter l’activité',
+                                ),
+                              ),
+                            ),
+                          if (isOwner) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () => _confirmDeleteActivity(
+                                  context,
+                                  activityService,
+                                  activity.id,
+                                ),
+                                child: const Text('Supprimer l’activité'),
+                              ),
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     );
                   },
                 );

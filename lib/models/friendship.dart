@@ -62,6 +62,20 @@ class Friendship {
   bool get isRefused => status == statusRefused;
   bool get isCancelled => status == statusCancelled;
 
+  bool involvesUser(String userId) {
+    return requesterId == userId || addresseeId == userId;
+  }
+
+  String otherUserId(String currentUserId) {
+    return requesterId == currentUserId ? addresseeId : requesterId;
+  }
+
+  String otherUserPseudo(String currentUserId) {
+    return requesterId == currentUserId ? addresseePseudo : requesterPseudo;
+  }
+
+  DateTime? get friendshipDate => respondedAt ?? createdAt;
+
   static DateTime? _toDateTime(dynamic value) {
     if (value == null) return null;
     if (value is Timestamp) return value.toDate();

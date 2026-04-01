@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/services/current_user.dart';
+import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
@@ -21,6 +22,7 @@ class ActivityChatPage extends StatefulWidget {
 class _ActivityChatPageState extends State<ActivityChatPage> {
   final ChatFirestoreService chatService = ChatFirestoreService();
   final UserFirestoreService userService = UserFirestoreService();
+  final ActivityFirestoreService activityService = ActivityFirestoreService();
   final TextEditingController messageController = TextEditingController();
 
   bool isSending = false;
@@ -52,10 +54,12 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
     return '$hour:$minute';
   }
 
-  Future<void> _sendMessage() async {
+  Future<void> _sendMessage(Activity currentActivity) async {
     final text = messageController.text.trim();
+    final bool chatReadOnly =
+        currentActivity.isCancelled || currentActivity.isDone;
 
-    if (text.isEmpty || isSending) return;
+    if (text.isEmpty || isSending || chatReadOnly) return;
 
     setState(() {
       isSending = true;
@@ -65,7 +69,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
       final senderPseudo = await userService.getCurrentUserPseudo();
 
       await chatService.sendMessage(
-        activityId: widget.activity.id,
+        activityId: currentActivity.id,
         senderId: CurrentUser.id,
         senderPseudo: senderPseudo,
         text: text,
@@ -195,118 +199,161 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool chatReadOnly =
-        widget.activity.isCancelled || widget.activity.isDone;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Chat • ${widget.activity.title}'),
-      ),
-      body: Column(
-        children: [
-          if (widget.activity.ownerPending)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              color: Colors.orange.shade100,
-              child: const Text(
-                'Cette activité recherche un organisateur.',
-                textAlign: TextAlign.center,
-              ),
+    return StreamBuilder<Map<String, dynamic>?>(
+      stream: activityService.watchActivity(widget.activity.id),
+      builder: (context, activitySnapshot) {
+        if (activitySnapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Chat activité'),
             ),
-          if (chatReadOnly)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              color: Colors.grey.shade300,
-              child: Text(
-                widget.activity.isCancelled
-                    ? 'Cette activité est annulée. Le chat est en lecture seule.'
-                    : 'Cette activité est terminée. Le chat est en lecture seule.',
-                textAlign: TextAlign.center,
-              ),
+            body: Center(
+              child: Text('Erreur activité : ${activitySnapshot.error}'),
             ),
-          Expanded(
-            child: StreamBuilder<List<Map<String, dynamic>>>(
-              stream: chatService.getMessages(widget.activity.id),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Text('Erreur messages : ${snapshot.error}'),
-                  );
-                }
+          );
+        }
 
-                if (!snapshot.hasData) {
-                  return const Center(
-                    child: CircularProgressIndicator(),
-                  );
-                }
-
-                final messages = snapshot.data ?? [];
-
-                if (messages.isEmpty) {
-                  return const Center(
-                    child: Text('Aucun message pour le moment'),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(12),
-                  itemCount: messages.length,
-                  itemBuilder: (context, index) {
-                    final message = messages[index];
-                    return _buildMessage(message);
-                  },
-                );
-              },
+        if (!activitySnapshot.hasData) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Chat activité'),
             ),
+            body: const Center(
+              child: CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        final activityData = activitySnapshot.data;
+
+        if (activityData == null) {
+          return Scaffold(
+            appBar: AppBar(
+              title: const Text('Chat activité'),
+            ),
+            body: const Center(
+              child: Text('Cette activité n’existe plus'),
+            ),
+          );
+        }
+
+        final currentActivity = Activity.fromMap(widget.activity.id, activityData);
+        final bool chatReadOnly =
+            currentActivity.isCancelled || currentActivity.isDone;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text('Chat • ${currentActivity.title}'),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: messageController,
-                      minLines: 1,
-                      maxLines: 4,
-                      enabled: !chatReadOnly && !isSending,
-                      textInputAction: TextInputAction.newline,
-                      decoration: InputDecoration(
-                        hintText: chatReadOnly
-                            ? 'Envoi désactivé'
-                            : 'Écrire un message...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+          body: Column(
+            children: [
+              if (currentActivity.ownerPending)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: Colors.orange.shade100,
+                  child: const Text(
+                    'Cette activité recherche un organisateur.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              if (chatReadOnly)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  color: Colors.grey.shade300,
+                  child: Text(
+                    currentActivity.isCancelled
+                        ? 'Cette activité est annulée. Le chat est en lecture seule.'
+                        : 'Cette activité est terminée. Le chat est en lecture seule.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              Expanded(
+                child: StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: chatService.getMessages(currentActivity.id),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return Center(
+                        child: Text('Erreur messages : ${snapshot.error}'),
+                      );
+                    }
+
+                    if (!snapshot.hasData) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    }
+
+                    final messages = snapshot.data ?? [];
+
+                    if (messages.isEmpty) {
+                      return const Center(
+                        child: Text('Aucun message pour le moment'),
+                      );
+                    }
+
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(12),
+                      itemCount: messages.length,
+                      itemBuilder: (context, index) {
+                        final message = messages[index];
+                        return _buildMessage(message);
+                      },
+                    );
+                  },
+                ),
+              ),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: messageController,
+                          minLines: 1,
+                          maxLines: 4,
+                          enabled: !chatReadOnly && !isSending,
+                          textInputAction: TextInputAction.newline,
+                          decoration: InputDecoration(
+                            hintText: chatReadOnly
+                                ? 'Envoi désactivé'
+                                : 'Écrire un message...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: chatReadOnly ? null : _sendMessage,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 16,
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed: chatReadOnly
+                            ? null
+                            : () => _sendMessage(currentActivity),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 16,
+                          ),
+                        ),
+                        child: isSending
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.send),
                       ),
-                    ),
-                    child: isSending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
+                    ],
                   ),
-                ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

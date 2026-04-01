@@ -8,17 +8,31 @@ import 'package:agenda_app/features/03_activities/activity_detail_page.dart';
 class InvitationsPage extends StatelessWidget {
   const InvitationsPage({super.key});
 
-  Color _statusColor(ActivityInvitation invitation) {
+  Color _statusTextColor(ActivityInvitation invitation) {
     switch (invitation.status) {
       case ActivityInvitation.statusAccepted:
-        return Colors.green;
+        return Colors.green.shade800;
       case ActivityInvitation.statusRefused:
-        return Colors.red;
+        return Colors.red.shade800;
       case ActivityInvitation.statusCancelled:
-        return Colors.grey;
+        return Colors.grey.shade800;
       case ActivityInvitation.statusPending:
       default:
-        return Colors.orange;
+        return Colors.orange.shade800;
+    }
+  }
+
+  Color _statusBackgroundColor(ActivityInvitation invitation) {
+    switch (invitation.status) {
+      case ActivityInvitation.statusAccepted:
+        return Colors.green.shade100;
+      case ActivityInvitation.statusRefused:
+        return Colors.red.shade100;
+      case ActivityInvitation.statusCancelled:
+        return Colors.grey.shade300;
+      case ActivityInvitation.statusPending:
+      default:
+        return Colors.orange.shade100;
     }
   }
 
@@ -86,7 +100,18 @@ class InvitationsPage extends StatelessWidget {
 
     final activity = await activityService.getActivityById(invitation.activityId);
 
-    if (!context.mounted || activity == null) return;
+    if (!context.mounted) return;
+
+    if (activity == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Invitation acceptée, mais l’activité n’est plus disponible',
+          ),
+        ),
+      );
+      return;
+    }
 
     await Navigator.push(
       context,
@@ -154,7 +179,9 @@ class InvitationsPage extends StatelessWidget {
             itemCount: invitations.length,
             itemBuilder: (context, index) {
               final invitation = invitations[index];
-              final statusColor = _statusColor(invitation);
+              final statusTextColor = _statusTextColor(invitation);
+              final statusBackgroundColor =
+                  _statusBackgroundColor(invitation);
               final statusLabel = _statusLabel(invitation);
 
               return Card(
@@ -186,14 +213,24 @@ class InvitationsPage extends StatelessWidget {
                         Text(invitation.activityLocation),
                         const SizedBox(height: 8),
                         Text('Invité par : ${invitation.fromUserPseudo}'),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 10),
                         Row(
                           children: [
-                            Text(
-                              statusLabel,
-                              style: TextStyle(
-                                color: statusColor,
-                                fontWeight: FontWeight.bold,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: statusBackgroundColor,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                statusLabel,
+                                style: TextStyle(
+                                  color: statusTextColor,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                             const Spacer(),

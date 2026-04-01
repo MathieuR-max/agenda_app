@@ -3,6 +3,7 @@ import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/search_firestore_service.dart';
+import 'activity_detail_page.dart';
 
 class SearchActivityPage extends StatefulWidget {
   final String day;
@@ -103,6 +104,89 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
     _searchSaved = true;
   }
 
+  Future<void> _markSearchDirtyAndSave() async {
+    _searchSaved = false;
+    await _saveSearchIfNeeded();
+  }
+
+  String _statusLabel(Activity activity) {
+    if (activity.isCancelled) return 'Annulée';
+    if (activity.isDone) return 'Terminée';
+    if (activity.isFull) return 'Complète';
+    return 'Ouverte';
+  }
+
+  Color _statusChipBackground(Activity activity) {
+    if (activity.isCancelled) return Colors.red.shade100;
+    if (activity.isDone) return Colors.grey.shade300;
+    if (activity.isFull) return Colors.orange.shade100;
+    return Colors.green.shade100;
+  }
+
+  Color _statusChipTextColor(Activity activity) {
+    if (activity.isCancelled) return Colors.red.shade800;
+    if (activity.isDone) return Colors.grey.shade800;
+    if (activity.isFull) return Colors.orange.shade800;
+    return Colors.green.shade800;
+  }
+
+  String _visibilityLabel(Activity activity) {
+    if (activity.isInviteOnly) return 'Sur invitation';
+    if (activity.isPrivate) return 'Privée';
+    return 'Publique';
+  }
+
+  Color _visibilityChipBackground(Activity activity) {
+    if (activity.isInviteOnly) return Colors.purple.shade100;
+    if (activity.isPrivate) return Colors.blueGrey.shade100;
+    return Colors.blue.shade100;
+  }
+
+  Color _visibilityChipTextColor(Activity activity) {
+    if (activity.isInviteOnly) return Colors.purple.shade800;
+    if (activity.isPrivate) return Colors.blueGrey.shade800;
+    return Colors.blue.shade800;
+  }
+
+  String _activityTypeLabel(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return 'Groupe + Public';
+    }
+    if (activity.isGroupPrivateActivity) {
+      return 'Activité de groupe';
+    }
+    if (activity.isPublic) {
+      return 'Activité publique';
+    }
+    return 'Privée';
+  }
+
+  Color _activityTypeChipBackground(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return Colors.teal.shade100;
+    }
+    if (activity.isGroupPrivateActivity) {
+      return Colors.indigo.shade100;
+    }
+    if (activity.isPublic) {
+      return Colors.blue.shade100;
+    }
+    return Colors.grey.shade300;
+  }
+
+  Color _activityTypeChipTextColor(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return Colors.teal.shade800;
+    }
+    if (activity.isGroupPrivateActivity) {
+      return Colors.indigo.shade800;
+    }
+    if (activity.isPublic) {
+      return Colors.blue.shade800;
+    }
+    return Colors.grey.shade800;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -138,15 +222,21 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) {
+              onChanged: (value) async {
                 if (value == null) return;
 
                 setState(() {
                   startTime = value;
-                  if (startTime == endTime) {
+
+                  final selectedStart = timeToMinutes(startTime);
+                  final selectedEnd = timeToMinutes(endTime);
+
+                  if (selectedEnd <= selectedStart) {
                     endTime = getNextSlot(startTime);
                   }
                 });
+
+                await _markSearchDirtyAndSave();
               },
               decoration: const InputDecoration(
                 labelText: 'Heure de début',
@@ -164,12 +254,20 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) {
+              onChanged: (value) async {
                 if (value == null) return;
 
+                final proposedEnd = value;
+                final startMinutes = timeToMinutes(startTime);
+                final endMinutes = timeToMinutes(proposedEnd);
+
                 setState(() {
-                  endTime = value;
+                  endTime = endMinutes <= startMinutes
+                      ? getNextSlot(startTime)
+                      : proposedEnd;
                 });
+
+                await _markSearchDirtyAndSave();
               },
               decoration: const InputDecoration(
                 labelText: 'Heure de fin',
@@ -187,12 +285,14 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) {
+              onChanged: (value) async {
                 if (value == null) return;
 
                 setState(() {
                   category = value;
                 });
+
+                await _markSearchDirtyAndSave();
               },
               decoration: const InputDecoration(
                 labelText: 'Catégorie',
@@ -233,55 +333,229 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
 
                       return Card(
                         margin: const EdgeInsets.only(bottom: 12),
-                        child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                activity.title,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ActivityDetailPage(
+                                  activity: activity,
                                 ),
                               ),
-                              const SizedBox(height: 6),
-                              Text(activity.description),
-                              const SizedBox(height: 6),
-                              Text(
-                                '${activity.day} ${activity.startTime} - ${activity.endTime}',
-                              ),
-                              Text(activity.location),
-                              Text(activity.category),
-                              const SizedBox(height: 10),
-                              ElevatedButton(
-                                onPressed: () async {
-                                  final joined = await activityRepository
-                                      .joinActivity(activity);
+                            );
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: FutureBuilder<bool>(
+                              future:
+                                  activityRepository.canJoinActivity(activity),
+                              builder: (context, canJoinSnapshot) {
+                                final bool canJoin =
+                                    canJoinSnapshot.data ?? false;
 
-                                  if (!context.mounted) return;
+                                String buttonLabel = 'Rejoindre';
 
-                                  if (joined) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Vous avez rejoint l’activité',
-                                        ),
+                                if (activity.isCancelled) {
+                                  buttonLabel = 'Activité annulée';
+                                } else if (activity.isDone) {
+                                  buttonLabel = 'Activité terminée';
+                                } else if (activity.isInviteOnly) {
+                                  buttonLabel = 'Sur invitation';
+                                } else if (activity.isFull) {
+                                  buttonLabel = 'Activité complète';
+                                } else if (activity.isMixedGroupActivity) {
+                                  buttonLabel = 'Rejoindre (Groupe + Public)';
+                                }
+
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      activity.title,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
                                       ),
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Activité complète ou déjà rejointe',
-                                        ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    if (activity.description.trim().isNotEmpty)
+                                      Text(activity.description),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      '${activity.day} • ${activity.startTime} - ${activity.endTime}',
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(activity.location),
+                                    const SizedBox(height: 4),
+                                    Text('Catégorie : ${activity.category}'),
+                                    if (activity.isGroupActivity &&
+                                        (activity.groupName ?? '')
+                                            .trim()
+                                            .isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Groupe : ${activity.groupName!.trim()}',
                                       ),
-                                    );
-                                  }
-                                },
-                                child: const Text('Rejoindre'),
-                              ),
-                            ],
+                                    ],
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _statusChipBackground(
+                                              activity,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            _statusLabel(activity),
+                                            style: TextStyle(
+                                              color: _statusChipTextColor(
+                                                activity,
+                                              ),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _visibilityChipBackground(
+                                              activity,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            _visibilityLabel(activity),
+                                            style: TextStyle(
+                                              color: _visibilityChipTextColor(
+                                                activity,
+                                              ),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: _activityTypeChipBackground(
+                                              activity,
+                                            ),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            _activityTypeLabel(activity),
+                                            style: TextStyle(
+                                              color: _activityTypeChipTextColor(
+                                                activity,
+                                              ),
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 6,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Colors.blue.shade100,
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                          ),
+                                          child: Text(
+                                            activity.hasUnlimitedPlaces
+                                                ? '${activity.participantCount} participant(s) • illimité'
+                                                : '${activity.participantCount} / ${activity.maxParticipants} participants',
+                                            style: TextStyle(
+                                              color: Colors.blue.shade800,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                        if (activity.remainingPlaces != null)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: activity.remainingPlaces == 0
+                                                  ? Colors.red.shade100
+                                                  : Colors.green.shade100,
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              activity.remainingPlaces == 0
+                                                  ? 'Complet'
+                                                  : '${activity.remainingPlaces} place(s)',
+                                              style: TextStyle(
+                                                color: activity.remainingPlaces == 0
+                                                    ? Colors.red.shade800
+                                                    : Colors.green.shade800,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 10),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        onPressed: canJoin
+                                            ? () async {
+                                                final joined =
+                                                    await activityRepository
+                                                        .joinActivity(activity);
+
+                                                if (!context.mounted) return;
+
+                                                if (joined) {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Vous avez rejoint l’activité',
+                                                      ),
+                                                    ),
+                                                  );
+                                                } else {
+                                                  ScaffoldMessenger.of(context)
+                                                      .showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text(
+                                                        'Impossible de rejoindre l’activité',
+                                                      ),
+                                                    ),
+                                                  );
+                                                }
+                                              }
+                                            : null,
+                                        child: Text(buttonLabel),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
                           ),
                         ),
                       );

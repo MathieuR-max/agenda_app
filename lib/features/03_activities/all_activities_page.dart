@@ -208,6 +208,45 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     return Colors.blue.shade800;
   }
 
+  String _activityTypeLabel(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return 'Groupe + Public';
+    }
+    if (activity.isGroupPrivateActivity) {
+      return 'Activité de groupe';
+    }
+    if (activity.isPublic) {
+      return 'Activité publique';
+    }
+    return 'Privée';
+  }
+
+  Color _activityTypeChipBackground(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return Colors.teal.shade100;
+    }
+    if (activity.isGroupPrivateActivity) {
+      return Colors.indigo.shade100;
+    }
+    if (activity.isPublic) {
+      return Colors.blue.shade100;
+    }
+    return Colors.grey.shade300;
+  }
+
+  Color _activityTypeChipTextColor(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return Colors.teal.shade800;
+    }
+    if (activity.isGroupPrivateActivity) {
+      return Colors.indigo.shade800;
+    }
+    if (activity.isPublic) {
+      return Colors.blue.shade800;
+    }
+    return Colors.grey.shade800;
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = CurrentUser.id;
@@ -410,10 +449,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                             final int maxParticipants = activity.maxParticipants;
 
                             final bool full = isFull(activity);
-
-                            final int? remainingPlaces = maxParticipants > 0
-                                ? (maxParticipants - participantCount)
-                                : null;
+                            final int? remainingPlaces = activity.remainingPlaces;
 
                             final String organizerName =
                                 activity.ownerPseudo.isNotEmpty
@@ -445,6 +481,8 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                             } else if (full) {
                               buttonLabel = 'Activité complète';
                               canJoin = false;
+                            } else if (activity.isMixedGroupActivity) {
+                              buttonLabel = 'Rejoindre (Groupe + Public)';
                             }
 
                             return Card(
@@ -482,6 +520,11 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                       Text(activity.location),
                                       const SizedBox(height: 4),
                                       Text('Catégorie : ${activity.category}'),
+                                      if (activity.isGroupActivity &&
+                                          (activity.groupName ?? '').trim().isNotEmpty) ...[
+                                        const SizedBox(height: 4),
+                                        Text('Groupe : ${activity.groupName!.trim()}'),
+                                      ],
                                       const SizedBox(height: 4),
                                       if (activity.ownerPending)
                                         const Text(
@@ -511,9 +554,9 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                                   BorderRadius.circular(20),
                                             ),
                                             child: Text(
-                                              maxParticipants > 0
-                                                  ? '$participantCount / $maxParticipants participants'
-                                                  : '$participantCount participant(s)',
+                                              activity.hasUnlimitedPlaces
+                                                  ? '$participantCount participant(s) • illimité'
+                                                  : '$participantCount / $maxParticipants participants',
                                               style: TextStyle(
                                                 color: full
                                                     ? Colors.red.shade800
@@ -582,6 +625,28 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                               _visibilityLabel(activity),
                                               style: TextStyle(
                                                 color: _visibilityChipTextColor(
+                                                  activity,
+                                                ),
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 10,
+                                              vertical: 6,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: _activityTypeChipBackground(
+                                                activity,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(20),
+                                            ),
+                                            child: Text(
+                                              _activityTypeLabel(activity),
+                                              style: TextStyle(
+                                                color: _activityTypeChipTextColor(
                                                   activity,
                                                 ),
                                                 fontWeight: FontWeight.w600,

@@ -3,6 +3,7 @@ import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/parsers.dart';
 import 'package:agenda_app/models/activity.dart';
+import 'package:agenda_app/repositories/groups_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
@@ -13,17 +14,20 @@ class ActivityRepository {
   final ActivityFirestoreService _activityService;
   final ChatFirestoreService _chatService;
   final UserFirestoreService _userService;
+  final GroupsRepository _groupsRepository;
 
   ActivityRepository({
     FirebaseFirestore? db,
     ActivityFirestoreService? activityService,
     ChatFirestoreService? chatService,
     UserFirestoreService? userService,
+    GroupsRepository? groupsRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
         _activityService =
             activityService ?? ActivityFirestoreService(db: db),
         _chatService = chatService ?? ChatFirestoreService(db: db),
-        _userService = userService ?? UserFirestoreService(db: db);
+        _userService = userService ?? UserFirestoreService(db: db),
+        _groupsRepository = groupsRepository ?? GroupsRepository(db: db);
 
   String get currentUserId => CurrentUser.id;
 
@@ -56,9 +60,34 @@ class ActivityRepository {
     required String level,
     required String groupType,
     String visibility = ActivityVisibilityValues.public,
+    String? groupId,
+    String? groupName,
   }) async {
     final ownerPseudo = await _userService.getCurrentUserPseudo();
-    final maxParticipantsInt = parseInt(maxParticipants);
+
+    final normalizedMaxParticipants =
+        maxParticipants.trim().isEmpty ? '0' : maxParticipants.trim();
+    final maxParticipantsInt = parseInt(normalizedMaxParticipants);
+
+    final rawGroupId = groupId?.trim();
+    final trimmedGroupId =
+        rawGroupId != null && rawGroupId.isNotEmpty ? rawGroupId : null;
+
+    final rawGroupName = groupName?.trim();
+    final trimmedGroupName =
+        trimmedGroupId != null && rawGroupName != null && rawGroupName.isNotEmpty
+            ? rawGroupName
+            : null;
+
+    if (trimmedGroupId != null) {
+      final isMember =
+          await _groupsRepository.isCurrentUserMember(trimmedGroupId);
+      if (!isMember) {
+        throw Exception(
+          'Impossible de créer une activité de groupe sans être membre du groupe.',
+        );
+      }
+    }
 
     final initialStatus = computeActivityStatus(
       participantCount: 1,
@@ -81,6 +110,8 @@ class ActivityRepository {
       ownerId: currentUserId,
       ownerPseudo: ownerPseudo,
       initialStatus: initialStatus,
+      groupId: trimmedGroupId,
+      groupName: trimmedGroupName,
     );
 
     await _activityService.addParticipant(
@@ -91,11 +122,26 @@ class ActivityRepository {
 
     await _chatService.addSystemMessage(
       activityId: activityId,
-      text: 'Activité créée par $ownerPseudo',
+      text: trimmedGroupId != null
+          ? 'Activité de groupe créée par $ownerPseudo'
+          : 'Activité créée par $ownerPseudo',
     );
   }
 
   Future<bool> joinActivity(Activity activity) async {
+    bool isGroupMember = false;
+
+    if (activity.isGroupActivity) {
+      final groupId = activity.groupId!.trim();
+      isGroupMember =
+          await _groupsRepository.isCurrentUserMember(groupId);
+
+      if (!isGroupMember &&
+          activity.visibility != ActivityVisibilityValues.public) {
+        return false;
+      }
+    }
+
     final activityId = activity.id;
     final activityRef = _db
         .collection(FirestoreCollections.activities)
@@ -403,6 +449,17 @@ class ActivityRepository {
 
     if (activity.visibility == ActivityVisibilityValues.inviteOnly) {
       return false;
+    }
+
+    if (activity.isGroupActivity) {
+      final groupId = activity.groupId!.trim();
+      final isGroupMember =
+          await _groupsRepository.isCurrentUserMember(groupId);
+
+      if (!isGroupMember &&
+          activity.visibility != ActivityVisibilityValues.public) {
+        return false;
+      }
     }
 
     if (activity.maxParticipants <= 0) {

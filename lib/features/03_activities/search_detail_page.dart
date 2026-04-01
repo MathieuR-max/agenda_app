@@ -17,6 +17,47 @@ class SearchDetailPage extends StatelessWidget {
     required this.category,
   });
 
+  Future<void> _confirmDeleteSearch(
+    BuildContext context,
+    SearchFirestoreService searchService,
+  ) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Supprimer la recherche'),
+          content: const Text(
+            'Voulez-vous vraiment supprimer cette recherche ?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Supprimer'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    await searchService.deleteSearch(searchId);
+
+    if (!context.mounted) return;
+
+    Navigator.pop(context);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Recherche supprimée'),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final searchService = SearchFirestoreService();
@@ -37,26 +78,31 @@ class SearchDetailPage extends StatelessWidget {
                 fontWeight: FontWeight.bold,
               ),
             ),
-            const SizedBox(height: 12),
-            Text('Jour : $day'),
-            Text('Heure : $startTime - $endTime'),
-            Text('Catégorie : $category'),
-            const SizedBox(height: 30),
-            ElevatedButton(
-              onPressed: () async {
-                await searchService.deleteSearch(searchId);
-
-                if (!context.mounted) return;
-
-                Navigator.pop(context);
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Recherche supprimée'),
-                  ),
-                );
-              },
-              child: const Text('Supprimer la recherche'),
+            const SizedBox(height: 16),
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Jour : $day'),
+                    const SizedBox(height: 8),
+                    Text('Heure : $startTime - $endTime'),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Catégorie : ${category.trim().isEmpty ? 'Toutes' : category}',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => _confirmDeleteSearch(context, searchService),
+                child: const Text('Supprimer la recherche'),
+              ),
             ),
           ],
         ),

@@ -22,6 +22,8 @@ class Activity {
   final DateTime? updatedAt;
   final String visibility; // public | private | inviteOnly
   final String status; // open | full | cancelled | done
+  final String? groupId;
+  final String? groupName;
 
   static const String visibilityPublic = 'public';
   static const String visibilityPrivate = 'private';
@@ -54,11 +56,13 @@ class Activity {
     this.updatedAt,
     required this.visibility,
     required this.status,
+    this.groupId,
+    this.groupName,
   });
 
   factory Activity.fromMap(String id, Map<String, dynamic> map) {
     return Activity(
-      id: id,
+      id: _parseString(id),
       title: _parseString(map['title']),
       description: _parseString(map['description']),
       category: _parseString(map['category']),
@@ -83,6 +87,8 @@ class Activity {
       status: _normalizeStatus(
         _parseString(map['status'], fallback: statusOpen),
       ),
+      groupId: _parseNullableString(map['groupId']),
+      groupName: _parseNullableString(map['groupName']),
     );
   }
 
@@ -123,6 +129,8 @@ class Activity {
       updatedAt: null,
       visibility: visibilityPublic,
       status: statusOpen,
+      groupId: null,
+      groupName: null,
     );
   }
 
@@ -149,6 +157,8 @@ class Activity {
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
       'visibility': visibility,
       'status': status,
+      'groupId': groupId,
+      'groupName': groupName,
     };
   }
 
@@ -174,7 +184,19 @@ class Activity {
     DateTime? updatedAt,
     String? visibility,
     String? status,
+    String? groupId,
+    String? groupName,
+    bool clearGroupId = false,
+    bool clearGroupName = false,
   }) {
+    final String? normalizedGroupId = clearGroupId
+        ? null
+        : (groupId != null ? _parseNullableString(groupId) : this.groupId);
+
+    final String? normalizedGroupName = clearGroupName
+        ? null
+        : (groupName != null ? _parseNullableString(groupName) : this.groupName);
+
     return Activity(
       id: id ?? this.id,
       title: title ?? this.title,
@@ -197,6 +219,8 @@ class Activity {
       updatedAt: updatedAt ?? this.updatedAt,
       visibility: visibility ?? this.visibility,
       status: status ?? this.status,
+      groupId: normalizedGroupId,
+      groupName: normalizedGroupName,
     );
   }
 
@@ -211,6 +235,15 @@ class Activity {
 
   bool get hasUnlimitedPlaces => maxParticipants <= 0;
 
+  bool get isGroupActivity =>
+      groupId != null && groupId!.trim().isNotEmpty;
+
+  bool get isGroupPrivateActivity =>
+      isGroupActivity && visibility == visibilityPrivate;
+
+  bool get isMixedGroupActivity =>
+      isGroupActivity && visibility == visibilityPublic;
+
   int? get remainingPlaces {
     if (hasUnlimitedPlaces) return null;
     final remaining = maxParticipants - participantCount;
@@ -218,7 +251,7 @@ class Activity {
   }
 
   String get displayedMaxParticipants {
-    return hasUnlimitedPlaces ? 'Non défini' : maxParticipants.toString();
+    return hasUnlimitedPlaces ? 'Illimité' : maxParticipants.toString();
   }
 
   bool get canBeJoined =>

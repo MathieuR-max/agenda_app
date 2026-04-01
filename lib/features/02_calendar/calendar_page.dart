@@ -13,6 +13,7 @@ import '../03_activities/create_activity_page.dart';
 import '../03_activities/search_activity_page.dart';
 import '../03_activities/search_detail_page.dart';
 import '../03_activities/invitations_page.dart';
+import '../04_profile/my_profile_page.dart';
 import 'availability_detail_page.dart';
 import 'note_slot_page.dart';
 
@@ -153,6 +154,18 @@ class _CalendarPageState extends State<CalendarPage> {
     setState(() {});
   }
 
+  Future<void> _openMyProfilePage() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MyProfilePage(),
+      ),
+    );
+
+    if (!mounted) return;
+    setState(() {});
+  }
+
   Widget _buildInvitationsIcon() {
     return StreamBuilder<List<ActivityInvitation>>(
       stream: invitationService.getPendingReceivedInvitations(),
@@ -210,6 +223,11 @@ class _CalendarPageState extends State<CalendarPage> {
       appBar: AppBar(
         title: const Text('Mon Agenda'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.person),
+            tooltip: 'Mon profil',
+            onPressed: _openMyProfilePage,
+          ),
           _buildInvitationsIcon(),
           IconButton(
             icon: const Icon(Icons.switch_account),

@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../models/friendship.dart';
 import '../../services/current_user.dart';
-import '../../services/firestore/friendship_firestore_service.dart';
 import '../../repositories/friendship_repository.dart';
 import '../../repositories/profile_repository.dart';
+import '../06_groups/groups_page.dart';
 import 'friend_requests_page.dart';
+import 'friends_list_page.dart';
 
 class UserProfilePage extends StatelessWidget {
   final String userId;
@@ -167,7 +168,6 @@ class UserProfilePage extends StatelessWidget {
 
   Widget _buildFriendshipSection(
     BuildContext context,
-    FriendshipFirestoreService friendshipService,
     FriendshipRepository friendshipRepository,
     String profileUserId,
     bool isCurrentUser,
@@ -176,20 +176,48 @@ class UserProfilePage extends StatelessWidget {
       return Card(
         child: Padding(
           padding: const EdgeInsets.all(16),
-          child: SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const FriendRequestsPage(),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.group_add),
-              label: const Text('Voir mes demandes d’amis'),
-            ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FriendsListPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.people),
+                label: const Text('Voir mes amis'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FriendRequestsPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.group_add),
+                label: const Text('Voir mes demandes d’amis'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const GroupsPage(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.groups),
+                label: const Text('Voir mes groupes'),
+              ),
+            ],
           ),
         ),
       );
@@ -199,7 +227,7 @@ class UserProfilePage extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: StreamBuilder<Friendship?>(
-          stream: friendshipService.watchFriendshipWithUser(profileUserId),
+          stream: friendshipRepository.watchFriendshipWithUser(profileUserId),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return const Text('Erreur relation d’amitié');
@@ -342,7 +370,6 @@ class UserProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final repository = ProfileRepository();
-    final friendshipService = FriendshipFirestoreService();
     final friendshipRepository = FriendshipRepository();
     final bool isCurrentUser = userId == CurrentUser.id;
 
@@ -412,7 +439,6 @@ class UserProfilePage extends StatelessWidget {
               const SizedBox(height: 24),
               _buildFriendshipSection(
                 context,
-                friendshipService,
                 friendshipRepository,
                 userId,
                 isCurrentUser,

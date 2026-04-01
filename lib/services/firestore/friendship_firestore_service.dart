@@ -73,4 +73,20 @@ class FriendshipFirestoreService {
       return null;
     });
   }
+  Stream<List<Friendship>> getAcceptedFriendships() {
+  return _db
+      .collection(FirestoreCollections.friendships)
+      .where('status', isEqualTo: 'accepted')
+      .snapshots()
+      .map((snapshot) {
+    final all = snapshot.docs
+        .map((doc) => Friendship.fromFirestore(doc.data(), doc.id))
+        .toList();
+
+    return all.where((friendship) {
+      return friendship.requesterId == currentUserId ||
+          friendship.addresseeId == currentUserId;
+    }).toList();
+  });
+}
 }
