@@ -24,15 +24,23 @@ class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
   final UserFirestoreService _userService = UserFirestoreService();
 
   late Future<List<Friendship>> _friendsFuture;
+  late Future<List<String>> _groupMemberIdsFuture;
+
+  String? addingUserId;
 
   @override
   void initState() {
     super.initState();
     _friendsFuture = _loadFriends();
+    _groupMemberIdsFuture = _loadGroupMemberIds();
   }
 
   Future<List<Friendship>> _loadFriends() {
     return _friendshipRepository.getAcceptedFriendships();
+  }
+
+  Future<List<String>> _loadGroupMemberIds() {
+    return _groupsRepository.getGroupMemberIds(widget.groupId);
   }
 
   String _fallbackFriendName(Friendship friendship) {
@@ -45,34 +53,50 @@ class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
   }
 
   Future<void> _addMember(Friendship friendship, String displayName) async {
-    final userId = _friendshipRepository.getOtherUserId(friendship);
+    final userId = _friendshipRepository.getOtherUserId(friendship).trim();
 
-    final success = await _groupsRepository.addMember(
-      groupId: widget.groupId,
-      userId: userId,
-    );
-
-    if (success) {
-      await _groupChatRepository.sendSystemMessage(
-        groupId: widget.groupId,
-        text: '$displayName a rejoint le groupe',
-      );
+    if (userId.isEmpty || addingUserId != null) {
+      return;
     }
 
-    if (!mounted) return;
+    setState(() {
+      addingUserId = userId;
+    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          success
-              ? '$displayName a été ajouté au groupe.'
-              : 'Impossible d’ajouter $displayName au groupe.',
+    try {
+      final success = await _groupsRepository.addMember(
+        groupId: widget.groupId,
+        userId: userId,
+      );
+
+      if (success) {
+        await _groupChatRepository.sendSystemMessage(
+          groupId: widget.groupId,
+          text: '$displayName a rejoint le groupe',
+        );
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success
+                ? '$displayName a été ajouté au groupe.'
+                : 'Impossible d’ajouter $displayName au groupe.',
+          ),
         ),
-      ),
-    );
+      );
 
-    if (success) {
-      Navigator.pop(context);
+      if (success) {
+        Navigator.pop(context);
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          addingUserId = null;
+        });
+      }
     }
   }
 
@@ -84,82 +108,129 @@ class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
       ),
       body: FutureBuilder<List<Friendship>>(
         future: _friendsFuture,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
+        builder: (context, friendsSnapshot) {
+          if (friendsSnapshot.hasError) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Erreur lors du chargement des amis : ${snapshot.error}',
+                  'Erreur lors du chargement des amis : ${friendsSnapshot.error}',
                   textAlign: TextAlign.center,
                 ),
               ),
             );
           }
 
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (friendsSnapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(),
             );
           }
 
-          final friendships = snapshot.data ?? [];
-
-          if (friendships.isEmpty) {
-            return const Center(
-              child: Text('Vous n’avez pas encore d’amis à ajouter.'),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: friendships.length,
-            itemBuilder: (context, index) {
-              final friendship = friendships[index];
-              final friendId = _friendshipRepository.getOtherUserId(friendship);
-              final fallbackName = _fallbackFriendName(friendship);
-
-              return FutureBuilder<Map<String, dynamic>?>(
-                future: _userService.getUserById(friendId),
-                builder: (context, userSnapshot) {
-                  final user = userSnapshot.data;
-
-                  final String pseudo =
-                      (user?['pseudo'] ?? '').toString().trim();
-                  final String prenom =
-                      (user?['prenom'] ?? '').toString().trim();
-                  final String nom = (user?['nom'] ?? '').toString().trim();
-                  final String lieu = (user?['lieu'] ?? '').toString().trim();
-
-                  String displayName = fallbackName;
-
-                  if (pseudo.isNotEmpty) {
-                    displayName = pseudo;
-                  } else if (prenom.isNotEmpty && nom.isNotEmpty) {
-                    displayName = '$prenom $nom';
-                  } else if (prenom.isNotEmpty) {
-                    displayName = prenom;
-                  }
-
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        child: Text(
-                          displayName.isNotEmpty
-                              ? displayName[0].toUpperCase()
-                              : '?',
-                        ),
-                      ),
-                      title: Text(displayName),
-                      subtitle: Text(
-                        lieu.isNotEmpty ? lieu : 'Lieu non renseigné',
-                      ),
-                      trailing: ElevatedButton(
-                        onPressed: () => _addMember(friendship, displayName),
-                        child: const Text('Ajouter'),
-                      ),
+          return FutureBuilder<List<String>>(
+            future: _groupMemberIdsFuture,
+            builder: (context, membersSnapshot) {
+              if (membersSnapshot.hasError) {
+                return Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Erreur lors du chargement des membres du groupe : ${membersSnapshot.error}',
+                      textAlign: TextAlign.center,
                     ),
+                  ),
+                );
+              }
+
+              if (membersSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              final friendships = friendsSnapshot.data ?? [];
+              final memberIds = membersSnapshot.data ?? [];
+
+              final availableFriendships = friendships.where((friendship) {
+                final friendId =
+                    _friendshipRepository.getOtherUserId(friendship).trim();
+                return friendId.isNotEmpty && !memberIds.contains(friendId);
+              }).toList();
+
+              if (availableFriendships.isEmpty) {
+                return const Center(
+                  child: Text(
+                    'Aucun ami disponible à ajouter dans ce groupe.',
+                  ),
+                );
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: availableFriendships.length,
+                itemBuilder: (context, index) {
+                  final friendship = availableFriendships[index];
+                  final friendId =
+                      _friendshipRepository.getOtherUserId(friendship).trim();
+                  final fallbackName = _fallbackFriendName(friendship);
+
+                  return FutureBuilder<Map<String, dynamic>?>(
+                    future: _userService.getUserById(friendId),
+                    builder: (context, userSnapshot) {
+                      final user = userSnapshot.data;
+
+                      final String pseudo =
+                          (user?['pseudo'] ?? '').toString().trim();
+                      final String prenom =
+                          (user?['prenom'] ?? '').toString().trim();
+                      final String nom =
+                          (user?['nom'] ?? '').toString().trim();
+                      final String lieu =
+                          (user?['lieu'] ?? '').toString().trim();
+
+                      String displayName = fallbackName;
+
+                      if (pseudo.isNotEmpty) {
+                        displayName = pseudo;
+                      } else if (prenom.isNotEmpty && nom.isNotEmpty) {
+                        displayName = '$prenom $nom';
+                      } else if (prenom.isNotEmpty) {
+                        displayName = prenom;
+                      }
+
+                      final isAdding = addingUserId == friendId;
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            child: Text(
+                              displayName.isNotEmpty
+                                  ? displayName[0].toUpperCase()
+                                  : '?',
+                            ),
+                          ),
+                          title: Text(displayName),
+                          subtitle: Text(
+                            lieu.isNotEmpty ? lieu : 'Lieu non renseigné',
+                          ),
+                          trailing: ElevatedButton(
+                            onPressed: isAdding
+                                ? null
+                                : () => _addMember(friendship, displayName),
+                            child: isAdding
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text('Ajouter'),
+                          ),
+                        ),
+                      );
+                    },
                   );
                 },
               );

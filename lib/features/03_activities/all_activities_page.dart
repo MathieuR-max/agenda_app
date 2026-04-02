@@ -247,6 +247,60 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     return Colors.grey.shade800;
   }
 
+  Widget _buildChip({
+    required String label,
+    required Color backgroundColor,
+    required Color textColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  String _joinButtonLabel({
+    required Activity activity,
+    required bool isOwner,
+    required bool isParticipant,
+    required bool full,
+  }) {
+    if (isOwner) {
+      return 'Vous êtes organisateur';
+    }
+    if (isParticipant) {
+      return 'Déjà participant';
+    }
+    if (activity.isCancelled) {
+      return 'Activité annulée';
+    }
+    if (activity.isDone) {
+      return 'Activité terminée';
+    }
+    if (activity.isInviteOnly) {
+      return 'Sur invitation';
+    }
+    if (full) {
+      return 'Activité complète';
+    }
+    if (activity.isMixedGroupActivity) {
+      return 'Rejoindre (Groupe + Public)';
+    }
+    return 'Rejoindre';
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUserId = CurrentUser.id;
@@ -381,7 +435,8 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                               'Ajoutez des catégories favorites dans votre profil',
                             )
                           : Text(favoriteCategories.join(', ')),
-                      value: favoriteCategories.isEmpty ? false : onlyMyFavorites,
+                      value:
+                          favoriteCategories.isEmpty ? false : onlyMyFavorites,
                       onChanged: favoriteCategories.isEmpty
                           ? null
                           : (value) {
@@ -445,45 +500,30 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                           itemBuilder: (context, index) {
                             final activity = activities[index];
 
-                            final int participantCount = activity.participantCount;
+                            final int participantCount =
+                                activity.participantCount;
                             final int maxParticipants = activity.maxParticipants;
 
                             final bool full = isFull(activity);
-                            final int? remainingPlaces = activity.remainingPlaces;
+                            final int? remainingPlaces =
+                                activity.remainingPlaces;
 
                             final String organizerName =
                                 activity.ownerPseudo.isNotEmpty
                                     ? activity.ownerPseudo
                                     : activity.ownerId;
 
-                            final bool isOwner = activity.ownerId == currentUserId;
+                            final bool isOwner =
+                                activity.ownerId == currentUserId;
                             final bool isParticipant =
                                 joinedIds.contains(activity.id);
 
-                            String buttonLabel = 'Rejoindre';
-                            bool canJoin = true;
-
-                            if (isOwner) {
-                              buttonLabel = 'Vous êtes organisateur';
-                              canJoin = false;
-                            } else if (isParticipant) {
-                              buttonLabel = 'Déjà participant';
-                              canJoin = false;
-                            } else if (activity.isCancelled) {
-                              buttonLabel = 'Activité annulée';
-                              canJoin = false;
-                            } else if (activity.isDone) {
-                              buttonLabel = 'Activité terminée';
-                              canJoin = false;
-                            } else if (activity.isInviteOnly) {
-                              buttonLabel = 'Sur invitation';
-                              canJoin = false;
-                            } else if (full) {
-                              buttonLabel = 'Activité complète';
-                              canJoin = false;
-                            } else if (activity.isMixedGroupActivity) {
-                              buttonLabel = 'Rejoindre (Groupe + Public)';
-                            }
+                            final buttonLabel = _joinButtonLabel(
+                              activity: activity,
+                              isOwner: isOwner,
+                              isParticipant: isParticipant,
+                              full: full,
+                            );
 
                             return Card(
                               margin: const EdgeInsets.only(bottom: 12),
@@ -521,9 +561,13 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                       const SizedBox(height: 4),
                                       Text('Catégorie : ${activity.category}'),
                                       if (activity.isGroupActivity &&
-                                          (activity.groupName ?? '').trim().isNotEmpty) ...[
+                                          (activity.groupName ?? '')
+                                              .trim()
+                                              .isNotEmpty) ...[
                                         const SizedBox(height: 4),
-                                        Text('Groupe : ${activity.groupName!.trim()}'),
+                                        Text(
+                                          'Groupe : ${activity.groupName!.trim()}',
+                                        ),
                                       ],
                                       const SizedBox(height: 4),
                                       if (activity.ownerPending)
@@ -541,121 +585,62 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                         spacing: 8,
                                         runSpacing: 8,
                                         children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: full
-                                                  ? Colors.red.shade100
-                                                  : Colors.blue.shade100,
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              activity.hasUnlimitedPlaces
-                                                  ? '$participantCount participant(s) • illimité'
-                                                  : '$participantCount / $maxParticipants participants',
-                                              style: TextStyle(
-                                                color: full
-                                                    ? Colors.red.shade800
-                                                    : Colors.blue.shade800,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
+                                          _buildChip(
+                                            label: activity.hasUnlimitedPlaces
+                                                ? '$participantCount participant(s) • illimité'
+                                                : '$participantCount / $maxParticipants participants',
+                                            backgroundColor: full
+                                                ? Colors.red.shade100
+                                                : Colors.blue.shade100,
+                                            textColor: full
+                                                ? Colors.red.shade800
+                                                : Colors.blue.shade800,
                                           ),
                                           if (remainingPlaces != null)
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                horizontal: 10,
-                                                vertical: 6,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: full
-                                                    ? Colors.red.shade100
-                                                    : Colors.green.shade100,
-                                                borderRadius:
-                                                    BorderRadius.circular(20),
-                                              ),
-                                              child: Text(
-                                                full
-                                                    ? 'Complet'
-                                                    : '$remainingPlaces place(s)',
-                                                style: TextStyle(
-                                                  color: full
-                                                      ? Colors.red.shade800
-                                                      : Colors.green.shade800,
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
+                                            _buildChip(
+                                              label: full
+                                                  ? 'Complet'
+                                                  : '$remainingPlaces place(s)',
+                                              backgroundColor: full
+                                                  ? Colors.red.shade100
+                                                  : Colors.green.shade100,
+                                              textColor: full
+                                                  ? Colors.red.shade800
+                                                  : Colors.green.shade800,
                                             ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 6,
+                                          _buildChip(
+                                            label: _statusLabel(activity),
+                                            backgroundColor:
+                                                _statusChipBackground(activity),
+                                            textColor:
+                                                _statusChipTextColor(activity),
+                                          ),
+                                          _buildChip(
+                                            label: _visibilityLabel(activity),
+                                            backgroundColor:
+                                                _visibilityChipBackground(
+                                              activity,
                                             ),
-                                            decoration: BoxDecoration(
-                                              color: _statusChipBackground(activity),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              _statusLabel(activity),
-                                              style: TextStyle(
-                                                color: _statusChipTextColor(activity),
-                                                fontWeight: FontWeight.w600,
-                                              ),
+                                            textColor:
+                                                _visibilityChipTextColor(
+                                              activity,
                                             ),
                                           ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 6,
+                                          _buildChip(
+                                            label: _activityTypeLabel(activity),
+                                            backgroundColor:
+                                                _activityTypeChipBackground(
+                                              activity,
                                             ),
-                                            decoration: BoxDecoration(
-                                              color: _visibilityChipBackground(
-                                                activity,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              _visibilityLabel(activity),
-                                              style: TextStyle(
-                                                color: _visibilityChipTextColor(
-                                                  activity,
-                                                ),
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 6,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: _activityTypeChipBackground(
-                                                activity,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: Text(
-                                              _activityTypeLabel(activity),
-                                              style: TextStyle(
-                                                color: _activityTypeChipTextColor(
-                                                  activity,
-                                                ),
-                                                fontWeight: FontWeight.w600,
-                                              ),
+                                            textColor:
+                                                _activityTypeChipTextColor(
+                                              activity,
                                             ),
                                           ),
                                         ],
                                       ),
-                                      if ((activity.lastMessageText ?? '').isNotEmpty) ...[
+                                      if ((activity.lastMessageText ?? '')
+                                          .isNotEmpty) ...[
                                         const SizedBox(height: 10),
                                         Text(
                                           'Dernier message : ${activity.lastMessageText!}',
@@ -668,31 +653,50 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                         ),
                                       ],
                                       const SizedBox(height: 12),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        child: ElevatedButton(
-                                          onPressed: canJoin
-                                              ? () async {
-                                                  final joined =
-                                                      await activityRepository
-                                                          .joinActivity(activity);
+                                      FutureBuilder<bool>(
+                                        future: activityRepository
+                                            .canJoinActivity(activity),
+                                        builder: (context, joinSnapshot) {
+                                          final bool repositoryCanJoin =
+                                              joinSnapshot.data ?? false;
 
-                                                  if (!context.mounted) return;
+                                          final bool canJoin =
+                                              !isOwner &&
+                                              !isParticipant &&
+                                              repositoryCanJoin;
 
-                                                  ScaffoldMessenger.of(context)
-                                                      .showSnackBar(
-                                                    SnackBar(
-                                                      content: Text(
-                                                        joined
-                                                            ? 'Vous avez rejoint l’activité'
-                                                            : 'Impossible de rejoindre l’activité',
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
-                                              : null,
-                                          child: Text(buttonLabel),
-                                        ),
+                                          return SizedBox(
+                                            width: double.infinity,
+                                            child: ElevatedButton(
+                                              onPressed: canJoin
+                                                  ? () async {
+                                                      final joined =
+                                                          await activityRepository
+                                                              .joinActivity(
+                                                        activity,
+                                                      );
+
+                                                      if (!context.mounted) {
+                                                        return;
+                                                      }
+
+                                                      ScaffoldMessenger.of(
+                                                        context,
+                                                      ).showSnackBar(
+                                                        SnackBar(
+                                                          content: Text(
+                                                            joined
+                                                                ? 'Vous avez rejoint l’activité'
+                                                                : 'Impossible de rejoindre l’activité',
+                                                          ),
+                                                        ),
+                                                      );
+                                                    }
+                                                  : null,
+                                              child: Text(buttonLabel),
+                                            ),
+                                          );
+                                        },
                                       ),
                                     ],
                                   ),

@@ -19,6 +19,16 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
   String _visibility = GroupModel.visibilityPrivate;
   bool _isSaving = false;
 
+  String _visibilityHelperText() {
+    switch (_visibility) {
+      case GroupModel.visibilityFriends:
+        return 'Le groupe est destiné à votre cercle d’amis.';
+      case GroupModel.visibilityPrivate:
+      default:
+        return 'Le groupe reste privé et géré par ses membres.';
+    }
+  }
+
   @override
   void dispose() {
     _nameController.dispose();
@@ -28,14 +38,18 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isSaving) return;
+
+    final trimmedName = _nameController.text.trim();
+    final trimmedDescription = _descriptionController.text.trim();
 
     setState(() {
       _isSaving = true;
     });
 
     final success = await _repository.createGroup(
-      name: _nameController.text,
-      description: _descriptionController.text,
+      name: trimmedName,
+      description: trimmedDescription,
       visibility: _visibility,
     );
 
@@ -74,6 +88,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
             children: [
               TextFormField(
                 controller: _nameController,
+                enabled: !_isSaving,
                 decoration: const InputDecoration(
                   labelText: 'Nom du groupe',
                   border: OutlineInputBorder(),
@@ -88,6 +103,7 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
               const SizedBox(height: 16),
               TextFormField(
                 controller: _descriptionController,
+                enabled: !_isSaving,
                 maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: 'Description',
@@ -111,19 +127,36 @@ class _CreateGroupPageState extends State<CreateGroupPage> {
                     child: Text('Entre amis'),
                   ),
                 ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _visibility = value;
-                  });
-                },
+                onChanged: _isSaving
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _visibility = value;
+                        });
+                      },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _visibilityHelperText(),
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 13,
+                ),
               ),
               const SizedBox(height: 24),
-              ElevatedButton(
-                onPressed: _isSaving ? null : _submit,
-                child: _isSaving
-                    ? const CircularProgressIndicator()
-                    : const Text('Créer le groupe'),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _isSaving ? null : _submit,
+                  child: _isSaving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Créer le groupe'),
+                ),
               ),
             ],
           ),

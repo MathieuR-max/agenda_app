@@ -127,6 +127,15 @@ class UserProfilePage extends StatelessWidget {
     FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
+    if (friendship.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible d’accepter la demande'),
+        ),
+      );
+      return;
+    }
+
     final accepted = await friendshipRepository.acceptFriendRequest(
       friendship.id,
     );
@@ -149,6 +158,15 @@ class UserProfilePage extends StatelessWidget {
     FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
+    if (friendship.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de refuser la demande'),
+        ),
+      );
+      return;
+    }
+
     final refused = await friendshipRepository.refuseFriendRequest(
       friendship.id,
     );
@@ -163,6 +181,97 @@ class UserProfilePage extends StatelessWidget {
               : 'Impossible de refuser la demande',
         ),
       ),
+    );
+  }
+
+  Future<void> _removeFriend(
+    BuildContext context,
+    FriendshipRepository friendshipRepository,
+    Friendship friendship,
+    String displayName,
+  ) async {
+    if (friendship.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de supprimer cet ami'),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Supprimer cet ami'),
+              content: Text(
+                'Voulez-vous vraiment supprimer $displayName de votre liste d’amis ?',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Annuler'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Supprimer'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!confirmed) return;
+
+    final removed = await friendshipRepository.removeFriend(friendship.id);
+
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          removed
+              ? '$displayName a été supprimé de vos amis.'
+              : 'Impossible de supprimer cet ami.',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard({
+    required IconData icon,
+    required String text,
+  }) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Icon(icon),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(text),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChipWrap(List<String> values, {String emptyLabel = 'Aucun élément'}) {
+    if (values.isEmpty) {
+      return Text(emptyLabel);
+    }
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: values.map((value) {
+        return Chip(
+          label: Text(value),
+        );
+      }).toList(),
     );
   }
 
@@ -259,21 +368,45 @@ class UserProfilePage extends StatelessWidget {
             final bool requestReceived =
                 friendship.addresseeId == CurrentUser.id;
 
+            final displayName = requestReceived
+                ? (friendship.requesterPseudo.trim().isNotEmpty
+                    ? friendship.requesterPseudo.trim()
+                    : friendship.requesterId)
+                : (friendship.addresseePseudo.trim().isNotEmpty
+                    ? friendship.addresseePseudo.trim()
+                    : friendship.addresseeId);
+
             if (friendship.isAccepted) {
-              return Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Vous êtes amis',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text(
+                      'Vous êtes amis',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: () => _removeFriend(
+                      context,
+                      friendshipRepository,
+                      friendship,
+                      displayName,
+                    ),
+                    icon: const Icon(Icons.person_remove),
+                    label: const Text('Supprimer cet ami'),
+                  ),
+                ],
               );
             }
 
@@ -444,62 +577,26 @@ class UserProfilePage extends StatelessWidget {
                 isCurrentUser,
               ),
               const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.location_city),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          (user.lieu != null && user.lieu!.isNotEmpty)
-                              ? user.lieu!
-                              : 'Lieu non renseigné',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _buildInfoCard(
+                icon: Icons.location_city,
+                text: (user.lieu != null && user.lieu!.isNotEmpty)
+                    ? user.lieu!
+                    : 'Lieu non renseigné',
               ),
               const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.person),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          (user.genre != null && user.genre!.isNotEmpty)
-                              ? user.genre!
-                              : 'Genre non renseigné',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _buildInfoCard(
+                icon: Icons.person,
+                text: (user.genre != null && user.genre!.isNotEmpty)
+                    ? user.genre!
+                    : 'Genre non renseigné',
               ),
               const SizedBox(height: 12),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.cake),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          (user.dateNaissance != null &&
-                                  user.dateNaissance!.isNotEmpty)
-                              ? user.dateNaissance!
-                              : 'Date de naissance non renseignée',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              _buildInfoCard(
+                icon: Icons.cake,
+                text: (user.dateNaissance != null &&
+                        user.dateNaissance!.isNotEmpty)
+                    ? user.dateNaissance!
+                    : 'Date de naissance non renseignée',
               ),
               const SizedBox(height: 12),
               Card(
@@ -513,18 +610,10 @@ class UserProfilePage extends StatelessWidget {
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
-                      if (user.centresInteret.isEmpty)
-                        const Text('Aucun centre d’intérêt')
-                      else
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: user.centresInteret.map((interet) {
-                            return Chip(
-                              label: Text(interet),
-                            );
-                          }).toList(),
-                        ),
+                      _buildChipWrap(
+                        user.centresInteret,
+                        emptyLabel: 'Aucun centre d’intérêt',
+                      ),
                     ],
                   ),
                 ),
@@ -556,18 +645,10 @@ class UserProfilePage extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 8),
-                      if (user.favoriteCategories.isEmpty)
-                        const Text('Aucune catégorie favorite')
-                      else
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: user.favoriteCategories.map((category) {
-                            return Chip(
-                              label: Text(category),
-                            );
-                          }).toList(),
-                        ),
+                      _buildChipWrap(
+                        user.favoriteCategories,
+                        emptyLabel: 'Aucune catégorie favorite',
+                      ),
                     ],
                   ),
                 ),

@@ -28,6 +28,26 @@ class GroupDetailPage extends StatelessWidget {
     }
   }
 
+  Color _groupVisibilityChipBackground(String visibility) {
+    switch (visibility) {
+      case GroupModel.visibilityFriends:
+        return Colors.green.shade100;
+      case GroupModel.visibilityPrivate:
+      default:
+        return Colors.blueGrey.shade100;
+    }
+  }
+
+  Color _groupVisibilityChipTextColor(String visibility) {
+    switch (visibility) {
+      case GroupModel.visibilityFriends:
+        return Colors.green.shade800;
+      case GroupModel.visibilityPrivate:
+      default:
+        return Colors.blueGrey.shade800;
+    }
+  }
+
   String _memberRoleLabel(String role) {
     switch (role) {
       case 'owner':
@@ -48,6 +68,63 @@ class GroupDetailPage extends StatelessWidget {
     }
 
     return 'Activité';
+  }
+
+  Color _activityTypeChipBackground(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return Colors.teal.shade100;
+    }
+
+    if (activity.isGroupPrivateActivity) {
+      return Colors.indigo.shade100;
+    }
+
+    return Colors.grey.shade200;
+  }
+
+  Color _activityTypeChipTextColor(Activity activity) {
+    if (activity.isMixedGroupActivity) {
+      return Colors.teal.shade800;
+    }
+
+    if (activity.isGroupPrivateActivity) {
+      return Colors.indigo.shade800;
+    }
+
+    return Colors.grey.shade800;
+  }
+
+  String _groupActivityParticipantsLabel(Activity activity) {
+    if (activity.hasUnlimitedPlaces) {
+      return '${activity.participantCount} participant(s) • illimité';
+    }
+
+    return '${activity.participantCount} / ${activity.maxParticipants} participants';
+  }
+
+  Widget _buildChip({
+    required String label,
+    required Color backgroundColor,
+    required Color textColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 4,
+      ),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
   }
 
   Future<void> _confirmLeaveGroup(
@@ -287,16 +364,32 @@ class GroupDetailPage extends StatelessWidget {
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                group.description.isNotEmpty
-                                    ? group.description
-                                    : 'Aucune description',
+                              if (group.description.isNotEmpty)
+                                Text(group.description)
+                              else
+                                const Text('Aucune description'),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _buildChip(
+                                    label: _groupVisibilityLabel(group.visibility),
+                                    backgroundColor:
+                                        _groupVisibilityChipBackground(
+                                      group.visibility,
+                                    ),
+                                    textColor: _groupVisibilityChipTextColor(
+                                      group.visibility,
+                                    ),
+                                  ),
+                                  _buildChip(
+                                    label: 'Créateur : ${group.ownerPseudo}',
+                                    backgroundColor: Colors.grey.shade200,
+                                    textColor: Colors.grey.shade800,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Visibilité : ${_groupVisibilityLabel(group.visibility)}',
-                              ),
-                              Text('Créateur : ${group.ownerPseudo}'),
                               if (isMember) ...[
                                 const SizedBox(height: 16),
                                 SizedBox(
@@ -390,19 +483,6 @@ class GroupDetailPage extends StatelessWidget {
                                 const Text('Aucune activité liée à ce groupe')
                               else
                                 ...groupActivities.map((activity) {
-                                  final typeLabel =
-                                      _groupActivityTypeLabel(activity);
-
-                                  final details = <String>[
-                                    '${activity.day} • ${activity.startTime} - ${activity.endTime}',
-                                  ];
-
-                                  if (activity.location.trim().isNotEmpty) {
-                                    details.add(activity.location.trim());
-                                  }
-
-                                  details.add(typeLabel);
-
                                   return ListTile(
                                     contentPadding: EdgeInsets.zero,
                                     leading: const Icon(Icons.event),
@@ -411,8 +491,48 @@ class GroupDetailPage extends StatelessWidget {
                                           ? activity.title
                                           : 'Activité',
                                     ),
-                                    subtitle: Text(details.join('\n')),
-                                    isThreeLine: details.length >= 3,
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          '${activity.day} • ${activity.startTime} - ${activity.endTime}',
+                                        ),
+                                        if (activity.location.trim().isNotEmpty)
+                                          Text(activity.location.trim()),
+                                        const SizedBox(height: 6),
+                                        Wrap(
+                                          spacing: 8,
+                                          runSpacing: 8,
+                                          children: [
+                                            _buildChip(
+                                              label: _groupActivityTypeLabel(
+                                                activity,
+                                              ),
+                                              backgroundColor:
+                                                  _activityTypeChipBackground(
+                                                activity,
+                                              ),
+                                              textColor:
+                                                  _activityTypeChipTextColor(
+                                                activity,
+                                              ),
+                                            ),
+                                            _buildChip(
+                                              label:
+                                                  _groupActivityParticipantsLabel(
+                                                activity,
+                                              ),
+                                              backgroundColor:
+                                                  Colors.blue.shade100,
+                                              textColor: Colors.blue.shade800,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    isThreeLine: true,
                                     trailing: const Icon(Icons.chevron_right),
                                     onTap: () {
                                       Navigator.push(

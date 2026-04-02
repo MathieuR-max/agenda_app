@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 
@@ -112,10 +113,25 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
   }
 
   String _groupActivityInfoText() {
+    final displayedGroupName = widget.groupName.trim();
+
     if (groupActivityAccess == 'group_and_public') {
-      return 'Activité liée au groupe "${widget.groupName}" et ouverte à de nouveaux participants.';
+      return displayedGroupName.isNotEmpty
+          ? 'Activité liée au groupe "$displayedGroupName" et ouverte à de nouveaux participants.'
+          : 'Activité liée à un groupe et ouverte à de nouveaux participants.';
     }
-    return 'Activité réservée uniquement aux membres du groupe "${widget.groupName}".';
+
+    return displayedGroupName.isNotEmpty
+        ? 'Activité réservée uniquement aux membres du groupe "$displayedGroupName".'
+        : 'Activité réservée uniquement aux membres du groupe.';
+  }
+
+  String _accessHelperText() {
+    if (groupActivityAccess == 'group_and_public') {
+      return 'Les membres du groupe et de nouveaux participants pourront rejoindre cette activité.';
+    }
+
+    return 'Seuls les membres du groupe pourront rejoindre cette activité.';
   }
 
   @override
@@ -400,6 +416,9 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
               controller: maxParticipantsController,
               enabled: !isSaving,
               keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+              ],
               decoration: const InputDecoration(
                 labelText: 'Nombre max participants (laisser vide = illimité)',
                 border: OutlineInputBorder(),
@@ -475,6 +494,17 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
               decoration: const InputDecoration(
                 labelText: 'Accès à l’activité',
                 border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                _accessHelperText(),
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 13,
+                ),
               ),
             ),
             const SizedBox(height: 25),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:agenda_app/features/02_calendar/calendar_page.dart';
 import 'package:agenda_app/services/current_user.dart';
+import 'package:agenda_app/features/main_navigation_page.dart';
 
 class TestUserSelectorPage extends StatefulWidget {
   const TestUserSelectorPage({super.key});
@@ -12,6 +12,19 @@ class TestUserSelectorPage extends StatefulWidget {
 class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
   final List<String> testUsers = ['Pierre', 'Alex', 'Jack'];
 
+  void _selectUser(BuildContext context, String userId) {
+    if (!CurrentUser.isSet || CurrentUser.id != userId) {
+      CurrentUser.setUser(userId);
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const MainNavigationPage(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -22,7 +35,8 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
         itemCount: testUsers.length,
         itemBuilder: (context, index) {
           final String userId = testUsers[index];
-          final bool isSelected = CurrentUser.isSet && CurrentUser.id == userId;
+          final bool isSelected =
+              CurrentUser.isSet && CurrentUser.id == userId;
 
           return ListTile(
             leading: Icon(
@@ -34,26 +48,7 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
             subtitle: isSelected
                 ? const Text('Utilisateur actuellement connecté')
                 : null,
-            onTap: () {
-              if (CurrentUser.isSet && CurrentUser.id == userId) {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => const CalendarPage(),
-                  ),
-                );
-                return;
-              }
-
-              CurrentUser.setUser(userId);
-
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const CalendarPage(),
-                ),
-              );
-            },
+            onTap: () => _selectUser(context, userId),
           );
         },
       ),

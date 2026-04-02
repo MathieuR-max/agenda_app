@@ -23,8 +23,16 @@ class _FriendsListPageState extends State<FriendsListPage> {
     _friendsFuture = _loadFriends();
   }
 
-  Future<List<Friendship>> _loadFriends() {
-    return _friendshipRepository.getAcceptedFriendships();
+  Future<List<Friendship>> _loadFriends() async {
+    final friendships = await _friendshipRepository.getAcceptedFriendships();
+
+    friendships.sort((a, b) {
+      final aDate = a.respondedAt ?? a.createdAt ?? DateTime(2000);
+      final bDate = b.respondedAt ?? b.createdAt ?? DateTime(2000);
+      return bDate.compareTo(aDate);
+    });
+
+    return friendships;
   }
 
   Future<void> _refresh() async {
@@ -50,10 +58,33 @@ class _FriendsListPageState extends State<FriendsListPage> {
     return '$day/$month/$year';
   }
 
+  Future<void> _openFriendProfile(String friendId) async {
+    if (friendId.trim().isEmpty) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserProfilePage(userId: friendId),
+      ),
+    );
+
+    if (!mounted) return;
+    await _refresh();
+  }
+
   Future<void> _confirmRemoveFriend(
     Friendship friendship,
     String displayName,
   ) async {
+    if (friendship.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de supprimer cet ami'),
+        ),
+      );
+      return;
+    }
+
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -98,8 +129,35 @@ class _FriendsListPageState extends State<FriendsListPage> {
   }
 
   Widget _buildFriendTile(Friendship friendship) {
-    final friendId = _friendshipRepository.getOtherUserId(friendship);
+    final friendId = _friendshipRepository.getOtherUserId(friendship).trim();
     final fallbackName = _fallbackFriendName(friendship);
+    final canOpenProfile = friendId.isNotEmpty;
+
+    if (!canOpenProfile) {
+      final friendshipDate = friendship.respondedAt ?? friendship.createdAt;
+
+      return Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: ListTile(
+          leading: const CircleAvatar(
+            child: Text('?'),
+          ),
+          title: Text(fallbackName),
+          subtitle: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Utilisateur indisponible'),
+              if (friendshipDate != null)
+                Text(
+                  'Ami depuis ${_formatDate(friendshipDate)}',
+                ),
+            ],
+          ),
+          isThreeLine: friendshipDate != null,
+        ),
+      );
+    }
 
     return FutureBuilder<Map<String, dynamic>?>(
       future: _userService.getUserById(friendId),
@@ -157,16 +215,11 @@ class _FriendsListPageState extends State<FriendsListPage> {
                   ),
               ],
             ),
+            isThreeLine: friendshipDate != null,
             trailing: PopupMenuButton<String>(
               onSelected: (value) async {
                 if (value == 'open') {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          UserProfilePage(userId: friendId),
-                    ),
-                  );
+                  await _openFriendProfile(friendId);
                 }
 
                 if (value == 'remove') {
@@ -188,13 +241,7 @@ class _FriendsListPageState extends State<FriendsListPage> {
               ],
             ),
             onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      UserProfilePage(userId: friendId),
-                ),
-              );
+              await _openFriendProfile(friendId);
             },
           ),
         );

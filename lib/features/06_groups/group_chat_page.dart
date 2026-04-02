@@ -23,6 +23,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   final ScrollController _scrollController = ScrollController();
 
   bool _isSending = false;
+  int _lastMessageCount = 0;
 
   @override
   void dispose() {
@@ -129,16 +130,17 @@ class _GroupChatPageState extends State<GroupChatPage> {
           crossAxisAlignment:
               isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
-            Text(
-              message.senderPseudo.isNotEmpty
-                  ? message.senderPseudo
-                  : 'Utilisateur',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 12,
+            if (!isMine)
+              Text(
+                message.senderPseudo.isNotEmpty
+                    ? message.senderPseudo
+                    : 'Utilisateur',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
+            if (!isMine) const SizedBox(height: 4),
             Text(message.text),
             if (message.createdAt != null) ...[
               const SizedBox(height: 6),
@@ -158,9 +160,13 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    final displayedGroupName = widget.groupName.trim().isNotEmpty
+        ? widget.groupName.trim()
+        : 'Groupe';
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Chat - ${widget.groupName}'),
+        title: Text('Chat - $displayedGroupName'),
       ),
       body: Column(
         children: [
@@ -182,7 +188,10 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
                 final messages = snapshot.data ?? [];
 
-                _scrollToBottom();
+                if (messages.length != _lastMessageCount) {
+                  _lastMessageCount = messages.length;
+                  _scrollToBottom();
+                }
 
                 if (messages.isEmpty) {
                   return const Center(
@@ -211,6 +220,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                   Expanded(
                     child: TextField(
                       controller: _controller,
+                      enabled: !_isSending,
                       minLines: 1,
                       maxLines: 4,
                       textInputAction: TextInputAction.send,

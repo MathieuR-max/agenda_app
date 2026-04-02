@@ -48,11 +48,56 @@ class FriendRequestsPage extends StatelessWidget {
     }
   }
 
+  String _displayName(Friendship friendship, {required bool received}) {
+    final pseudo = received
+        ? friendship.requesterPseudo.trim()
+        : friendship.addresseePseudo.trim();
+
+    final id = received
+        ? friendship.requesterId.trim()
+        : friendship.addresseeId.trim();
+
+    if (pseudo.isNotEmpty) return pseudo;
+    if (id.isNotEmpty) return id;
+    return 'Utilisateur';
+  }
+
+  Widget _buildSummaryChip({
+    required String label,
+    required int count,
+    required Color backgroundColor,
+    required Color textColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        '$label : $count',
+        style: TextStyle(
+          color: textColor,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
   Future<void> _acceptRequest(
     BuildContext context,
     FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
+    if (friendship.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible d’accepter cette demande'),
+        ),
+      );
+      return;
+    }
+
     final accepted = await friendshipRepository.acceptFriendRequest(
       friendship.id,
     );
@@ -75,6 +120,15 @@ class FriendRequestsPage extends StatelessWidget {
     FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
+    if (friendship.id.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de refuser cette demande'),
+        ),
+      );
+      return;
+    }
+
     final refused = await friendshipRepository.refuseFriendRequest(
       friendship.id,
     );
@@ -98,14 +152,7 @@ class FriendRequestsPage extends StatelessWidget {
     required Friendship friendship,
     required bool received,
   }) {
-    final displayName = received
-        ? (friendship.requesterPseudo.isNotEmpty
-            ? friendship.requesterPseudo
-            : friendship.requesterId)
-        : (friendship.addresseePseudo.isNotEmpty
-            ? friendship.addresseePseudo
-            : friendship.addresseeId);
-
+    final displayName = _displayName(friendship, received: received);
     final subtitle = received ? 'Demande reçue' : 'Demande envoyée';
 
     return Card(
@@ -181,6 +228,99 @@ class FriendRequestsPage extends StatelessWidget {
     );
   }
 
+  Widget _buildRequestsTab({
+    required BuildContext context,
+    required AsyncSnapshot<List<Friendship>> snapshot,
+    required FriendshipRepository friendshipRepository,
+    required bool received,
+    required String emptyLabel,
+    required String errorLabel,
+  }) {
+    if (snapshot.hasError) {
+      return Center(
+        child: Text('$errorLabel : ${snapshot.error}'),
+      );
+    }
+
+    if (!snapshot.hasData) {
+      return const Center(
+        child: CircularProgressIndicator(),
+      );
+    }
+
+    final requests = snapshot.data ?? [];
+    final pendingCount = requests.where((r) => r.isPending).length;
+    final acceptedCount = requests.where((r) => r.isAccepted).length;
+    final refusedCount = requests.where((r) => r.isRefused).length;
+    final cancelledCount = requests.where((r) => r.isCancelled).length;
+
+    if (requests.isEmpty) {
+      return Center(
+        child: Text(emptyLabel),
+      );
+    }
+
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _buildSummaryChip(
+                label: 'En attente',
+                count: pendingCount,
+                backgroundColor: Colors.orange.shade100,
+                textColor: Colors.orange.shade800,
+              ),
+              _buildSummaryChip(
+                label: 'Acceptées',
+                count: acceptedCount,
+                backgroundColor: Colors.green.shade100,
+                textColor: Colors.green.shade800,
+              ),
+              _buildSummaryChip(
+                label: 'Refusées',
+                count: refusedCount,
+                backgroundColor: Colors.red.shade100,
+                textColor: Colors.red.shade800,
+              ),
+              _buildSummaryChip(
+                label: 'Annulées',
+                count: cancelledCount,
+                backgroundColor: Colors.grey.shade300,
+                textColor: Colors.grey.shade800,
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.all(12),
+            itemCount: requests.length,
+            itemBuilder: (context, index) {
+              final friendship = requests[index];
+              return _buildRequestCard(
+                context: context,
+                friendshipRepository: friendshipRepository,
+                friendship: friendship,
+                received: received,
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final friendshipService = FriendshipFirestoreService();
@@ -206,80 +346,26 @@ class FriendRequestsPage extends StatelessWidget {
                   StreamBuilder<List<Friendship>>(
                     stream: friendshipService.getReceivedFriendRequests(),
                     builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text(
-                            'Erreur demandes reçues : ${snapshot.error}',
-                          ),
-                        );
-                      }
-
-                      if (!snapshot.hasData) {
-                        return const Center(
-                          child: CircularProgressIndicator(),
-                        );
-                      }
-
-                      final requests = snapshot.data ?? [];
-
-                      if (requests.isEmpty) {
-                        return const Center(
-                          child: Text('Aucune demande reçue'),
-                        );
-                      }
-
-                      return ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: requests.length,
-                        itemBuilder: (context, index) {
-                          final friendship = requests[index];
-                          return _buildRequestCard(
-                            context: context,
-                            friendshipRepository: friendshipRepository,
-                            friendship: friendship,
-                            received: true,
-                          );
-                        },
+                      return _buildRequestsTab(
+                        context: context,
+                        snapshot: snapshot,
+                        friendshipRepository: friendshipRepository,
+                        received: true,
+                        emptyLabel: 'Aucune demande reçue',
+                        errorLabel: 'Erreur demandes reçues',
                       );
                     },
                   ),
                   StreamBuilder<List<Friendship>>(
                     stream: friendshipService.getSentFriendRequests(),
                     builder: (context, snapshot) {
-                      if (snapshot.hasError) {
-                        return Center(
-                          child: Text(
-                            'Erreur demandes envoyées : ${snapshot.error}',
-                          ),
-                        );
-                      }
-
-                      if (!snapshot.hasData) {
-                        return const Center(
-                          child: CircularProgressIndicator(),
-                        );
-                      }
-
-                      final requests = snapshot.data ?? [];
-
-                      if (requests.isEmpty) {
-                        return const Center(
-                          child: Text('Aucune demande envoyée'),
-                        );
-                      }
-
-                      return ListView.builder(
-                        padding: const EdgeInsets.all(12),
-                        itemCount: requests.length,
-                        itemBuilder: (context, index) {
-                          final friendship = requests[index];
-                          return _buildRequestCard(
-                            context: context,
-                            friendshipRepository: friendshipRepository,
-                            friendship: friendship,
-                            received: false,
-                          );
-                        },
+                      return _buildRequestsTab(
+                        context: context,
+                        snapshot: snapshot,
+                        friendshipRepository: friendshipRepository,
+                        received: false,
+                        emptyLabel: 'Aucune demande envoyée',
+                        errorLabel: 'Erreur demandes envoyées',
                       );
                     },
                   ),

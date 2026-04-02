@@ -129,6 +129,17 @@ class _CalendarPageState extends State<CalendarPage> {
     return null;
   }
 
+  List<Activity> _deduplicateJoinedActivities(
+    List<Activity> createdActivities,
+    List<Activity> joinedActivities,
+  ) {
+    final createdIds = createdActivities.map((activity) => activity.id).toSet();
+
+    return joinedActivities
+        .where((activity) => !createdIds.contains(activity.id))
+        .toList();
+  }
+
   Future<void> _openUserSelector() async {
     final changed = await Navigator.push<bool>(
       context,
@@ -305,7 +316,10 @@ class _CalendarPageState extends State<CalendarPage> {
                       }
 
                       final createdActivities = createdSnapshot.data ?? [];
-                      final joinedActivities = joinedSnapshot.data ?? [];
+                      final joinedActivities = _deduplicateJoinedActivities(
+                        createdActivities,
+                        joinedSnapshot.data ?? [],
+                      );
                       final availabilities = availabilitySnapshot.data ?? [];
                       final searches = searchSnapshot.data!.docs;
 
@@ -404,7 +418,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     if (search != null) {
                       cellColor = Colors.orange[200]!;
                       if ((search['startTime'] ?? '').toString() == hour) {
-                        label = 'Recherche';
+                        label = 'Recherche activité';
                       }
                     }
 
@@ -415,17 +429,17 @@ class _CalendarPageState extends State<CalendarPage> {
                       }
                     }
 
-                    if (createdActivity != null) {
-                      cellColor = Colors.blue[200]!;
-                      if (createdActivity.startTime == hour) {
-                        label = createdActivity.title;
-                      }
-                    }
-
                     if (joinedActivity != null) {
                       cellColor = Colors.purple[200]!;
                       if (joinedActivity.startTime == hour) {
                         label = joinedActivity.title;
+                      }
+                    }
+
+                    if (createdActivity != null) {
+                      cellColor = Colors.blue[200]!;
+                      if (createdActivity.startTime == hour) {
+                        label = createdActivity.title;
                       }
                     }
 

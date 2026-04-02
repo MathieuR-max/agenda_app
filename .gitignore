@@ -3,6 +3,9 @@
 *.log
 *.pyc
 *.swp
+*.bak
+*.tmp
+*.old
 .DS_Store
 .atom/
 .build/
@@ -12,18 +15,16 @@
 .swiftpm/
 migrate_working_dir/
 
-# IntelliJ related
+# IntelliJ / Android Studio
 *.iml
 *.ipr
 *.iws
 .idea/
 
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
+# VSCode (optional)
+.vscode/settings.json
 
-# Flutter/Dart/Pub related
+# Flutter / Dart
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
@@ -33,27 +34,39 @@ migrate_working_dir/
 /build/
 /coverage/
 
-# Symbolication related
+# Symbolication
 app.*.symbols
 
-# Obfuscation related
+# Obfuscation
 app.*.map.json
 
-# Android Studio will place build artifacts here
+# Android build
 /android/app/debug
 /android/app/profile
 /android/app/release
 
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
+# Android sensitive
+android/key.properties
+android/local.properties
+*.keystore
+*.jks
+
+# iOS sensitive
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
 
 # Firebase
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 
-# Keystore
-*.keystore
-*.jks
+# Firebase Admin / service accounts
+serviceAccountKey.json
+firebase-adminsdk.json
+*.pem
+*.p12
+*.key
 
-# Env
+# Environment variables
 .env
+.env.*
