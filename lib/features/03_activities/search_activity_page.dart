@@ -26,7 +26,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
 
   String category = 'Toutes';
 
-  final List<String> categories = [
+  final List<String> categories = const [
     'Toutes',
     'Sport',
     'Sortie',
@@ -69,23 +69,104 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
 
   int timeToMinutes(String time) {
     final parts = time.split(':');
-    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+    if (parts.length != 2) return 0;
+
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
+    return hour * 60 + minute;
+  }
+
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  int _weekdayFromFrenchDay(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'lundi':
+        return DateTime.monday;
+      case 'mardi':
+        return DateTime.tuesday;
+      case 'mercredi':
+        return DateTime.wednesday;
+      case 'jeudi':
+        return DateTime.thursday;
+      case 'vendredi':
+        return DateTime.friday;
+      case 'samedi':
+        return DateTime.saturday;
+      case 'dimanche':
+        return DateTime.sunday;
+      default:
+        return DateTime.monday;
+    }
+  }
+
+  DateTime _resolveSelectedDate() {
+    final today = _normalizeDate(DateTime.now());
+    final targetWeekday = _weekdayFromFrenchDay(widget.day);
+    final currentWeekday = today.weekday;
+    final diff = targetWeekday - currentWeekday;
+
+    return today.add(Duration(days: diff));
+  }
+
+  DateTime _combineDateAndTime(DateTime date, String time) {
+    final parts = time.split(':');
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
+
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      hour,
+      minute,
+    );
+  }
+
+  String _formatDateOnly(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 
   bool overlaps(Activity activity) {
     final selectedStart = timeToMinutes(startTime);
     final selectedEnd = timeToMinutes(endTime);
-    final activityStart = timeToMinutes(activity.startTime);
-    final activityEnd = timeToMinutes(activity.endTime);
+
+    final activityStartDateTime = activity.resolvedStartDateTime;
+    final activityEndDateTime = activity.resolvedEndDateTime;
+
+    if (activityStartDateTime == null || activityEndDateTime == null) {
+      return false;
+    }
+
+    final activityStart =
+        activityStartDateTime.hour * 60 + activityStartDateTime.minute;
+    final activityEnd =
+        activityEndDateTime.hour * 60 + activityEndDateTime.minute;
 
     return activityStart < selectedEnd && activityEnd > selectedStart;
+  }
+
+  bool _matchesSelectedDay(Activity activity) {
+    final selectedDate = _resolveSelectedDate();
+    final activityStartDateTime = activity.resolvedStartDateTime;
+
+    if (activityStartDateTime == null) {
+      return false;
+    }
+
+    final activityDate = _normalizeDate(activityStartDateTime);
+    return activityDate == selectedDate;
   }
 
   bool matchesFilters(Activity activity) {
     final bool categoryMatches =
         category == 'Toutes' || activity.category == category;
 
-    final bool dayMatches = activity.day == widget.day;
+    final bool dayMatches = _matchesSelectedDay(activity);
     final bool timeMatches = overlaps(activity);
 
     return categoryMatches && dayMatches && timeMatches;
@@ -94,11 +175,17 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
   Future<void> _saveSearchIfNeeded() async {
     if (_searchSaved) return;
 
+    final selectedDate = _resolveSelectedDate();
+    final startDateTime = _combineDateAndTime(selectedDate, startTime);
+    final endDateTime = _combineDateAndTime(selectedDate, endTime);
+
     await searchService.saveSearch(
-      day: widget.day,
+      day: _formatDateOnly(selectedDate),
       startTime: startTime,
       endTime: endTime,
       category: category,
+      startDateTime: startDateTime,
+      endDateTime: endDateTime,
     );
 
     _searchSaved = true;
@@ -111,21 +198,21 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
 
   String _statusLabel(Activity activity) {
     if (activity.isCancelled) return 'Annulée';
-    if (activity.isDone) return 'Terminée';
+    if (activity.isDone || activity.hasEnded) return 'Terminée';
     if (activity.isFull) return 'Complète';
     return 'Ouverte';
   }
 
   Color _statusChipBackground(Activity activity) {
     if (activity.isCancelled) return Colors.red.shade100;
-    if (activity.isDone) return Colors.grey.shade300;
+    if (activity.isDone || activity.hasEnded) return Colors.grey.shade300;
     if (activity.isFull) return Colors.orange.shade100;
     return Colors.green.shade100;
   }
 
   Color _statusChipTextColor(Activity activity) {
     if (activity.isCancelled) return Colors.red.shade800;
-    if (activity.isDone) return Colors.grey.shade800;
+    if (activity.isDone || activity.hasEnded) return Colors.grey.shade800;
     if (activity.isFull) return Colors.orange.shade800;
     return Colors.green.shade800;
   }
@@ -187,6 +274,16 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
     return Colors.grey.shade800;
   }
 
+  String _formatSchedule(Activity activity) {
+    final scheduleLabel = activity.scheduleLabel.trim();
+
+    if (scheduleLabel.isNotEmpty) {
+      return scheduleLabel;
+    }
+
+    return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -213,7 +310,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
             Text('Jour sélectionné : ${widget.day}'),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: startTime,
+              value: startTime,
               items: timeSlots
                   .map(
                     (time) => DropdownMenuItem<String>(
@@ -245,7 +342,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: endTime,
+              value: endTime,
               items: timeSlots
                   .map(
                     (time) => DropdownMenuItem<String>(
@@ -276,7 +373,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: category,
+              value: category,
               items: categories
                   .map(
                     (c) => DropdownMenuItem<String>(
@@ -358,7 +455,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
 
                                 if (activity.isCancelled) {
                                   buttonLabel = 'Activité annulée';
-                                } else if (activity.isDone) {
+                                } else if (activity.isDone || activity.hasEnded) {
                                   buttonLabel = 'Activité terminée';
                                 } else if (activity.isInviteOnly) {
                                   buttonLabel = 'Sur invitation';
@@ -382,9 +479,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
                                     if (activity.description.trim().isNotEmpty)
                                       Text(activity.description),
                                     const SizedBox(height: 6),
-                                    Text(
-                                      '${activity.day} • ${activity.startTime} - ${activity.endTime}',
-                                    ),
+                                    Text(_formatSchedule(activity)),
                                     const SizedBox(height: 4),
                                     Text(activity.location),
                                     const SizedBox(height: 4),

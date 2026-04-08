@@ -56,8 +56,9 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
 
   Future<void> _sendMessage(Activity currentActivity) async {
     final text = messageController.text.trim();
-    final bool chatReadOnly =
-        currentActivity.isCancelled || currentActivity.isDone;
+    final bool chatReadOnly = currentActivity.isCancelled ||
+        currentActivity.isDone ||
+        currentActivity.hasEnded;
 
     if (text.isEmpty || isSending || chatReadOnly) return;
 
@@ -199,7 +200,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Map<String, dynamic>?>(
+    return StreamBuilder<Activity?>(
       stream: activityService.watchActivity(widget.activity.id),
       builder: (context, activitySnapshot) {
         if (activitySnapshot.hasError) {
@@ -213,7 +214,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
           );
         }
 
-        if (!activitySnapshot.hasData) {
+        if (activitySnapshot.connectionState == ConnectionState.waiting) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Chat activité'),
@@ -224,9 +225,9 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
           );
         }
 
-        final activityData = activitySnapshot.data;
+        final currentActivity = activitySnapshot.data;
 
-        if (activityData == null) {
+        if (currentActivity == null) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Chat activité'),
@@ -237,9 +238,9 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
           );
         }
 
-        final currentActivity = Activity.fromMap(widget.activity.id, activityData);
-        final bool chatReadOnly =
-            currentActivity.isCancelled || currentActivity.isDone;
+        final bool chatReadOnly = currentActivity.isCancelled ||
+            currentActivity.isDone ||
+            currentActivity.hasEnded;
 
         return Scaffold(
           appBar: AppBar(

@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../models/activity_invitation.dart';
+import '../services/firestore/activity_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
 import '03_activities/all_activities_page.dart';
 import '03_activities/invitations_page.dart';
@@ -12,6 +14,9 @@ class MainNavigationPage extends StatefulWidget {
 }
 
 class _MainNavigationPageState extends State<MainNavigationPage> {
+  final ActivityInvitationFirestoreService invitationService =
+      ActivityInvitationFirestoreService();
+
   int _currentIndex = 0;
 
   final List<Widget> _pages = const [
@@ -39,6 +44,31 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     }
   }
 
+  Widget _buildInvitationsIcon({
+    required bool selected,
+  }) {
+    return StreamBuilder<List<ActivityInvitation>>(
+      stream: invitationService.getPendingReceivedInvitations(),
+      builder: (context, snapshot) {
+        final pendingCount = (snapshot.data ?? []).length;
+        final baseIcon = Icon(
+          selected ? Icons.mail : Icons.mail_outline,
+        );
+
+        if (pendingCount <= 0) {
+          return baseIcon;
+        }
+
+        return Badge(
+          label: Text(
+            pendingCount > 99 ? '99+' : '$pendingCount',
+          ),
+          child: baseIcon,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -52,23 +82,23 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         bottomNavigationBar: NavigationBar(
           selectedIndex: _currentIndex,
           onDestinationSelected: _onTabTapped,
-          destinations: const [
-            NavigationDestination(
+          destinations: [
+            const NavigationDestination(
               icon: Icon(Icons.calendar_today_outlined),
               selectedIcon: Icon(Icons.calendar_today),
               label: 'Agenda',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.explore_outlined),
               selectedIcon: Icon(Icons.explore),
               label: 'Explorer',
             ),
             NavigationDestination(
-              icon: Icon(Icons.mail_outline),
-              selectedIcon: Icon(Icons.mail),
+              icon: _buildInvitationsIcon(selected: false),
+              selectedIcon: _buildInvitationsIcon(selected: true),
               label: 'Invitations',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(Icons.person_outline),
               selectedIcon: Icon(Icons.person),
               label: 'Profil',

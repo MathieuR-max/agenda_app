@@ -23,13 +23,18 @@ class ActivityRepository {
     UserFirestoreService? userService,
     GroupsRepository? groupsRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _activityService =
-            activityService ?? ActivityFirestoreService(db: db),
+        _activityService = activityService ?? ActivityFirestoreService(db: db),
         _chatService = chatService ?? ChatFirestoreService(db: db),
         _userService = userService ?? UserFirestoreService(db: db),
         _groupsRepository = groupsRepository ?? GroupsRepository(db: db);
 
   String get currentUserId => CurrentUser.id;
+
+  CollectionReference<Map<String, dynamic>> get _activitiesRef =>
+      _db.collection(FirestoreCollections.activities);
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _db.collection(FirestoreCollections.users);
 
   String computeActivityStatus({
     required int participantCount,
@@ -48,13 +53,15 @@ class ActivityRepository {
     return ActivityStatusValues.open;
   }
 
-  Future<void> createActivity({
+  Future<String> createActivity({
     required String title,
     required String description,
     required String category,
     required String day,
     required String startTime,
     required String endTime,
+    required DateTime startDateTime,
+    required DateTime endDateTime,
     required String location,
     required String maxParticipants,
     required String level,
@@ -63,11 +70,36 @@ class ActivityRepository {
     String? groupId,
     String? groupName,
   }) async {
+    final resolvedTitle = title.trim();
+    final resolvedDescription = description.trim();
+    final resolvedCategory = category.trim();
+    final resolvedLocation = location.trim();
+    final resolvedLevel = level.trim();
+    final resolvedGroupType = groupType.trim();
+    final resolvedVisibility = visibility.trim();
+
+    if (resolvedTitle.isEmpty ||
+        resolvedDescription.isEmpty ||
+        resolvedCategory.isEmpty ||
+        resolvedLocation.isEmpty ||
+        resolvedLevel.isEmpty ||
+        resolvedGroupType.isEmpty) {
+      throw Exception('Tous les champs obligatoires doivent être remplis.');
+    }
+
+    if (!endDateTime.isAfter(startDateTime)) {
+      throw Exception('La date de fin doit être après la date de début.');
+    }
+
     final ownerPseudo = await _userService.getCurrentUserPseudo();
 
     final normalizedMaxParticipants =
         maxParticipants.trim().isEmpty ? '0' : maxParticipants.trim();
     final maxParticipantsInt = parseInt(normalizedMaxParticipants);
+
+    if (maxParticipantsInt < 0) {
+      throw Exception('Le nombre maximum de participants est invalide.');
+    }
 
     final rawGroupId = groupId?.trim();
     final trimmedGroupId =
@@ -96,17 +128,19 @@ class ActivityRepository {
     );
 
     final activityId = await _activityService.createActivityDocument(
-      title: title,
-      description: description,
-      category: category,
-      day: day,
-      startTime: startTime,
-      endTime: endTime,
-      location: location,
+      title: resolvedTitle,
+      description: resolvedDescription,
+      category: resolvedCategory,
+      day: day.trim(),
+      startTime: startTime.trim(),
+      endTime: endTime.trim(),
+      startDateTime: startDateTime,
+      endDateTime: endDateTime,
+      location: resolvedLocation,
       maxParticipants: maxParticipantsInt,
-      level: level,
-      groupType: groupType,
-      visibility: visibility,
+      level: resolvedLevel,
+      groupType: resolvedGroupType,
+      visibility: resolvedVisibility,
       ownerId: currentUserId,
       ownerPseudo: ownerPseudo,
       initialStatus: initialStatus,
@@ -126,31 +160,179 @@ class ActivityRepository {
           ? 'Activité de groupe créée par $ownerPseudo'
           : 'Activité créée par $ownerPseudo',
     );
+
+    return activityId;
+  }
+
+  Future<void> updateActivity({
+    required String activityId,
+    String? title,
+    String? description,
+    String? category,
+    String? day,
+    String? startTime,
+    String? endTime,
+    DateTime? startDateTime,
+    DateTime? endDateTime,
+    String? location,
+    String? maxParticipants,
+    String? level,
+    String? groupType,
+    String? visibility,
+    bool isLimitedEdit = false,
+  }) async {
+    final trimmedActivityId = activityId.trim();
+
+    if (trimmedActivityId.isEmpty) {
+      throw Exception('Identifiant d’activité invalide.');
+    }
+
+    final activityRef = _activitiesRef.doc(trimmedActivityId);
+
+    String? systemMessage;
+
+    await _db.runTransaction((transaction) async {
+      final activityDoc = await transaction.get(activityRef);
+
+      if (!activityDoc.exists || activityDoc.data() == null) {
+        throw Exception('Activité introuvable.');
+      }
+
+      final data = activityDoc.data()!;
+      final currentActivity = Activity.fromMap(activityDoc.id, data);
+
+      if (currentActivity.ownerId != currentUserId) {
+        throw Exception('Seul l’organisateur peut modifier cette activité.');
+      }
+
+      final participantCount = parseInt(data['participantCount']);
+
+      if (isLimitedEdit) {
+        if (participantCount <= 1) {
+          throw Exception('Cette activité peut être modifiée complètement.');
+        }
+
+        final limitedDescription =
+            (description ?? currentActivity.description).trim();
+        final limitedLocation = (location ?? currentActivity.location).trim();
+
+        if (limitedDescription.isEmpty || limitedLocation.isEmpty) {
+          throw Exception('La description et le lieu sont obligatoires.');
+        }
+
+        transaction.update(activityRef, {
+          'description': limitedDescription,
+          'location': limitedLocation,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+
+        systemMessage = 'L’activité a été mise à jour (modification limitée).';
+        return;
+      }
+
+      if (participantCount > 1) {
+        throw Exception(
+          'Modification complète impossible : des participants ont déjà rejoint l’activité.',
+        );
+      }
+
+      final resolvedTitle = (title ?? currentActivity.title).trim();
+      final resolvedDescription =
+          (description ?? currentActivity.description).trim();
+      final resolvedCategory = (category ?? currentActivity.category).trim();
+      final resolvedLocation = (location ?? currentActivity.location).trim();
+      final resolvedLevel = (level ?? currentActivity.level).trim();
+      final resolvedGroupType = (groupType ?? currentActivity.groupType).trim();
+      final resolvedVisibility = (visibility ?? currentActivity.visibility).trim();
+
+      final normalizedMaxParticipants = maxParticipants == null
+          ? currentActivity.maxParticipants.toString()
+          : (maxParticipants.trim().isEmpty ? '0' : maxParticipants.trim());
+
+      final resolvedMaxParticipants = parseInt(normalizedMaxParticipants);
+
+      final fallbackDay = (day ?? currentActivity.day).trim();
+      final fallbackStartTime = (startTime ?? currentActivity.startTime).trim();
+      final fallbackEndTime = (endTime ?? currentActivity.endTime).trim();
+
+      final resolvedStartDateTime = startDateTime ??
+          currentActivity.startDateTime ??
+          _combineLegacyDateAndTime(fallbackDay, fallbackStartTime);
+
+      final resolvedEndDateTime = endDateTime ??
+          currentActivity.endDateTime ??
+          _combineLegacyDateAndTime(fallbackDay, fallbackEndTime);
+
+      if (resolvedTitle.isEmpty ||
+          resolvedDescription.isEmpty ||
+          resolvedCategory.isEmpty ||
+          resolvedLocation.isEmpty ||
+          resolvedLevel.isEmpty ||
+          resolvedGroupType.isEmpty ||
+          resolvedVisibility.isEmpty) {
+        throw Exception('Tous les champs obligatoires doivent être remplis.');
+      }
+
+      if (resolvedStartDateTime == null || resolvedEndDateTime == null) {
+        throw Exception('Les dates de début et de fin sont invalides.');
+      }
+
+      if (!resolvedEndDateTime.isAfter(resolvedStartDateTime)) {
+        throw Exception('La date de fin doit être après la date de début.');
+      }
+
+      if (resolvedMaxParticipants < 0) {
+        throw Exception('Le nombre maximum de participants est invalide.');
+      }
+
+      final resolvedDay = _formatDateOnly(resolvedStartDateTime);
+      final resolvedStartTime = _formatTimeOnly(resolvedStartDateTime);
+      final resolvedEndTime = _formatTimeOnly(resolvedEndDateTime);
+
+      final newStatus = computeActivityStatus(
+        participantCount: participantCount,
+        maxParticipants: resolvedMaxParticipants,
+        currentStatus: currentActivity.status,
+      );
+
+      transaction.update(activityRef, {
+        'title': resolvedTitle,
+        'description': resolvedDescription,
+        'category': resolvedCategory,
+        'day': resolvedDay,
+        'startTime': resolvedStartTime,
+        'endTime': resolvedEndTime,
+        'startDateTime': Timestamp.fromDate(resolvedStartDateTime),
+        'endDateTime': Timestamp.fromDate(resolvedEndDateTime),
+        'location': resolvedLocation,
+        'maxParticipants': resolvedMaxParticipants,
+        'level': resolvedLevel,
+        'groupType': resolvedGroupType,
+        'visibility': resolvedVisibility,
+        'status': newStatus,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      systemMessage = 'L’activité a été modifiée.';
+    });
+
+    if (systemMessage != null) {
+      await _chatService.addSystemMessage(
+        activityId: trimmedActivityId,
+        text: systemMessage!,
+      );
+    }
   }
 
   Future<bool> joinActivity(Activity activity) async {
-    bool isGroupMember = false;
+    final activityId = activity.id.trim();
+    if (activityId.isEmpty) return false;
 
-    if (activity.isGroupActivity) {
-      final groupId = activity.groupId!.trim();
-      isGroupMember =
-          await _groupsRepository.isCurrentUserMember(groupId);
-
-      if (!isGroupMember &&
-          activity.visibility != ActivityVisibilityValues.public) {
-        return false;
-      }
-    }
-
-    final activityId = activity.id;
-    final activityRef = _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId);
+    final activityRef = _activitiesRef.doc(activityId);
     final participantRef = activityRef
         .collection(FirestoreCollections.participants)
         .doc(currentUserId);
-    final userRef =
-        _db.collection(FirestoreCollections.users).doc(currentUserId);
+    final userRef = _usersRef.doc(currentUserId);
 
     String joinedPseudo = '';
 
@@ -168,37 +350,43 @@ class ActivityRepository {
         return false;
       }
 
-      final String status =
-          (activityData['status'] ?? ActivityStatusValues.open).toString();
-      final String visibility =
-          (activityData['visibility'] ?? ActivityVisibilityValues.public)
-              .toString();
-      final int participantCount = parseInt(activityData['participantCount']);
-      final int maxParticipants = parseInt(activityData['maxParticipants']);
+      final currentActivity = Activity.fromMap(activityDoc.id, activityData);
 
-      if (status == ActivityStatusValues.cancelled ||
-          status == ActivityStatusValues.done ||
-          status == ActivityStatusValues.full) {
+      if (!_canJoinBasedOnActivityState(currentActivity)) {
         return false;
       }
 
-      if (visibility == ActivityVisibilityValues.inviteOnly) {
-        return false;
+      if (currentActivity.isGroupActivity) {
+        final groupId = currentActivity.groupId!.trim();
+        final isGroupMember =
+            await _groupsRepository.isCurrentUserMember(groupId);
+
+        if (!isGroupMember &&
+            currentActivity.visibility != ActivityVisibilityValues.public) {
+          return false;
+        }
       }
+
+      final participantCount = currentActivity.participantCount;
+      final maxParticipants = currentActivity.maxParticipants;
 
       if (maxParticipants > 0 && participantCount >= maxParticipants) {
         return false;
       }
 
       if (userDoc.exists && userDoc.data() != null) {
-        joinedPseudo = (userDoc.data()!['pseudo'] ?? '').toString();
+        joinedPseudo = (userDoc.data()!['pseudo'] ?? '').toString().trim();
       }
 
-      final int newParticipantCount = participantCount + 1;
-      final String newStatus = computeActivityStatus(
+      if (joinedPseudo.isEmpty) {
+        joinedPseudo = await _userService.getCurrentUserPseudo();
+      }
+
+      final newParticipantCount = participantCount + 1;
+      final newStatus = computeActivityStatus(
         participantCount: newParticipantCount,
         maxParticipants: maxParticipants,
-        currentStatus: status,
+        currentStatus: currentActivity.status,
       );
 
       transaction.set(participantRef, {
@@ -227,9 +415,10 @@ class ActivityRepository {
   }
 
   Future<void> leaveActivity(String activityId) async {
-    final activityRef = _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId);
+    final trimmedActivityId = activityId.trim();
+    if (trimmedActivityId.isEmpty) return;
+
+    final activityRef = _activitiesRef.doc(trimmedActivityId);
     final participantRef = activityRef
         .collection(FirestoreCollections.participants)
         .doc(currentUserId);
@@ -249,17 +438,16 @@ class ActivityRepository {
         return;
       }
 
-      leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString();
+      leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString().trim();
 
-      final int participantCount = parseInt(activityData['participantCount']);
-      final int maxParticipants = parseInt(activityData['maxParticipants']);
-      final String currentStatus =
+      final participantCount = parseInt(activityData['participantCount']);
+      final maxParticipants = parseInt(activityData['maxParticipants']);
+      final currentStatus =
           (activityData['status'] ?? ActivityStatusValues.open).toString();
 
-      final int newParticipantCount =
-          participantCount > 0 ? participantCount - 1 : 0;
+      final newParticipantCount = participantCount > 0 ? participantCount - 1 : 0;
 
-      final String newStatus = computeActivityStatus(
+      final newStatus = computeActivityStatus(
         participantCount: newParticipantCount,
         maxParticipants: maxParticipants,
         currentStatus: currentStatus,
@@ -276,16 +464,17 @@ class ActivityRepository {
 
     if (leavingPseudo.isNotEmpty) {
       await _chatService.addSystemMessage(
-        activityId: activityId,
+        activityId: trimmedActivityId,
         text: '$leavingPseudo a quitté l’activité',
       );
     }
   }
 
   Future<void> leaveActivityWithOwnerHandling(String activityId) async {
-    final activityRef = _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId);
+    final trimmedActivityId = activityId.trim();
+    if (trimmedActivityId.isEmpty) return;
+
+    final activityRef = _activitiesRef.doc(trimmedActivityId);
     final participantRef = activityRef
         .collection(FirestoreCollections.participants)
         .doc(currentUserId);
@@ -307,20 +496,20 @@ class ActivityRepository {
         return;
       }
 
-      leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString();
+      leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString().trim();
 
-      final String ownerId = (data['ownerId'] ?? '').toString();
-      final int participantCount = parseInt(data['participantCount']);
-      final int maxParticipants = parseInt(data['maxParticipants']);
-      final String currentStatus =
+      final ownerId = (data['ownerId'] ?? '').toString().trim();
+      final participantCount = parseInt(data['participantCount']);
+      final maxParticipants = parseInt(data['maxParticipants']);
+      final currentStatus =
           (data['status'] ?? ActivityStatusValues.open).toString();
-      final bool isOwner = ownerId == currentUserId;
+      final isOwner = ownerId == currentUserId;
 
       if (!isOwner) {
-        final int newParticipantCount =
+        final newParticipantCount =
             participantCount > 0 ? participantCount - 1 : 0;
 
-        final String newStatus = computeActivityStatus(
+        final newStatus = computeActivityStatus(
           participantCount: newParticipantCount,
           maxParticipants: maxParticipants,
           currentStatus: currentStatus,
@@ -342,9 +531,9 @@ class ActivityRepository {
         return;
       }
 
-      final int newParticipantCount = participantCount - 1;
+      final newParticipantCount = participantCount - 1;
 
-      final String newStatus = computeActivityStatus(
+      final newStatus = computeActivityStatus(
         participantCount: newParticipantCount,
         maxParticipants: maxParticipants,
         currentStatus: currentStatus,
@@ -368,28 +557,28 @@ class ActivityRepository {
 
     if (leavingPseudo.isNotEmpty) {
       await _chatService.addSystemMessage(
-        activityId: activityId,
+        activityId: trimmedActivityId,
         text: '$leavingPseudo a quitté l’activité',
       );
     }
 
     if (ownerPendingSet) {
       await _chatService.addSystemMessage(
-        activityId: activityId,
+        activityId: trimmedActivityId,
         text: 'L’activité attend un nouvel organisateur',
       );
     }
   }
 
   Future<bool> claimOwnership(String activityId) async {
-    final activityRef = _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId);
+    final trimmedActivityId = activityId.trim();
+    if (trimmedActivityId.isEmpty) return false;
+
+    final activityRef = _activitiesRef.doc(trimmedActivityId);
     final participantRef = activityRef
         .collection(FirestoreCollections.participants)
         .doc(currentUserId);
-    final userRef =
-        _db.collection(FirestoreCollections.users).doc(currentUserId);
+    final userRef = _usersRef.doc(currentUserId);
 
     String pseudo = '';
 
@@ -407,17 +596,19 @@ class ActivityRepository {
         return false;
       }
 
-      final bool ownerPending =
-          (activityData['ownerPending'] ?? false) as bool;
-      final String existingOwnerId =
-          (activityData['ownerId'] ?? '').toString();
+      final ownerPending = _parseBool(activityData['ownerPending']);
+      final existingOwnerId = (activityData['ownerId'] ?? '').toString().trim();
 
       if (!ownerPending || existingOwnerId.isNotEmpty) {
         return false;
       }
 
       if (userDoc.exists && userDoc.data() != null) {
-        pseudo = (userDoc.data()!['pseudo'] ?? '').toString();
+        pseudo = (userDoc.data()!['pseudo'] ?? '').toString().trim();
+      }
+
+      if (pseudo.isEmpty) {
+        pseudo = await _userService.getCurrentUserPseudo();
       }
 
       transaction.update(activityRef, {
@@ -432,7 +623,7 @@ class ActivityRepository {
 
     if (success) {
       await _chatService.addSystemMessage(
-        activityId: activityId,
+        activityId: trimmedActivityId,
         text: '$pseudo est devenu organisateur',
       );
     }
@@ -441,6 +632,51 @@ class ActivityRepository {
   }
 
   Future<bool> canJoinActivity(Activity activity) async {
+    final freshActivity = await _activityService.getActivityById(activity.id);
+    if (freshActivity == null) {
+      return false;
+    }
+
+    if (!_canJoinBasedOnActivityState(freshActivity)) {
+      return false;
+    }
+
+    if (freshActivity.isGroupActivity) {
+      final groupId = freshActivity.groupId!.trim();
+      final isGroupMember =
+          await _groupsRepository.isCurrentUserMember(groupId);
+
+      if (!isGroupMember &&
+          freshActivity.visibility != ActivityVisibilityValues.public) {
+        return false;
+      }
+    }
+
+    if (freshActivity.maxParticipants <= 0) {
+      return true;
+    }
+
+    final participantCount =
+        await _activityService.getParticipantCount(freshActivity.id);
+
+    return participantCount < freshActivity.maxParticipants;
+  }
+
+  Future<bool> canEditActivity(Activity activity) async {
+    final participantCount =
+        await _activityService.getParticipantCount(activity.id);
+
+    return participantCount <= 1;
+  }
+
+  Future<bool> canDeleteOrEditNoteActivity(Activity activity) async {
+    final participantCount =
+        await _activityService.getParticipantCount(activity.id);
+
+    return participantCount <= 1;
+  }
+
+  bool _canJoinBasedOnActivityState(Activity activity) {
     if (activity.status == ActivityStatusValues.cancelled ||
         activity.status == ActivityStatusValues.done ||
         activity.status == ActivityStatusValues.full) {
@@ -451,24 +687,57 @@ class ActivityRepository {
       return false;
     }
 
-    if (activity.isGroupActivity) {
-      final groupId = activity.groupId!.trim();
-      final isGroupMember =
-          await _groupsRepository.isCurrentUserMember(groupId);
+    if (activity.hasEnded) {
+      return false;
+    }
 
-      if (!isGroupMember &&
-          activity.visibility != ActivityVisibilityValues.public) {
-        return false;
+    return true;
+  }
+
+  bool _parseBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is String) return value.trim().toLowerCase() == 'true';
+    return false;
+  }
+
+  DateTime? _combineLegacyDateAndTime(String day, String time) {
+    try {
+      final parsedDay = day.trim();
+      final parsedTime = time.trim();
+
+      if (parsedDay.isEmpty || parsedTime.isEmpty) {
+        return null;
       }
+
+      final date = DateTime.parse(parsedDay);
+      final parts = parsedTime.split(':');
+      if (parts.length < 2) return null;
+
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = int.tryParse(parts[1]) ?? 0;
+
+      return DateTime(
+        date.year,
+        date.month,
+        date.day,
+        hour,
+        minute,
+      );
+    } catch (_) {
+      return null;
     }
+  }
 
-    if (activity.maxParticipants <= 0) {
-      return true;
-    }
+  String _formatDateOnly(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
 
-    final participantCount =
-        await _activityService.getParticipantCount(activity.id);
-
-    return participantCount < activity.maxParticipants;
+  String _formatTimeOnly(DateTime value) {
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 }

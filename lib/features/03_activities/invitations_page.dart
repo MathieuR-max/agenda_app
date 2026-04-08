@@ -37,17 +37,7 @@ class InvitationsPage extends StatelessWidget {
   }
 
   String _statusLabel(ActivityInvitation invitation) {
-    switch (invitation.status) {
-      case ActivityInvitation.statusAccepted:
-        return 'Acceptée';
-      case ActivityInvitation.statusRefused:
-        return 'Refusée';
-      case ActivityInvitation.statusCancelled:
-        return 'Annulée';
-      case ActivityInvitation.statusPending:
-      default:
-        return 'En attente';
-    }
+    return invitation.statusLabel;
   }
 
   Future<void> _openActivityFromInvitation(
@@ -212,7 +202,9 @@ class InvitationsPage extends StatelessWidget {
                         const SizedBox(height: 4),
                         Text(invitation.activityLocation),
                         const SizedBox(height: 8),
-                        Text('Invité par : ${invitation.fromUserPseudo}'),
+                        Text(
+                          'Invité par : ${invitation.fromUserPseudo.trim().isNotEmpty ? invitation.fromUserPseudo : 'Utilisateur'}',
+                        ),
                         const SizedBox(height: 10),
                         Row(
                           children: [

@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
+import 'package:agenda_app/core/utils/parsers.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/activity_invitation.dart';
-import 'package:agenda_app/core/utils/parsers.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
@@ -23,56 +23,149 @@ class ActivityInvitationRepository {
 
   String get currentUserId => CurrentUser.id;
 
+  CollectionReference<Map<String, dynamic>> get _activitiesRef =>
+      _db.collection(FirestoreCollections.activities);
+
+  CollectionReference<Map<String, dynamic>> get _usersRef =>
+      _db.collection(FirestoreCollections.users);
+
+  CollectionReference<Map<String, dynamic>> get _activityInvitationsRef =>
+      _db.collection(FirestoreCollections.activityInvitations);
+
+  Future<bool> isUserAlreadyParticipant({
+    required String activityId,
+    required String userId,
+  }) async {
+    final trimmedActivityId = activityId.trim();
+    final trimmedUserId = userId.trim();
+
+    if (trimmedActivityId.isEmpty || trimmedUserId.isEmpty) {
+      return false;
+    }
+
+    final participantDoc = await _activitiesRef
+        .doc(trimmedActivityId)
+        .collection(FirestoreCollections.participants)
+        .doc(trimmedUserId)
+        .get();
+
+    return participantDoc.exists;
+  }
+
+  Future<bool> hasPendingInvitation({
+    required String activityId,
+    required String toUserId,
+  }) async {
+    final trimmedActivityId = activityId.trim();
+    final trimmedToUserId = toUserId.trim();
+
+    if (trimmedActivityId.isEmpty || trimmedToUserId.isEmpty) {
+      return false;
+    }
+
+    final query = await _activityInvitationsRef
+        .where('activityId', isEqualTo: trimmedActivityId)
+        .where('toUserId', isEqualTo: trimmedToUserId)
+        .where('status', isEqualTo: InvitationStatusValues.pending)
+        .limit(1)
+        .get();
+
+    return query.docs.isNotEmpty;
+  }
+
+  Future<Set<String>> getPendingInvitationTargetIds(String activityId) async {
+    final trimmedActivityId = activityId.trim();
+
+    if (trimmedActivityId.isEmpty) {
+      return <String>{};
+    }
+
+    final snapshot = await _activityInvitationsRef
+        .where('activityId', isEqualTo: trimmedActivityId)
+        .where('status', isEqualTo: InvitationStatusValues.pending)
+        .get();
+
+    return snapshot.docs
+        .map((doc) => (doc.data()['toUserId'] ?? '').toString().trim())
+        .where((id) => id.isNotEmpty)
+        .toSet();
+  }
+
+  Stream<Set<String>> watchPendingInvitationTargetIds(String activityId) {
+    final trimmedActivityId = activityId.trim();
+
+    if (trimmedActivityId.isEmpty) {
+      return Stream.value(<String>{});
+    }
+
+    return _activityInvitationsRef
+        .where('activityId', isEqualTo: trimmedActivityId)
+        .where('status', isEqualTo: InvitationStatusValues.pending)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => (doc.data()['toUserId'] ?? '').toString().trim())
+              .where((id) => id.isNotEmpty)
+              .toSet(),
+        );
+  }
+
   Future<bool> sendActivityInvitation({
     required Activity activity,
     required String toUserId,
   }) async {
-    final activityRef = _db
-        .collection(FirestoreCollections.activities)
-        .doc(activity.id);
-    final toUserRef =
-        _db.collection(FirestoreCollections.users).doc(toUserId);
-    final invitationsRef =
-        _db.collection(FirestoreCollections.activityInvitations);
+    final trimmedActivityId = activity.id.trim();
+    final trimmedToUserId = toUserId.trim();
 
+    if (trimmedActivityId.isEmpty || trimmedToUserId.isEmpty) {
+      return false;
+    }
+
+    if (trimmedToUserId == currentUserId) {
+      return false;
+    }
+
+    final activityRef = _activitiesRef.doc(trimmedActivityId);
+    final toUserRef = _usersRef.doc(trimmedToUserId);
     final fromUserPseudo = await _userService.getCurrentUserPseudo();
 
     return await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
       final toUserDoc = await transaction.get(toUserRef);
 
-      if (!activityDoc.exists || !toUserDoc.exists || toUserId == currentUserId) {
+      if (!activityDoc.exists || !toUserDoc.exists) {
         return false;
       }
 
       final activityData = activityDoc.data();
-      if (activityData == null) {
+      final toUserData = toUserDoc.data();
+
+      if (activityData == null || toUserData == null) {
         return false;
       }
 
-      final status =
-          (activityData['status'] ?? ActivityStatusValues.open).toString();
+      final currentActivity = Activity.fromMap(activityDoc.id, activityData);
+      final status = currentActivity.status;
 
       if (status == ActivityStatusValues.cancelled ||
-          status == ActivityStatusValues.done) {
+          status == ActivityStatusValues.done ||
+          currentActivity.hasEnded) {
         return false;
       }
 
-      final participantDoc = await _db
-          .collection(FirestoreCollections.activities)
-          .doc(activity.id)
+      final participantRef = activityRef
           .collection(FirestoreCollections.participants)
-          .doc(toUserId)
-          .get();
+          .doc(trimmedToUserId);
+
+      final participantDoc = await transaction.get(participantRef);
 
       if (participantDoc.exists) {
         return false;
       }
 
-      final existingInviteQuery = await _db
-          .collection(FirestoreCollections.activityInvitations)
-          .where('activityId', isEqualTo: activity.id)
-          .where('toUserId', isEqualTo: toUserId)
+      final existingInviteQuery = await _activityInvitationsRef
+          .where('activityId', isEqualTo: currentActivity.id)
+          .where('toUserId', isEqualTo: trimmedToUserId)
           .where('status', isEqualTo: InvitationStatusValues.pending)
           .limit(1)
           .get();
@@ -81,19 +174,19 @@ class ActivityInvitationRepository {
         return false;
       }
 
-      final toUserPseudo = (toUserDoc.data()?['pseudo'] ?? '').toString();
+      final toUserPseudo = (toUserData['pseudo'] ?? '').toString().trim();
 
-      final newInvitationRef = invitationsRef.doc();
+      final newInvitationRef = _activityInvitationsRef.doc();
 
       transaction.set(newInvitationRef, {
-        'activityId': activity.id,
-        'activityTitle': activity.title,
-        'activityDay': activity.day,
-        'activityStartTime': activity.startTime,
-        'activityLocation': activity.location,
+        'activityId': currentActivity.id,
+        'activityTitle': currentActivity.title,
+        'activityDay': currentActivity.effectiveDay,
+        'activityStartTime': currentActivity.effectiveStartTime,
+        'activityLocation': currentActivity.location,
         'fromUserId': currentUserId,
         'fromUserPseudo': fromUserPseudo,
-        'toUserId': toUserId,
+        'toUserId': trimmedToUserId,
         'toUserPseudo': toUserPseudo,
         'status': InvitationStatusValues.pending,
         'createdAt': FieldValue.serverTimestamp(),
@@ -105,12 +198,9 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> acceptInvitation(ActivityInvitation invitation) async {
-    final invitationRef = _db
-        .collection(FirestoreCollections.activityInvitations)
-        .doc(invitation.id);
-    final activityRef = _db
-        .collection(FirestoreCollections.activities)
-        .doc(invitation.activityId);
+    final invitationRef =
+        _activityInvitationsRef.doc(invitation.id.trim());
+    final activityRef = _activitiesRef.doc(invitation.activityId.trim());
     final participantRef = activityRef
         .collection(FirestoreCollections.participants)
         .doc(currentUserId);
@@ -149,12 +239,13 @@ class ActivityInvitationRepository {
         return false;
       }
 
-      final activityStatus =
-          (activityData['status'] ?? ActivityStatusValues.open).toString();
+      final currentActivity = Activity.fromMap(activityDoc.id, activityData);
+      final activityStatus = currentActivity.status;
 
       if (activityStatus == ActivityStatusValues.cancelled ||
           activityStatus == ActivityStatusValues.done ||
-          activityStatus == ActivityStatusValues.full) {
+          activityStatus == ActivityStatusValues.full ||
+          currentActivity.hasEnded) {
         return false;
       }
 
@@ -203,9 +294,7 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> refuseInvitation(String invitationId) async {
-    final invitationRef = _db
-        .collection(FirestoreCollections.activityInvitations)
-        .doc(invitationId);
+    final invitationRef = _activityInvitationsRef.doc(invitationId.trim());
 
     return await _db.runTransaction((transaction) async {
       final invitationDoc = await transaction.get(invitationRef);
@@ -232,9 +321,7 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> cancelInvitation(String invitationId) async {
-    final invitationRef = _db
-        .collection(FirestoreCollections.activityInvitations)
-        .doc(invitationId);
+    final invitationRef = _activityInvitationsRef.doc(invitationId.trim());
 
     return await _db.runTransaction((transaction) async {
       final invitationDoc = await transaction.get(invitationRef);

@@ -58,6 +58,72 @@ class SearchDetailPage extends StatelessWidget {
     );
   }
 
+  String _resolvedCategoryLabel(String value) {
+    final trimmedCategory = value.trim();
+    return trimmedCategory.isEmpty ? 'Toutes' : trimmedCategory;
+  }
+
+  String _formatDateOnly(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  String _formatTimeOnly(DateTime value) {
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  String _resolvedDayLabel(Map<String, dynamic> search) {
+    final startDateTime = search['startDateTime'] as DateTime?;
+    if (startDateTime != null) {
+      return _formatDateOnly(startDateTime);
+    }
+
+    final rawDay = (search['day'] ?? '').toString().trim();
+    return rawDay.isEmpty ? day.trim() : rawDay;
+  }
+
+  String _resolvedStartTimeLabel(Map<String, dynamic> search) {
+    final startDateTime = search['startDateTime'] as DateTime?;
+    if (startDateTime != null) {
+      return _formatTimeOnly(startDateTime);
+    }
+
+    final rawStartTime = (search['startTime'] ?? '').toString().trim();
+    return rawStartTime.isEmpty ? startTime.trim() : rawStartTime;
+  }
+
+  String _resolvedEndTimeLabel(Map<String, dynamic> search) {
+    final endDateTime = search['endDateTime'] as DateTime?;
+    if (endDateTime != null) {
+      return _formatTimeOnly(endDateTime);
+    }
+
+    final rawEndTime = (search['endTime'] ?? '').toString().trim();
+    return rawEndTime.isEmpty ? endTime.trim() : rawEndTime;
+  }
+
+  String _resolvedScheduleLabel(Map<String, dynamic> search) {
+    final resolvedDay = _resolvedDayLabel(search);
+    final resolvedStart = _resolvedStartTimeLabel(search);
+    final resolvedEnd = _resolvedEndTimeLabel(search);
+
+    if (resolvedDay.isNotEmpty &&
+        resolvedStart.isNotEmpty &&
+        resolvedEnd.isNotEmpty) {
+      return '$resolvedDay • $resolvedStart - $resolvedEnd';
+    }
+
+    if (resolvedDay.isNotEmpty) {
+      return resolvedDay;
+    }
+
+    return 'Créneau non renseigné';
+  }
+
   @override
   Widget build(BuildContext context) {
     final searchService = SearchFirestoreService();
@@ -66,46 +132,77 @@ class SearchDetailPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Détail recherche'),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Recherche d’activité',
-              style: const TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Jour : $day'),
-                    const SizedBox(height: 8),
-                    Text('Heure : $startTime - $endTime'),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Catégorie : ${category.trim().isEmpty ? 'Toutes' : category}',
-                    ),
-                  ],
+      body: StreamBuilder<Map<String, dynamic>?>(
+        stream: searchService.watchSearch(searchId),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return Center(
+              child: Text('Erreur recherche : ${snapshot.error}'),
+            );
+          }
+
+          if (!snapshot.hasData) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          final search = snapshot.data;
+
+          if (search == null) {
+            return const Center(
+              child: Text('Recherche introuvable'),
+            );
+          }
+
+          final resolvedCategory =
+              (search['category'] ?? '').toString().trim().isNotEmpty
+                  ? (search['category'] ?? '').toString()
+                  : category;
+
+          final scheduleLabel = _resolvedScheduleLabel(search);
+
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Recherche d’activité',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Créneau : $scheduleLabel'),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Catégorie : ${_resolvedCategoryLabel(resolvedCategory)}',
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () =>
+                        _confirmDeleteSearch(context, searchService),
+                    child: const Text('Supprimer la recherche'),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () => _confirmDeleteSearch(context, searchService),
-                child: const Text('Supprimer la recherche'),
-              ),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

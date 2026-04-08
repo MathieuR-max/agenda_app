@@ -97,6 +97,10 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
     );
   }
 
+  String _formatActivitySchedule(Activity activity) {
+    return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
+  }
+
   Future<void> _cancelInvitation(
     BuildContext context,
     ActivityInvitation invitation,
@@ -158,7 +162,7 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<Map<String, dynamic>?>(
+    return StreamBuilder<Activity?>(
       stream: activityService.watchActivity(widget.activity.id),
       builder: (context, activitySnapshot) {
         if (activitySnapshot.hasError) {
@@ -172,7 +176,7 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
           );
         }
 
-        if (!activitySnapshot.hasData) {
+        if (activitySnapshot.connectionState == ConnectionState.waiting) {
           return Scaffold(
             appBar: AppBar(
               title: const Text('Invitations envoyées'),
@@ -183,15 +187,13 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
           );
         }
 
-        final activityData = activitySnapshot.data;
-        final Activity? currentActivity = activityData == null
-            ? null
-            : Activity.fromMap(widget.activity.id, activityData);
+        final Activity? currentActivity = activitySnapshot.data;
 
         final bool activityMissing = currentActivity == null;
         final bool invitationsReadOnly = activityMissing ||
             currentActivity.isCancelled ||
-            currentActivity.isDone;
+            currentActivity.isDone ||
+            currentActivity.hasEnded;
 
         return Scaffold(
           appBar: AppBar(
@@ -292,7 +294,9 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          '${currentActivity?.day ?? widget.activity.day} • ${currentActivity?.startTime ?? widget.activity.startTime} - ${currentActivity?.endTime ?? widget.activity.endTime}',
+                          currentActivity != null
+                              ? _formatActivitySchedule(currentActivity)
+                              : _formatActivitySchedule(widget.activity),
                         ),
                         const SizedBox(height: 2),
                         Text(currentActivity?.location ?? widget.activity.location),

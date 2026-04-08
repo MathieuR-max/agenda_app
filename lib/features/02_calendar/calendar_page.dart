@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/activity.dart';
-import '../../models/activity_invitation.dart';
 import '../../models/availability.dart';
 import '../../services/firestore/activity_firestore_service.dart';
-import '../../services/firestore/activity_invitation_firestore_service.dart';
 import '../../services/firestore/availability_firestore_service.dart';
 import '../../services/firestore/search_firestore_service.dart';
 import '../01_auth/test_user_selector_page.dart';
@@ -12,8 +9,6 @@ import '../03_activities/activity_detail_page.dart';
 import '../03_activities/create_activity_page.dart';
 import '../03_activities/search_activity_page.dart';
 import '../03_activities/search_detail_page.dart';
-import '../03_activities/invitations_page.dart';
-import '../04_profile/my_profile_page.dart';
 import 'availability_detail_page.dart';
 import 'note_slot_page.dart';
 
@@ -24,12 +19,22 @@ class CalendarPage extends StatefulWidget {
   State<CalendarPage> createState() => _CalendarPageState();
 }
 
+enum CalendarFilterType {
+  none,
+  created,
+  joined,
+  searches,
+  availabilities,
+  full,
+  cancelled,
+  done,
+  ownerRequired,
+}
+
 class _CalendarPageState extends State<CalendarPage> {
   final ActivityFirestoreService activityService = ActivityFirestoreService();
   final AvailabilityFirestoreService availabilityService =
       AvailabilityFirestoreService();
-  final ActivityInvitationFirestoreService invitationService =
-      ActivityInvitationFirestoreService();
   final SearchFirestoreService searchService = SearchFirestoreService();
 
   final List<String> days = const [
@@ -41,6 +46,12 @@ class _CalendarPageState extends State<CalendarPage> {
     'Samedi',
     'Dimanche',
   ];
+
+  CalendarFilterType _activeFilter = CalendarFilterType.none;
+  bool _showAdvancedFilters = false;
+  DateTime _displayedWeekAnchor = DateTime.now();
+
+  bool get _hasActiveFilter => _activeFilter != CalendarFilterType.none;
 
   List<String> generateTimeSlots() {
     final List<String> slots = [];
@@ -64,18 +75,160 @@ class _CalendarPageState extends State<CalendarPage> {
     return hour * 60 + minute;
   }
 
+  DateTime _startOfWeek(DateTime date) {
+    final normalized = DateTime(date.year, date.month, date.day);
+    final weekday = normalized.weekday;
+    return normalized.subtract(Duration(days: weekday - 1));
+  }
+
+  DateTime _endOfWeek(DateTime date) {
+    return _startOfWeek(date).add(const Duration(days: 6));
+  }
+
+  DateTime _startOfNextWeek(DateTime date) {
+    return _startOfWeek(date).add(const Duration(days: 7));
+  }
+
+  DateTime _getDateForDay(String day) {
+    final weekStart = _startOfWeek(_displayedWeekAnchor);
+    final dayIndex = days.indexOf(day);
+
+    if (dayIndex == -1) {
+      return weekStart;
+    }
+
+    return DateTime(
+      weekStart.year,
+      weekStart.month,
+      weekStart.day + dayIndex,
+    );
+  }
+
+  void _changeWeek(int delta) {
+    setState(() {
+      _displayedWeekAnchor = _displayedWeekAnchor.add(
+        Duration(days: 7 * delta),
+      );
+    });
+  }
+
+  String _monthLabel(int month) {
+    const months = [
+      '',
+      'janvier',
+      'février',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'août',
+      'septembre',
+      'octobre',
+      'novembre',
+      'décembre',
+    ];
+    return months[month];
+  }
+
+  String _formatWeekRange() {
+    final start = _startOfWeek(_displayedWeekAnchor);
+    final end = _endOfWeek(_displayedWeekAnchor);
+
+    if (start.month == end.month && start.year == end.year) {
+      return 'Semaine du ${start.day} au ${end.day} ${_monthLabel(start.month)}';
+    }
+
+    if (start.year == end.year) {
+      return 'Semaine du ${start.day} ${_monthLabel(start.month)} au ${end.day} ${_monthLabel(end.month)}';
+    }
+
+    return 'Semaine du ${start.day} ${_monthLabel(start.month)} ${start.year} au ${end.day} ${_monthLabel(end.month)} ${end.year}';
+  }
+
+  DateTime? _searchResolvedStartDateTime(Map<String, dynamic> search) {
+    final value = search['startDateTime'];
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  DateTime? _searchResolvedEndDateTime(Map<String, dynamic> search) {
+    final value = search['endDateTime'];
+    if (value is DateTime) return value;
+    return null;
+  }
+
+  DateTime? _searchEffectiveSortDateTime(Map<String, dynamic> search) {
+    final value = search['effectiveSortDateTime'];
+    if (value is DateTime) return value;
+    return _searchResolvedStartDateTime(search);
+  }
+
+  bool _isDateInDisplayedWeek(DateTime date) {
+    final start = _startOfWeek(_displayedWeekAnchor);
+    final endExclusive = _startOfNextWeek(_displayedWeekAnchor);
+
+    return !date.isBefore(start) && date.isBefore(endExclusive);
+  }
+
+  bool _isRangeIntersectingDisplayedWeek(DateTime? start, DateTime? end) {
+    if (start == null) return false;
+
+    final weekStart = _startOfWeek(_displayedWeekAnchor);
+    final weekEndExclusive = _startOfNextWeek(_displayedWeekAnchor);
+    final effectiveEnd = end ?? start;
+
+    return start.isBefore(weekEndExclusive) && effectiveEnd.isAfter(weekStart);
+  }
+
+  List<Activity> _filterActivitiesForDisplayedWeek(List<Activity> activities) {
+    return activities.where((activity) {
+      return _isRangeIntersectingDisplayedWeek(
+        activity.resolvedStartDateTime,
+        activity.resolvedEndDateTime,
+      );
+    }).toList();
+  }
+
+  List<Availability> _filterAvailabilitiesForDisplayedWeek(
+    List<Availability> availabilities,
+  ) {
+    return availabilities.where((availability) {
+      return _isRangeIntersectingDisplayedWeek(
+        availability.resolvedStartDateTime,
+        availability.resolvedEndDateTime,
+      );
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _filterSearchesForDisplayedWeek(
+    List<Map<String, dynamic>> searches,
+  ) {
+    return searches.where((search) {
+      return _isRangeIntersectingDisplayedWeek(
+        _searchResolvedStartDateTime(search),
+        _searchResolvedEndDateTime(search),
+      );
+    }).toList();
+  }
+
   Activity? getActivityForSlot(
     String day,
     String slotTime,
     List<Activity> activities,
   ) {
     final slotMinutes = timeToMinutes(slotTime);
+    final slotDate = _getDateForDay(day);
 
     for (final activity in activities) {
-      if (activity.day != day) continue;
+      final activityStart = activity.resolvedStartDateTime;
+      final activityEnd = activity.resolvedEndDateTime;
 
-      final start = timeToMinutes(activity.startTime);
-      final end = timeToMinutes(activity.endTime);
+      if (activityStart == null || activityEnd == null) continue;
+      if (!DateUtils.isSameDay(activityStart, slotDate)) continue;
+
+      final start = activityStart.hour * 60 + activityStart.minute;
+      final end = activityEnd.hour * 60 + activityEnd.minute;
 
       if (slotMinutes >= start && slotMinutes < end) {
         return activity;
@@ -90,12 +243,17 @@ class _CalendarPageState extends State<CalendarPage> {
     List<Availability> availabilities,
   ) {
     final slotMinutes = timeToMinutes(slotTime);
+    final slotDate = _getDateForDay(day);
 
     for (final availability in availabilities) {
-      if (availability.day != day) continue;
+      final availabilityStart = availability.resolvedStartDateTime;
+      final availabilityEnd = availability.resolvedEndDateTime;
 
-      final start = timeToMinutes(availability.startTime);
-      final end = timeToMinutes(availability.endTime);
+      if (availabilityStart == null || availabilityEnd == null) continue;
+      if (!DateUtils.isSameDay(availabilityStart, slotDate)) continue;
+
+      final start = availabilityStart.hour * 60 + availabilityStart.minute;
+      final end = availabilityEnd.hour * 60 + availabilityEnd.minute;
 
       if (slotMinutes >= start && slotMinutes < end) {
         return availability;
@@ -107,23 +265,23 @@ class _CalendarPageState extends State<CalendarPage> {
   Map<String, dynamic>? getSearchForSlot(
     String day,
     String slotTime,
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> searches,
+    List<Map<String, dynamic>> searches,
   ) {
     final slotMinutes = timeToMinutes(slotTime);
+    final slotDate = _getDateForDay(day);
 
     for (final search in searches) {
-      final data = search.data();
+      final startDateTime = _searchResolvedStartDateTime(search);
+      final endDateTime = _searchResolvedEndDateTime(search);
 
-      if ((data['day'] ?? '').toString() != day) continue;
+      if (startDateTime == null || endDateTime == null) continue;
+      if (!DateUtils.isSameDay(startDateTime, slotDate)) continue;
 
-      final start = timeToMinutes((data['startTime'] ?? '').toString());
-      final end = timeToMinutes((data['endTime'] ?? '').toString());
+      final start = startDateTime.hour * 60 + startDateTime.minute;
+      final end = endDateTime.hour * 60 + endDateTime.minute;
 
       if (slotMinutes >= start && slotMinutes < end) {
-        return {
-          'id': search.id,
-          ...data,
-        };
+        return search;
       }
     }
     return null;
@@ -140,6 +298,102 @@ class _CalendarPageState extends State<CalendarPage> {
         .toList();
   }
 
+  bool _isActivityStartSlot(Activity activity, String slotTime) {
+    final start = activity.resolvedStartDateTime;
+    if (start == null) return false;
+
+    final time =
+        '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
+    return time == slotTime;
+  }
+
+  bool _isAvailabilityStartSlot(Availability availability, String slotTime) {
+    final start = availability.resolvedStartDateTime;
+    if (start == null) return false;
+
+    final time =
+        '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
+    return time == slotTime;
+  }
+
+  bool _isSearchStartSlot(
+    Map<String, dynamic> search,
+    String slotTime,
+  ) {
+    final start = _searchResolvedStartDateTime(search);
+    if (start == null) return false;
+
+    final time =
+        '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
+    return time == slotTime;
+  }
+
+  bool _matchesCreatedFilter(Activity activity) {
+    switch (_activeFilter) {
+      case CalendarFilterType.none:
+      case CalendarFilterType.created:
+        return true;
+      case CalendarFilterType.full:
+        return activity.isFull;
+      case CalendarFilterType.cancelled:
+        return activity.isCancelled;
+      case CalendarFilterType.done:
+        return activity.isDone;
+      case CalendarFilterType.ownerRequired:
+        return activity.requiresOwner;
+      case CalendarFilterType.joined:
+      case CalendarFilterType.searches:
+      case CalendarFilterType.availabilities:
+        return false;
+    }
+  }
+
+  bool _matchesJoinedFilter(Activity activity) {
+    switch (_activeFilter) {
+      case CalendarFilterType.none:
+      case CalendarFilterType.joined:
+        return true;
+      case CalendarFilterType.full:
+        return activity.isFull;
+      case CalendarFilterType.cancelled:
+        return activity.isCancelled;
+      case CalendarFilterType.done:
+        return activity.isDone;
+      case CalendarFilterType.ownerRequired:
+        return activity.requiresOwner;
+      case CalendarFilterType.created:
+      case CalendarFilterType.searches:
+      case CalendarFilterType.availabilities:
+        return false;
+    }
+  }
+
+  bool _matchesAvailabilityFilter(Availability availability) {
+    switch (_activeFilter) {
+      case CalendarFilterType.none:
+      case CalendarFilterType.availabilities:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  bool _matchesSearchFilter(Map<String, dynamic> search) {
+    switch (_activeFilter) {
+      case CalendarFilterType.none:
+      case CalendarFilterType.searches:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  void _setActiveFilter(CalendarFilterType filter) {
+    setState(() {
+      _activeFilter = filter;
+    });
+  }
+
   Future<void> _openUserSelector() async {
     final changed = await Navigator.push<bool>(
       context,
@@ -153,76 +407,652 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
-  Future<void> _openInvitationsPage() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const InvitationsPage(),
-      ),
-    );
-
-    if (!mounted) return;
-    setState(() {});
+  bool _isInactiveActivity(Activity activity) {
+    return activity.isCancelled || activity.isDone;
   }
 
-  Future<void> _openMyProfilePage() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const MyProfilePage(),
-      ),
-    );
+  Color _getActivityBaseColor({
+    required bool isCreated,
+    required Activity activity,
+  }) {
+    if (activity.isCancelled) {
+      return Colors.red.shade100;
+    }
 
-    if (!mounted) return;
-    setState(() {});
+    if (activity.isDone) {
+      return Colors.blueGrey.shade100;
+    }
+
+    return isCreated ? Colors.blue[200]! : Colors.purple[200]!;
   }
 
-  Widget _buildInvitationsIcon() {
-    return StreamBuilder<List<ActivityInvitation>>(
-      stream: invitationService.getPendingReceivedInvitations(),
-      builder: (context, snapshot) {
-        final pendingInvitations = snapshot.data ?? [];
-        final pendingCount = pendingInvitations.length;
+  Color _getActivityBorderColor(Activity activity) {
+    if (activity.isCancelled) {
+      return Colors.red.shade300;
+    }
 
-        return IconButton(
-          tooltip: 'Invitations',
-          onPressed: _openInvitationsPage,
-          icon: Stack(
-            clipBehavior: Clip.none,
+    if (activity.isDone) {
+      return Colors.blueGrey.shade300;
+    }
+
+    return Colors.grey.shade300;
+  }
+
+  Color _getMutedColor(Color baseColor) {
+    return Color.lerp(baseColor, Colors.white, 0.62) ?? baseColor;
+  }
+
+  Color _getMutedBorderColor(Color baseColor) {
+    return Color.lerp(baseColor, Colors.grey.shade300, 0.5) ?? baseColor;
+  }
+
+  List<String> _getActivityDisplayIndicators(Activity activity) {
+    final indicators = List<String>.from(activity.calendarIndicators);
+
+    if (activity.isCancelled) {
+      indicators.insert(0, 'Annulée');
+    } else if (activity.isDone) {
+      indicators.insert(0, 'Terminée');
+    }
+
+    return indicators;
+  }
+
+  int _countFullActivities(
+    List<Activity> createdActivities,
+    List<Activity> joinedActivities,
+  ) {
+    return [...createdActivities, ...joinedActivities]
+        .where((activity) => activity.isFull)
+        .length;
+  }
+
+  int _countCancelledActivities(
+    List<Activity> createdActivities,
+    List<Activity> joinedActivities,
+  ) {
+    return [...createdActivities, ...joinedActivities]
+        .where((activity) => activity.isCancelled)
+        .length;
+  }
+
+  int _countDoneActivities(
+    List<Activity> createdActivities,
+    List<Activity> joinedActivities,
+  ) {
+    return [...createdActivities, ...joinedActivities]
+        .where((activity) => activity.isDone)
+        .length;
+  }
+
+  int _countOwnerRequiredActivities(
+    List<Activity> createdActivities,
+    List<Activity> joinedActivities,
+  ) {
+    return [...createdActivities, ...joinedActivities]
+        .where((activity) => activity.requiresOwner)
+        .length;
+  }
+
+  Widget _buildActivityStartContent(
+    Activity activity, {
+    required bool isCreated,
+    bool isDimmed = false,
+  }) {
+    final indicators = _getActivityDisplayIndicators(activity);
+    final isInactive = _isInactiveActivity(activity);
+
+    return Opacity(
+      opacity: isDimmed ? 0.38 : (isInactive ? 0.72 : 1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            activity.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+              color: isInactive || isDimmed ? Colors.black54 : Colors.black87,
+              decoration: activity.isCancelled
+                  ? TextDecoration.lineThrough
+                  : TextDecoration.none,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Wrap(
+            spacing: 3,
+            runSpacing: 3,
             children: [
-              const Icon(Icons.mail_outline),
-              if (pendingCount > 0)
-                Positioned(
-                  right: -6,
-                  top: -6,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    constraints: const BoxConstraints(
-                      minWidth: 18,
-                      minHeight: 18,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      pendingCount > 99 ? '99+' : '$pendingCount',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+              _buildMiniBadge(
+                isCreated ? 'Créée' : 'Rejointe',
+                backgroundColor: isCreated
+                    ? Colors.blue.shade700
+                    : Colors.purple.shade700,
+                textColor: Colors.white,
+                isDimmed: isDimmed,
+              ),
+              _buildMiniBadge(
+                activity.activityTypeLabel,
+                backgroundColor: Colors.white.withOpacity(0.85),
+                textColor:
+                    isInactive || isDimmed ? Colors.black54 : Colors.black87,
+                isDimmed: isDimmed,
+              ),
+              if (isDimmed)
+                _buildMiniBadge(
+                  'Hors filtre',
+                  backgroundColor: Colors.grey.shade200,
+                  textColor: Colors.grey.shade700,
+                  isDimmed: false,
+                ),
+              for (final indicator in indicators)
+                _buildMiniBadge(
+                  indicator,
+                  backgroundColor: _getStatusBadgeBackgroundColor(
+                    activity,
+                    indicator,
                   ),
+                  textColor: _getStatusBadgeTextColor(
+                    activity,
+                    indicator,
+                  ),
+                  isDimmed: isDimmed,
                 ),
             ],
           ),
-        );
-      },
+        ],
+      ),
+    );
+  }
+
+  Color _getStatusBadgeBackgroundColor(Activity activity, String indicator) {
+    if (indicator == 'Annulée') {
+      return Colors.red.shade200;
+    }
+
+    if (indicator == 'Terminée') {
+      return Colors.blueGrey.shade200;
+    }
+
+    if (_isInactiveActivity(activity)) {
+      return Colors.white.withOpacity(0.7);
+    }
+
+    return Colors.white.withOpacity(0.85);
+  }
+
+  Color _getStatusBadgeTextColor(Activity activity, String indicator) {
+    if (indicator == 'Annulée') {
+      return Colors.red.shade900;
+    }
+
+    if (indicator == 'Terminée') {
+      return Colors.blueGrey.shade900;
+    }
+
+    return _isInactiveActivity(activity) ? Colors.black54 : Colors.black87;
+  }
+
+  Widget _buildAvailabilityStartContent(
+    Availability availability, {
+    bool isDimmed = false,
+  }) {
+    return Opacity(
+      opacity: isDimmed ? 0.38 : 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            availability.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+              color: isDimmed ? Colors.black54 : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Wrap(
+            spacing: 3,
+            runSpacing: 3,
+            children: [
+              _buildMiniBadge(
+                availability.type,
+                backgroundColor: Colors.white.withOpacity(0.85),
+                textColor: Colors.black87,
+                isDimmed: isDimmed,
+              ),
+              if (availability.note.trim().isNotEmpty)
+                _buildMiniBadge(
+                  'Note',
+                  backgroundColor: Colors.white.withOpacity(0.85),
+                  textColor: Colors.black87,
+                  isDimmed: isDimmed,
+                ),
+              if (isDimmed)
+                _buildMiniBadge(
+                  'Hors filtre',
+                  backgroundColor: Colors.grey.shade200,
+                  textColor: Colors.grey.shade700,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchStartContent(
+    Map<String, dynamic> search, {
+    bool isDimmed = false,
+  }) {
+    final category = (search['category'] ?? '').toString().trim();
+
+    return Opacity(
+      opacity: isDimmed ? 0.38 : 1,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recherche activité',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+              color: isDimmed ? Colors.black54 : Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Wrap(
+            spacing: 3,
+            runSpacing: 3,
+            children: [
+              _buildMiniBadge(
+                'Recherche',
+                backgroundColor: Colors.white.withOpacity(0.85),
+                textColor: Colors.black87,
+                isDimmed: isDimmed,
+              ),
+              if (category.isNotEmpty)
+                _buildMiniBadge(
+                  category,
+                  backgroundColor: Colors.white.withOpacity(0.85),
+                  textColor: Colors.black87,
+                  isDimmed: isDimmed,
+                ),
+              if (isDimmed)
+                _buildMiniBadge(
+                  'Hors filtre',
+                  backgroundColor: Colors.grey.shade200,
+                  textColor: Colors.grey.shade700,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniBadge(
+    String text, {
+    required Color backgroundColor,
+    required Color textColor,
+    bool isDimmed = false,
+  }) {
+    final resolvedBackgroundColor =
+        isDimmed ? _getMutedColor(backgroundColor) : backgroundColor;
+    final resolvedTextColor = isDimmed
+        ? Color.lerp(textColor, Colors.grey.shade600, 0.45) ?? textColor
+        : textColor;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 4,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: resolvedBackgroundColor,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 7,
+          fontWeight: FontWeight.w600,
+          color: resolvedTextColor,
+          height: 1,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContinuationMarker({
+    bool isInactive = false,
+    bool isDimmed = false,
+  }) {
+    return Align(
+      alignment: Alignment.topLeft,
+      child: Opacity(
+        opacity: isDimmed ? 0.28 : (isInactive ? 0.55 : 1),
+        child: Container(
+          width: 18,
+          height: 4,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(
+              isDimmed ? 0.08 : (isInactive ? 0.12 : 0.18),
+            ),
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactFilterRow({
+    required List<Widget> children,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: children.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, index) => children[index],
+      ),
+    );
+  }
+
+  Widget _buildWeekNavigator() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+      child: Row(
+        children: [
+          IconButton(
+            onPressed: () => _changeWeek(-1),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Semaine précédente',
+          ),
+          Expanded(
+            child: Text(
+              _formatWeekRange(),
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => _changeWeek(1),
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Semaine suivante',
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWeeklySummary(
+    List<Activity> createdActivities,
+    List<Activity> joinedActivities,
+    List<Availability> availabilities,
+    List<Map<String, dynamic>> searches,
+  ) {
+    final fullCount = _countFullActivities(
+      createdActivities,
+      joinedActivities,
+    );
+    final cancelledCount = _countCancelledActivities(
+      createdActivities,
+      joinedActivities,
+    );
+    final doneCount = _countDoneActivities(
+      createdActivities,
+      joinedActivities,
+    );
+    final ownerRequiredCount = _countOwnerRequiredActivities(
+      createdActivities,
+      joinedActivities,
+    );
+
+    final mainFilters = [
+      _buildSummaryChip(
+        label: 'Tout',
+        value: null,
+        backgroundColor: Colors.grey.shade200,
+        textColor: Colors.grey.shade900,
+        isActive: _activeFilter == CalendarFilterType.none,
+        onTap: () => _setActiveFilter(CalendarFilterType.none),
+      ),
+      _buildSummaryChip(
+        label: 'Créées',
+        value: createdActivities.length,
+        backgroundColor: Colors.blue.shade100,
+        textColor: Colors.blue.shade900,
+        isActive: _activeFilter == CalendarFilterType.created,
+        onTap: () => _setActiveFilter(CalendarFilterType.created),
+      ),
+      _buildSummaryChip(
+        label: 'Rejointes',
+        value: joinedActivities.length,
+        backgroundColor: Colors.purple.shade100,
+        textColor: Colors.purple.shade900,
+        isActive: _activeFilter == CalendarFilterType.joined,
+        onTap: () => _setActiveFilter(CalendarFilterType.joined),
+      ),
+      _buildSummaryChip(
+        label: 'Recherches',
+        value: searches.length,
+        backgroundColor: Colors.orange.shade100,
+        textColor: Colors.orange.shade900,
+        isActive: _activeFilter == CalendarFilterType.searches,
+        onTap: () => _setActiveFilter(CalendarFilterType.searches),
+      ),
+      _buildSummaryChip(
+        label: 'Notes/Dispos',
+        value: availabilities.length,
+        backgroundColor: Colors.green.shade100,
+        textColor: Colors.green.shade900,
+        isActive: _activeFilter == CalendarFilterType.availabilities,
+        onTap: () => _setActiveFilter(CalendarFilterType.availabilities),
+      ),
+    ];
+
+    final advancedFilters = [
+      _buildSubSummaryChip(
+        label: 'Complètes',
+        value: fullCount,
+        backgroundColor: Colors.amber.shade100,
+        textColor: Colors.amber.shade900,
+        isActive: _activeFilter == CalendarFilterType.full,
+        onTap: () => _setActiveFilter(CalendarFilterType.full),
+      ),
+      _buildSubSummaryChip(
+        label: 'Annulées',
+        value: cancelledCount,
+        backgroundColor: Colors.red.shade100,
+        textColor: Colors.red.shade900,
+        isActive: _activeFilter == CalendarFilterType.cancelled,
+        onTap: () => _setActiveFilter(CalendarFilterType.cancelled),
+      ),
+      _buildSubSummaryChip(
+        label: 'Terminées',
+        value: doneCount,
+        backgroundColor: Colors.blueGrey.shade100,
+        textColor: Colors.blueGrey.shade900,
+        isActive: _activeFilter == CalendarFilterType.done,
+        onTap: () => _setActiveFilter(CalendarFilterType.done),
+      ),
+      _buildSubSummaryChip(
+        label: 'Owner requis',
+        value: ownerRequiredCount,
+        backgroundColor: Colors.deepOrange.shade100,
+        textColor: Colors.deepOrange.shade900,
+        isActive: _activeFilter == CalendarFilterType.ownerRequired,
+        onTap: () => _setActiveFilter(CalendarFilterType.ownerRequired),
+      ),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildCompactFilterRow(children: mainFilters),
+          const SizedBox(height: 2),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _showAdvancedFilters = !_showAdvancedFilters;
+                });
+              },
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 2,
+                  vertical: 0,
+                ),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              icon: Icon(
+                _showAdvancedFilters
+                    ? Icons.expand_less
+                    : Icons.expand_more,
+                size: 18,
+              ),
+              label: Text(
+                _showAdvancedFilters
+                    ? 'Moins de filtres'
+                    : 'Plus de filtres',
+              ),
+            ),
+          ),
+          if (_showAdvancedFilters) ...[
+            const SizedBox(height: 2),
+            _buildCompactFilterRow(children: advancedFilters),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSummaryChip({
+    required String label,
+    required int? value,
+    required Color backgroundColor,
+    required Color textColor,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    final resolvedBackgroundColor =
+        isActive ? textColor.withOpacity(0.16) : backgroundColor;
+    final resolvedBorderColor = isActive ? textColor : backgroundColor;
+    final resolvedTextColor = textColor;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: resolvedBackgroundColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: resolvedBorderColor,
+            width: isActive ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (value != null) ...[
+              Text(
+                '$value',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: resolvedTextColor,
+                ),
+              ),
+              const SizedBox(width: 6),
+            ],
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                color: resolvedTextColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSubSummaryChip({
+    required String label,
+    required int value,
+    required Color backgroundColor,
+    required Color textColor,
+    required bool isActive,
+    required VoidCallback onTap,
+  }) {
+    final resolvedBackgroundColor =
+        isActive ? textColor.withOpacity(0.16) : backgroundColor;
+    final resolvedBorderColor = isActive ? textColor : backgroundColor;
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+        decoration: BoxDecoration(
+          color: resolvedBackgroundColor,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: resolvedBorderColor,
+            width: isActive ? 1.4 : 1,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '$value',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: textColor,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -232,14 +1062,10 @@ class _CalendarPageState extends State<CalendarPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mon Agenda'),
+        automaticallyImplyLeading: false,
+        toolbarHeight: 36,
+        elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.person),
-            tooltip: 'Mon profil',
-            onPressed: _openMyProfilePage,
-          ),
-          _buildInvitationsIcon(),
           IconButton(
             icon: const Icon(Icons.switch_account),
             tooltip: 'Changer d’utilisateur',
@@ -298,7 +1124,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     );
                   }
 
-                  return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  return StreamBuilder<List<Map<String, dynamic>>>(
                     stream: searchService.getSearches(),
                     builder: (context, searchSnapshot) {
                       if (searchSnapshot.hasError) {
@@ -315,16 +1141,35 @@ class _CalendarPageState extends State<CalendarPage> {
                         );
                       }
 
-                      final createdActivities = createdSnapshot.data ?? [];
-                      final joinedActivities = _deduplicateJoinedActivities(
-                        createdActivities,
-                        joinedSnapshot.data ?? [],
+                      final createdActivities = _filterActivitiesForDisplayedWeek(
+                        createdSnapshot.data ?? [],
                       );
-                      final availabilities = availabilitySnapshot.data ?? [];
-                      final searches = searchSnapshot.data!.docs;
+
+                      final joinedActivities = _filterActivitiesForDisplayedWeek(
+                        _deduplicateJoinedActivities(
+                          createdSnapshot.data ?? [],
+                          joinedSnapshot.data ?? [],
+                        ),
+                      );
+
+                      final availabilities =
+                          _filterAvailabilitiesForDisplayedWeek(
+                        availabilitySnapshot.data ?? [],
+                      );
+
+                      final searches = _filterSearchesForDisplayedWeek(
+                        searchSnapshot.data ?? [],
+                      );
 
                       return Column(
                         children: [
+                          _buildWeekNavigator(),
+                          _buildWeeklySummary(
+                            createdActivities,
+                            joinedActivities,
+                            availabilities,
+                            searches,
+                          ),
                           buildDaysHeader(),
                           Expanded(
                             child: buildCalendarGrid(
@@ -350,21 +1195,35 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   Widget buildDaysHeader() {
+    final weekStart = _startOfWeek(_displayedWeekAnchor);
+
     return Row(
       children: [
-        const SizedBox(width: 70),
-        for (var day in days)
+        const SizedBox(width: 72),
+        for (int i = 0; i < days.length; i++)
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+              padding: const EdgeInsets.symmetric(vertical: 4),
               alignment: Alignment.center,
-              child: Text(
-                day,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
+              child: Column(
+                children: [
+                  Text(
+                    days[i],
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${weekStart.add(Duration(days: i)).day}',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -378,7 +1237,7 @@ class _CalendarPageState extends State<CalendarPage> {
     List<Activity> createdActivities,
     List<Activity> joinedActivities,
     List<Availability> availabilities,
-    List<QueryDocumentSnapshot<Map<String, dynamic>>> searches,
+    List<Map<String, dynamic>> searches,
   ) {
     return ListView.builder(
       itemCount: timeSlots.length,
@@ -389,8 +1248,8 @@ class _CalendarPageState extends State<CalendarPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 70,
-              height: 40,
+              width: 72,
+              height: 56,
               alignment: Alignment.center,
               child: Text(
                 hour,
@@ -401,45 +1260,166 @@ class _CalendarPageState extends State<CalendarPage> {
               Expanded(
                 child: Builder(
                   builder: (context) {
-                    final createdActivity =
+                    final rawCreatedActivity =
                         getActivityForSlot(day, hour, createdActivities);
-
-                    final joinedActivity =
+                    final rawJoinedActivity =
                         getActivityForSlot(day, hour, joinedActivities);
-
-                    final availability =
+                    final rawAvailability =
                         getAvailabilityForSlot(day, hour, availabilities);
+                    final rawSearch = getSearchForSlot(day, hour, searches);
 
-                    final search = getSearchForSlot(day, hour, searches);
+                    final matchedCreatedActivity =
+                        rawCreatedActivity != null &&
+                                _matchesCreatedFilter(rawCreatedActivity)
+                            ? rawCreatedActivity
+                            : null;
+
+                    final matchedJoinedActivity =
+                        rawJoinedActivity != null &&
+                                _matchesJoinedFilter(rawJoinedActivity)
+                            ? rawJoinedActivity
+                            : null;
+
+                    final matchedAvailability =
+                        rawAvailability != null &&
+                                _matchesAvailabilityFilter(rawAvailability)
+                            ? rawAvailability
+                            : null;
+
+                    final matchedSearch =
+                        rawSearch != null && _matchesSearchFilter(rawSearch)
+                            ? rawSearch
+                            : null;
+
+                    final hasMatchedElement =
+                        matchedCreatedActivity != null ||
+                        matchedJoinedActivity != null ||
+                        matchedAvailability != null ||
+                        matchedSearch != null;
+
+                    final shouldDimNonMatching =
+                        _hasActiveFilter && !hasMatchedElement;
+
+                    final createdActivity = hasMatchedElement
+                        ? matchedCreatedActivity
+                        : rawCreatedActivity;
+                    final joinedActivity = hasMatchedElement
+                        ? matchedJoinedActivity
+                        : rawJoinedActivity;
+                    final availability =
+                        hasMatchedElement ? matchedAvailability : rawAvailability;
+                    final search = hasMatchedElement ? matchedSearch : rawSearch;
+
+                    final isCreatedDimmed =
+                        shouldDimNonMatching && createdActivity != null;
+                    final isJoinedDimmed =
+                        shouldDimNonMatching && joinedActivity != null;
+                    final isAvailabilityDimmed =
+                        shouldDimNonMatching && availability != null;
+                    final isSearchDimmed =
+                        shouldDimNonMatching && search != null;
 
                     Color cellColor = Colors.grey[200]!;
-                    String label = '';
+                    Color borderColor = Colors.grey.shade300;
+                    Widget? cellContent;
 
                     if (search != null) {
-                      cellColor = Colors.orange[200]!;
-                      if ((search['startTime'] ?? '').toString() == hour) {
-                        label = 'Recherche activité';
+                      final baseColor = Colors.orange[200]!;
+                      cellColor = isSearchDimmed
+                          ? _getMutedColor(baseColor)
+                          : baseColor;
+                      borderColor = isSearchDimmed
+                          ? _getMutedBorderColor(Colors.orange.shade200)
+                          : Colors.grey.shade300;
+
+                      if (_isSearchStartSlot(search, hour)) {
+                        cellContent = _buildSearchStartContent(
+                          search,
+                          isDimmed: isSearchDimmed,
+                        );
+                      } else {
+                        cellContent = _buildContinuationMarker(
+                          isDimmed: isSearchDimmed,
+                        );
                       }
                     }
 
                     if (availability != null) {
-                      cellColor = Colors.green[100]!;
-                      if (availability.startTime == hour) {
-                        label = availability.title;
+                      final baseColor = Colors.green[100]!;
+                      cellColor = isAvailabilityDimmed
+                          ? _getMutedColor(baseColor)
+                          : baseColor;
+                      borderColor = isAvailabilityDimmed
+                          ? _getMutedBorderColor(Colors.green.shade200)
+                          : Colors.grey.shade300;
+
+                      if (_isAvailabilityStartSlot(availability, hour)) {
+                        cellContent = _buildAvailabilityStartContent(
+                          availability,
+                          isDimmed: isAvailabilityDimmed,
+                        );
+                      } else {
+                        cellContent = _buildContinuationMarker(
+                          isDimmed: isAvailabilityDimmed,
+                        );
                       }
                     }
 
                     if (joinedActivity != null) {
-                      cellColor = Colors.purple[200]!;
-                      if (joinedActivity.startTime == hour) {
-                        label = joinedActivity.title;
+                      final baseColor = _getActivityBaseColor(
+                        isCreated: false,
+                        activity: joinedActivity,
+                      );
+                      final baseBorderColor =
+                          _getActivityBorderColor(joinedActivity);
+
+                      cellColor = isJoinedDimmed
+                          ? _getMutedColor(baseColor)
+                          : baseColor;
+                      borderColor = isJoinedDimmed
+                          ? _getMutedBorderColor(baseBorderColor)
+                          : baseBorderColor;
+
+                      if (_isActivityStartSlot(joinedActivity, hour)) {
+                        cellContent = _buildActivityStartContent(
+                          joinedActivity,
+                          isCreated: false,
+                          isDimmed: isJoinedDimmed,
+                        );
+                      } else {
+                        cellContent = _buildContinuationMarker(
+                          isInactive: _isInactiveActivity(joinedActivity),
+                          isDimmed: isJoinedDimmed,
+                        );
                       }
                     }
 
                     if (createdActivity != null) {
-                      cellColor = Colors.blue[200]!;
-                      if (createdActivity.startTime == hour) {
-                        label = createdActivity.title;
+                      final baseColor = _getActivityBaseColor(
+                        isCreated: true,
+                        activity: createdActivity,
+                      );
+                      final baseBorderColor =
+                          _getActivityBorderColor(createdActivity);
+
+                      cellColor = isCreatedDimmed
+                          ? _getMutedColor(baseColor)
+                          : baseColor;
+                      borderColor = isCreatedDimmed
+                          ? _getMutedBorderColor(baseBorderColor)
+                          : baseBorderColor;
+
+                      if (_isActivityStartSlot(createdActivity, hour)) {
+                        cellContent = _buildActivityStartContent(
+                          createdActivity,
+                          isCreated: true,
+                          isDimmed: isCreatedDimmed,
+                        );
+                      } else {
+                        cellContent = _buildContinuationMarker(
+                          isInactive: _isInactiveActivity(createdActivity),
+                          isDimmed: isCreatedDimmed,
+                        );
                       }
                     }
 
@@ -474,7 +1454,7 @@ class _CalendarPageState extends State<CalendarPage> {
                             context,
                             MaterialPageRoute(
                               builder: (context) => SearchDetailPage(
-                                searchId: search['id'],
+                                searchId: (search['id'] ?? '').toString(),
                                 day: (search['day'] ?? '').toString(),
                                 startTime:
                                     (search['startTime'] ?? '').toString(),
@@ -501,23 +1481,21 @@ class _CalendarPageState extends State<CalendarPage> {
                         showSlotActions(context, day, hour);
                       },
                       child: Container(
-                        height: 40,
+                        height: 56,
                         margin: const EdgeInsets.all(1),
-                        padding: const EdgeInsets.all(2),
+                        padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
                           color: cellColor,
                           border: Border.all(
-                            color: Colors.grey.shade300,
+                            color: borderColor,
+                            width:
+                                createdActivity != null || joinedActivity != null
+                                    ? 1.2
+                                    : 1,
                           ),
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                        child: label.isNotEmpty
-                            ? Text(
-                                label,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 9),
-                              )
-                            : null,
+                        child: cellContent,
                       ),
                     );
                   },
@@ -583,8 +1561,11 @@ class _CalendarPageState extends State<CalendarPage> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            CreateActivityPage(day: day, hour: hour),
+                        builder: (context) => CreateActivityPage(
+                          day: day,
+                          hour: hour,
+                          selectedDate: _getDateForDay(day),
+                        ),
                       ),
                     );
                   },

@@ -6,8 +6,9 @@ import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 import 'package:agenda_app/features/04_profile/user_profile_page.dart';
 import 'package:agenda_app/features/05_chat/activity_chat_page.dart';
-import 'package:agenda_app/features/03_activities/invite_user_page.dart';
 import 'package:agenda_app/features/03_activities/sent_invitations_page.dart';
+import 'package:agenda_app/features/03_activities/edit_activity_page.dart';
+import 'package:agenda_app/features/03_activities/invite_to_activity_page.dart';
 
 class ActivityDetailPage extends StatelessWidget {
   final Activity activity;
@@ -144,6 +145,7 @@ class ActivityDetailPage extends StatelessWidget {
   }) {
     if (isCancelled) return 'Activité annulée';
     if (isDone) return 'Activité terminée';
+    if (activity.hasEnded) return 'Activité terminée';
     if (isInviteOnly) return 'Sur invitation';
     if (isFull) return 'Activité complète';
     if (activity.isMixedGroupActivity) {
@@ -153,6 +155,45 @@ class ActivityDetailPage extends StatelessWidget {
       return 'Rejoindre l’activité du groupe';
     }
     return 'Rejoindre l’activité';
+  }
+
+  bool _canFullyEditActivity({
+    required bool isOwner,
+    required int participantCount,
+  }) {
+    return isOwner && participantCount <= 1;
+  }
+
+  bool _canPartiallyEditActivity({
+    required bool isOwner,
+    required int participantCount,
+  }) {
+    return isOwner && participantCount > 1;
+  }
+
+  String _editButtonLabel({
+    required bool canFullyEdit,
+    required bool canPartiallyEdit,
+  }) {
+    if (canFullyEdit) {
+      return 'Modifier l’activité';
+    }
+
+    if (canPartiallyEdit) {
+      return 'Modifier description et lieu';
+    }
+
+    return 'Modifier';
+  }
+
+  String _formatSchedule(Activity activity) {
+    final scheduleLabel = activity.scheduleLabel.trim();
+
+    if (scheduleLabel.isNotEmpty) {
+      return scheduleLabel;
+    }
+
+    return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
   }
 
   Future<bool> _confirmAction({
@@ -224,6 +265,7 @@ class ActivityDetailPage extends StatelessWidget {
     BuildContext context,
     ActivityFirestoreService activityService,
     String activityId,
+    int participantCount,
   ) async {
     final confirmed = await _confirmAction(
       context: context,
@@ -234,13 +276,24 @@ class ActivityDetailPage extends StatelessWidget {
 
     if (!confirmed) return;
 
-    final deleted = await activityService.deleteActivityIfNoParticipants(
-      activityId,
-    );
+    if (participantCount > 1) {
+      if (!context.mounted) return;
 
-    if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Impossible de supprimer : d’autres participants sont encore inscrits',
+          ),
+        ),
+      );
+      return;
+    }
 
-    if (deleted) {
+    try {
+      await activityService.deleteActivityWithDependencies(activityId);
+
+      if (!context.mounted) return;
+
       Navigator.pop(context);
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -248,12 +301,38 @@ class ActivityDetailPage extends StatelessWidget {
           content: Text('Activité supprimée'),
         ),
       );
-    } else {
+    } catch (e) {
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur lors de la suppression : $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _openEditPage(
+    BuildContext context, {
+    required Activity activity,
+    required int participantCount,
+  }) async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EditActivityPage(
+          activity: activity,
+          participantCount: participantCount,
+        ),
+      ),
+    );
+
+    if (!context.mounted) return;
+
+    if (updated == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Impossible de supprimer : d’autres participants sont encore inscrits',
-          ),
+          content: Text('Modifications enregistrées'),
         ),
       );
     }
@@ -269,7 +348,7 @@ class ActivityDetailPage extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Détail activité'),
       ),
-      body: StreamBuilder<Map<String, dynamic>?>(
+      body: StreamBuilder<Activity?>(
         stream: activityService.watchActivity(activity.id),
         builder: (context, activitySnapshot) {
           if (activitySnapshot.hasError) {
@@ -278,24 +357,19 @@ class ActivityDetailPage extends StatelessWidget {
             );
           }
 
-          if (!activitySnapshot.hasData) {
+          if (activitySnapshot.connectionState == ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(),
             );
           }
 
-          final activityData = activitySnapshot.data;
+          final Activity? currentActivity = activitySnapshot.data;
 
-          if (activityData == null) {
+          if (currentActivity == null) {
             return const Center(
               child: Text('Activité introuvable'),
             );
           }
-
-          final Activity currentActivity = Activity.fromMap(
-            activity.id,
-            activityData,
-          );
 
           final String currentOwnerId = currentActivity.ownerId;
           final String currentOwnerPseudo = currentActivity.ownerPseudo;
@@ -303,9 +377,6 @@ class ActivityDetailPage extends StatelessWidget {
 
           final String title = currentActivity.title;
           final String description = currentActivity.description;
-          final String day = currentActivity.day;
-          final String startTime = currentActivity.startTime;
-          final String endTime = currentActivity.endTime;
           final String location = currentActivity.location;
           final String category = currentActivity.category;
           final int maxParticipants = currentActivity.maxParticipants;
@@ -319,7 +390,7 @@ class ActivityDetailPage extends StatelessWidget {
           return Padding(
             padding: const EdgeInsets.all(16),
             child: StreamBuilder<int>(
-              stream: activityService.getParticipantCountStream(activity.id),
+              stream: activityService.getParticipantCountStream(currentActivity.id),
               builder: (context, countSnapshot) {
                 if (countSnapshot.hasError) {
                   return Center(
@@ -335,6 +406,19 @@ class ActivityDetailPage extends StatelessWidget {
 
                 final int participantCount = countSnapshot.data ?? 0;
 
+                final bool canFullyEdit = _canFullyEditActivity(
+                  isOwner: isOwner,
+                  participantCount: participantCount,
+                );
+
+                final bool canPartiallyEdit = _canPartiallyEditActivity(
+                  isOwner: isOwner,
+                  participantCount: participantCount,
+                );
+
+                final bool canShowEditButton =
+                    canFullyEdit || canPartiallyEdit;
+
                 final String displayedMaxParticipants = maxParticipants > 0
                     ? maxParticipants.toString()
                     : 'Illimité';
@@ -344,7 +428,7 @@ class ActivityDetailPage extends StatelessWidget {
                     : null;
 
                 return StreamBuilder<List<String>>(
-                  stream: activityService.getParticipants(activity.id),
+                  stream: activityService.getParticipants(currentActivity.id),
                   builder: (context, participantIdsSnapshot) {
                     if (participantIdsSnapshot.hasError) {
                       return Center(
@@ -371,6 +455,19 @@ class ActivityDetailPage extends StatelessWidget {
                     final bool isCancelled = currentActivity.isCancelled;
                     final bool isDone = currentActivity.isDone;
                     final bool isInviteOnly = currentActivity.isInviteOnly;
+                    final bool hasEnded = currentActivity.hasEnded;
+
+                    final bool canInvite = isOwner &&
+                        !isCancelled &&
+                        !isDone &&
+                        !hasEnded &&
+                        !ownerPending;
+
+                    final bool canClaimOwnership =
+                        ownerPending && isParticipant && !isOwner;
+
+                    final bool canAttemptJoin =
+                        !ownerPending && !isParticipant && !isOwner;
 
                     return SingleChildScrollView(
                       child: Column(
@@ -541,7 +638,7 @@ class ActivityDetailPage extends StatelessWidget {
                             Text(description),
                             const SizedBox(height: 10),
                           ],
-                          Text('$day • $startTime - $endTime'),
+                          Text(_formatSchedule(currentActivity)),
                           const SizedBox(height: 4),
                           Text(location),
                           const SizedBox(height: 4),
@@ -577,7 +674,7 @@ class ActivityDetailPage extends StatelessWidget {
                               ),
                             ),
                           ],
-                          if (isDone) ...[
+                          if (isDone || hasEnded) ...[
                             const SizedBox(height: 10),
                             Text(
                               'Cette activité est terminée.',
@@ -627,10 +724,35 @@ class ActivityDetailPage extends StatelessWidget {
                               label: const Text('Ouvrir le chat'),
                             ),
                           ),
-                          if (isOwner &&
-                              !isCancelled &&
-                              !isDone &&
-                              !isGroupActivity) ...[
+                          if (canShowEditButton) ...[
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton.icon(
+                                onPressed: () => _openEditPage(
+                                  context,
+                                  activity: currentActivity,
+                                  participantCount: participantCount,
+                                ),
+                                icon: const Icon(Icons.edit_outlined),
+                                label: Text(
+                                  _editButtonLabel(
+                                    canFullyEdit: canFullyEdit,
+                                    canPartiallyEdit: canPartiallyEdit,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (canInvite) ...[
+                            const SizedBox(height: 16),
+                            const Text(
+                              'Invitations',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                             const SizedBox(height: 12),
                             SizedBox(
                               width: double.infinity,
@@ -639,14 +761,14 @@ class ActivityDetailPage extends StatelessWidget {
                                   await Navigator.push(
                                     context,
                                     MaterialPageRoute(
-                                      builder: (_) => InviteUserPage(
+                                      builder: (_) => InviteToActivityPage(
                                         activity: currentActivity,
                                       ),
                                     ),
                                   );
                                 },
-                                icon: const Icon(Icons.person_add_alt_1),
-                                label: const Text('Inviter un utilisateur'),
+                                icon: const Icon(Icons.group_add),
+                                label: const Text('Inviter (amis ou groupe)'),
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -668,14 +790,14 @@ class ActivityDetailPage extends StatelessWidget {
                               ),
                             ),
                           ],
-                          if (ownerPending && isParticipant && !isOwner) ...[
+                          if (canClaimOwnership) ...[
                             const SizedBox(height: 12),
                             SizedBox(
                               width: double.infinity,
                               child: ElevatedButton(
                                 onPressed: () async {
                                   final accepted = await activityRepository
-                                      .claimOwnership(activity.id);
+                                      .claimOwnership(currentActivity.id);
 
                                   if (!context.mounted) return;
 
@@ -693,7 +815,7 @@ class ActivityDetailPage extends StatelessWidget {
                               ),
                             ),
                           ],
-                          if (!ownerPending && !isParticipant && !isOwner) ...[
+                          if (canAttemptJoin) ...[
                             const SizedBox(height: 12),
                             FutureBuilder<bool>(
                               future: activityRepository
@@ -759,7 +881,7 @@ class ActivityDetailPage extends StatelessWidget {
                             height: 250,
                             child: StreamBuilder<List<Map<String, dynamic>>>(
                               stream: activityService.getParticipantUsers(
-                                activity.id,
+                                currentActivity.id,
                               ),
                               builder: (context, participantsSnapshot) {
                                 if (participantsSnapshot.hasError) {
@@ -866,7 +988,7 @@ class ActivityDetailPage extends StatelessWidget {
                                 onPressed: () => _confirmLeaveActivity(
                                   context,
                                   activityRepository,
-                                  activity.id,
+                                  currentActivity.id,
                                   isOwner,
                                 ),
                                 child: Text(
@@ -884,7 +1006,8 @@ class ActivityDetailPage extends StatelessWidget {
                                 onPressed: () => _confirmDeleteActivity(
                                   context,
                                   activityService,
-                                  activity.id,
+                                  currentActivity.id,
+                                  participantCount,
                                 ),
                                 child: const Text('Supprimer l’activité'),
                               ),

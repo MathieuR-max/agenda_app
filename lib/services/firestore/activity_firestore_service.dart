@@ -14,6 +14,23 @@ class ActivityFirestoreService {
   CollectionReference<Map<String, dynamic>> get _activities =>
       _db.collection(FirestoreCollections.activities);
 
+  CollectionReference<Map<String, dynamic>> get _users =>
+      _db.collection(FirestoreCollections.users);
+
+  CollectionReference<Map<String, dynamic>> get _activityInvitations =>
+      _db.collection(FirestoreCollections.activityInvitations);
+
+  DocumentReference<Map<String, dynamic>> _activityDoc(String activityId) =>
+      _activities.doc(activityId.trim());
+
+  CollectionReference<Map<String, dynamic>> _participantsRef(
+    String activityId,
+  ) =>
+      _activityDoc(activityId).collection(FirestoreCollections.participants);
+
+  CollectionReference<Map<String, dynamic>> _messagesRef(String activityId) =>
+      _activityDoc(activityId).collection(FirestoreCollections.messages);
+
   Future<String> createActivityDocument({
     required String title,
     required String description,
@@ -21,6 +38,8 @@ class ActivityFirestoreService {
     required String day,
     required String startTime,
     required String endTime,
+    DateTime? startDateTime,
+    DateTime? endDateTime,
     required String location,
     required int maxParticipants,
     required String level,
@@ -32,6 +51,19 @@ class ActivityFirestoreService {
     String? groupId,
     String? groupName,
   }) async {
+    final trimmedTitle = title.trim();
+    final trimmedDescription = description.trim();
+    final trimmedCategory = category.trim();
+    final trimmedDay = day.trim();
+    final trimmedStartTime = startTime.trim();
+    final trimmedEndTime = endTime.trim();
+    final trimmedLocation = location.trim();
+    final trimmedLevel = level.trim();
+    final trimmedGroupType = groupType.trim();
+    final trimmedVisibility = visibility.trim();
+    final trimmedOwnerId = ownerId.trim();
+    final trimmedOwnerPseudo = ownerPseudo.trim();
+
     final rawGroupId = groupId?.trim();
     final trimmedGroupId =
         rawGroupId != null && rawGroupId.isNotEmpty ? rawGroupId : null;
@@ -43,26 +75,30 @@ class ActivityFirestoreService {
             : null;
 
     final activityRef = await _activities.add({
-      'title': title,
-      'description': description,
-      'category': category,
-      'day': day,
-      'startTime': startTime,
-      'endTime': endTime,
-      'location': location,
+      'title': trimmedTitle,
+      'description': trimmedDescription,
+      'category': trimmedCategory,
+      'day': trimmedDay,
+      'startTime': trimmedStartTime,
+      'endTime': trimmedEndTime,
+      'startDateTime':
+          startDateTime != null ? Timestamp.fromDate(startDateTime) : null,
+      'endDateTime':
+          endDateTime != null ? Timestamp.fromDate(endDateTime) : null,
+      'location': trimmedLocation,
       'maxParticipants': maxParticipants,
-      'level': level,
-      'groupType': groupType,
-      'ownerId': ownerId,
-      'ownerPseudo': ownerPseudo,
+      'level': trimmedLevel,
+      'groupType': trimmedGroupType,
+      'ownerId': trimmedOwnerId,
+      'ownerPseudo': trimmedOwnerPseudo,
       'ownerPending': false,
       'participantCount': 1,
       'lastMessageText': null,
       'lastMessageAt': null,
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
-      'visibility': visibility,
-      'status': initialStatus,
+      'visibility': trimmedVisibility,
+      'status': initialStatus.trim(),
       'groupId': trimmedGroupId,
       'groupName': trimmedGroupName,
     });
@@ -82,13 +118,9 @@ class ActivityFirestoreService {
       return;
     }
 
-    await _activities
-        .doc(trimmedActivityId)
-        .collection(FirestoreCollections.participants)
-        .doc(trimmedUserId)
-        .set({
+    await _participantsRef(trimmedActivityId).doc(trimmedUserId).set({
       'userId': trimmedUserId,
-      'pseudo': pseudo,
+      'pseudo': pseudo.trim(),
       'joinedAt': FieldValue.serverTimestamp(),
     });
   }
@@ -104,11 +136,7 @@ class ActivityFirestoreService {
       return;
     }
 
-    await _activities
-        .doc(trimmedActivityId)
-        .collection(FirestoreCollections.participants)
-        .doc(trimmedUserId)
-        .delete();
+    await _participantsRef(trimmedActivityId).doc(trimmedUserId).delete();
   }
 
   Future<bool> isParticipant({
@@ -122,12 +150,7 @@ class ActivityFirestoreService {
       return false;
     }
 
-    final doc = await _activities
-        .doc(trimmedActivityId)
-        .collection(FirestoreCollections.participants)
-        .doc(trimmedUserId)
-        .get();
-
+    final doc = await _participantsRef(trimmedActivityId).doc(trimmedUserId).get();
     return doc.exists;
   }
 
@@ -141,17 +164,16 @@ class ActivityFirestoreService {
       return;
     }
 
-    await _activities.doc(trimmedActivityId).update(fields);
+    final sanitizedFields = <String, dynamic>{
+      ...fields,
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+
+    await _activityDoc(trimmedActivityId).update(sanitizedFields);
   }
 
   Future<void> deleteActivity(String activityId) async {
-    final trimmedActivityId = activityId.trim();
-
-    if (trimmedActivityId.isEmpty) {
-      return;
-    }
-
-    await _activities.doc(trimmedActivityId).delete();
+    await deleteActivityWithDependencies(activityId);
   }
 
   Future<Activity?> getActivityById(String activityId) async {
@@ -161,31 +183,28 @@ class ActivityFirestoreService {
       return null;
     }
 
-    final doc = await _activities.doc(trimmedActivityId).get();
+    final doc = await _activityDoc(trimmedActivityId).get();
 
     if (!doc.exists || doc.data() == null) {
       return null;
     }
 
-    return Activity.fromFirestore(doc.data()!, doc.id);
+    return Activity.fromDocument(doc);
   }
 
-  Stream<Map<String, dynamic>?> watchActivity(String activityId) {
+  Stream<Activity?> watchActivity(String activityId) {
     final trimmedActivityId = activityId.trim();
 
     if (trimmedActivityId.isEmpty) {
       return Stream.value(null);
     }
 
-    return _activities.doc(trimmedActivityId).snapshots().map((doc) {
+    return _activityDoc(trimmedActivityId).snapshots().map((doc) {
       if (!doc.exists || doc.data() == null) {
         return null;
       }
 
-      return {
-        'id': doc.id,
-        ...doc.data()!,
-      };
+      return Activity.fromDocument(doc);
     });
   }
 
@@ -194,9 +213,8 @@ class ActivityFirestoreService {
         .where('ownerId', isEqualTo: currentUserId)
         .snapshots()
         .map((snapshot) {
-      final activities = snapshot.docs
-          .map((doc) => Activity.fromFirestore(doc.data(), doc.id))
-          .toList();
+      final activities =
+          snapshot.docs.map((doc) => Activity.fromDocument(doc)).toList();
 
       _sortActivitiesByRecency(activities);
       return activities;
@@ -209,7 +227,7 @@ class ActivityFirestoreService {
         .snapshots()
         .map((snapshot) {
       final activities = snapshot.docs
-          .map((doc) => Activity.fromFirestore(doc.data(), doc.id))
+          .map((doc) => Activity.fromDocument(doc))
           .where((activity) => !activity.isGroupActivity)
           .toList();
 
@@ -229,9 +247,8 @@ class ActivityFirestoreService {
         .where('groupId', isEqualTo: trimmedGroupId)
         .snapshots()
         .map((snapshot) {
-      final activities = snapshot.docs
-          .map((doc) => Activity.fromFirestore(doc.data(), doc.id))
-          .toList();
+      final activities =
+          snapshot.docs.map((doc) => Activity.fromDocument(doc)).toList();
 
       _sortActivitiesByRecency(activities);
       return activities;
@@ -245,7 +262,7 @@ class ActivityFirestoreService {
       return 0;
     }
 
-    final activityDoc = await _activities.doc(trimmedActivityId).get();
+    final activityDoc = await _activityDoc(trimmedActivityId).get();
 
     if (!activityDoc.exists || activityDoc.data() == null) {
       return 0;
@@ -262,7 +279,7 @@ class ActivityFirestoreService {
       return Stream.value(0);
     }
 
-    return _activities.doc(trimmedActivityId).snapshots().map((doc) {
+    return _activityDoc(trimmedActivityId).snapshots().map((doc) {
       if (!doc.exists || doc.data() == null) return 0;
       return _parseInt(doc.data()!['participantCount']);
     });
@@ -275,9 +292,7 @@ class ActivityFirestoreService {
       return Stream.value(<String>[]);
     }
 
-    return _activities
-        .doc(trimmedActivityId)
-        .collection(FirestoreCollections.participants)
+    return _participantsRef(trimmedActivityId)
         .orderBy('joinedAt')
         .snapshots()
         .map((snapshot) {
@@ -295,9 +310,7 @@ class ActivityFirestoreService {
       return Stream.value(<Map<String, dynamic>>[]);
     }
 
-    return _activities
-        .doc(trimmedActivityId)
-        .collection(FirestoreCollections.participants)
+    return _participantsRef(trimmedActivityId)
         .orderBy('joinedAt')
         .snapshots()
         .asyncMap((participantSnapshot) async {
@@ -305,23 +318,22 @@ class ActivityFirestoreService {
 
       for (final participantDoc in participantSnapshot.docs) {
         final data = participantDoc.data();
-        final String userId = (data['userId'] ?? '').toString().trim();
+        final userId = (data['userId'] ?? '').toString().trim();
 
         if (userId.isEmpty) continue;
 
-        final userDoc =
-            await _db.collection(FirestoreCollections.users).doc(userId).get();
+        final userDoc = await _users.doc(userId).get();
 
         if (userDoc.exists && userDoc.data() != null) {
           final userData = userDoc.data()!;
 
           users.add({
             'id': userDoc.id,
-            'pseudo': userData['pseudo'] ?? '',
-            'prenom': userData['prenom'] ?? '',
-            'nom': userData['nom'] ?? '',
-            'lieu': userData['lieu'] ?? userData['Lieu'] ?? '',
-            'genre': userData['genre'] ?? '',
+            'pseudo': (userData['pseudo'] ?? '').toString(),
+            'prenom': (userData['prenom'] ?? '').toString(),
+            'nom': (userData['nom'] ?? '').toString(),
+            'lieu': ((userData['lieu'] ?? userData['Lieu']) ?? '').toString(),
+            'genre': (userData['genre'] ?? '').toString(),
           });
         }
       }
@@ -337,55 +349,49 @@ class ActivityFirestoreService {
       return Stream.value(<Map<String, dynamic>>[]);
     }
 
-    final activityRef = _db
-        .collection(FirestoreCollections.activities)
-        .doc(trimmedActivityId);
+    return _participantsRef(trimmedActivityId).snapshots().asyncMap(
+      (participantSnapshot) async {
+        final participantIds = participantSnapshot.docs
+            .map((doc) => (doc.data()['userId'] ?? '').toString().trim())
+            .where((id) => id.isNotEmpty)
+            .toSet();
 
-    return activityRef
-        .collection(FirestoreCollections.participants)
-        .snapshots()
-        .asyncMap((participantSnapshot) async {
-      final participantIds = participantSnapshot.docs
-          .map((doc) => (doc.data()['userId'] ?? '').toString().trim())
-          .where((id) => id.isNotEmpty)
-          .toSet();
+        participantIds.add(currentUserId);
 
-      participantIds.add(currentUserId);
+        final usersSnapshot = await _users.get();
 
-      final usersSnapshot =
-          await _db.collection(FirestoreCollections.users).get();
+        final List<Map<String, dynamic>> users = [];
 
-      final List<Map<String, dynamic>> users = [];
+        for (final userDoc in usersSnapshot.docs) {
+          if (participantIds.contains(userDoc.id)) continue;
 
-      for (final userDoc in usersSnapshot.docs) {
-        if (participantIds.contains(userDoc.id)) continue;
+          final data = userDoc.data();
 
-        final data = userDoc.data();
+          users.add({
+            'id': userDoc.id,
+            'pseudo': (data['pseudo'] ?? '').toString(),
+            'prenom': (data['prenom'] ?? '').toString(),
+            'nom': (data['nom'] ?? '').toString(),
+            'lieu': ((data['lieu'] ?? data['Lieu']) ?? '').toString(),
+            'genre': (data['genre'] ?? '').toString(),
+          });
+        }
 
-        users.add({
-          'id': userDoc.id,
-          'pseudo': (data['pseudo'] ?? '').toString(),
-          'prenom': (data['prenom'] ?? '').toString(),
-          'nom': (data['nom'] ?? '').toString(),
-          'lieu': ((data['lieu'] ?? data['Lieu']) ?? '').toString(),
-          'genre': (data['genre'] ?? '').toString(),
+        users.sort((a, b) {
+          final aName = ((a['pseudo'] ?? '').toString().trim().isNotEmpty)
+              ? (a['pseudo'] ?? '').toString().toLowerCase()
+              : (a['prenom'] ?? '').toString().toLowerCase();
+
+          final bName = ((b['pseudo'] ?? '').toString().trim().isNotEmpty)
+              ? (b['pseudo'] ?? '').toString().toLowerCase()
+              : (b['prenom'] ?? '').toString().toLowerCase();
+
+          return aName.compareTo(bName);
         });
-      }
 
-      users.sort((a, b) {
-        final aName = ((a['pseudo'] ?? '').toString().trim().isNotEmpty)
-            ? (a['pseudo'] ?? '').toString().toLowerCase()
-            : (a['prenom'] ?? '').toString().toLowerCase();
-
-        final bName = ((b['pseudo'] ?? '').toString().trim().isNotEmpty)
-            ? (b['pseudo'] ?? '').toString().toLowerCase()
-            : (b['prenom'] ?? '').toString().toLowerCase();
-
-        return aName.compareTo(bName);
-      });
-
-      return users;
-    });
+        return users;
+      },
+    );
   }
 
   Stream<List<String>> getJoinedActivityIds() {
@@ -393,11 +399,8 @@ class ActivityFirestoreService {
       final List<String> joinedIds = [];
 
       for (final doc in snapshot.docs) {
-        final participantDoc = await _activities
-            .doc(doc.id)
-            .collection(FirestoreCollections.participants)
-            .doc(currentUserId)
-            .get();
+        final participantDoc =
+            await _participantsRef(doc.id).doc(currentUserId).get();
 
         if (participantDoc.exists) {
           joinedIds.add(doc.id);
@@ -412,13 +415,17 @@ class ActivityFirestoreService {
     return getJoinedActivityIds().asyncMap((ids) async {
       if (ids.isEmpty) return <Activity>[];
 
-      final snapshot = await _activities
-          .where(FieldPath.documentId, whereIn: ids)
-          .get();
+      final List<Activity> activities = [];
 
-      final activities = snapshot.docs
-          .map((doc) => Activity.fromFirestore(doc.data(), doc.id))
-          .toList();
+      for (final chunk in _chunkList(ids, 10)) {
+        final snapshot = await _activities
+            .where(FieldPath.documentId, whereIn: chunk)
+            .get();
+
+        activities.addAll(
+          snapshot.docs.map((doc) => Activity.fromDocument(doc)),
+        );
+      }
 
       _sortActivitiesByRecency(activities);
       return activities;
@@ -432,9 +439,9 @@ class ActivityFirestoreService {
       return false;
     }
 
-    final activityRef = _activities.doc(trimmedActivityId);
+    final activityRef = _activityDoc(trimmedActivityId);
 
-    return await _db.runTransaction((transaction) async {
+    final canDelete = await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
 
       if (!activityDoc.exists || activityDoc.data() == null) {
@@ -442,10 +449,10 @@ class ActivityFirestoreService {
       }
 
       final data = activityDoc.data()!;
-      final String ownerId = (data['ownerId'] ?? '').toString();
-      final int participantCount = _parseInt(data['participantCount']);
+      final ownerId = (data['ownerId'] ?? '').toString().trim();
+      final participantCount = _parseInt(data['participantCount']);
 
-      final bool isOwner = ownerId == currentUserId;
+      final isOwner = ownerId == currentUserId;
 
       if (!isOwner) {
         return false;
@@ -455,36 +462,95 @@ class ActivityFirestoreService {
         return false;
       }
 
-      final participantsSnapshot =
-          await activityRef.collection(FirestoreCollections.participants).get();
-
-      for (final doc in participantsSnapshot.docs) {
-        transaction.delete(doc.reference);
-      }
-
-      final messagesSnapshot =
-          await activityRef.collection(FirestoreCollections.messages).get();
-
-      for (final doc in messagesSnapshot.docs) {
-        transaction.delete(doc.reference);
-      }
-
-      transaction.delete(activityRef);
       return true;
     });
+
+    if (!canDelete) {
+      return false;
+    }
+
+    await deleteActivityWithDependencies(trimmedActivityId);
+    return true;
+  }
+
+  Future<void> deleteActivityWithDependencies(String activityId) async {
+    final trimmedActivityId = activityId.trim();
+
+    if (trimmedActivityId.isEmpty) {
+      return;
+    }
+
+    final activityRef = _activityDoc(trimmedActivityId);
+
+    await _deleteSubcollection(_participantsRef(trimmedActivityId));
+    await _deleteSubcollection(_messagesRef(trimmedActivityId));
+    await _deleteInvitationDocsForActivity(trimmedActivityId);
+
+    await activityRef.delete();
+  }
+
+  Future<void> _deleteInvitationDocsForActivity(String activityId) async {
+    while (true) {
+      final snapshot = await _activityInvitations
+          .where('activityId', isEqualTo: activityId)
+          .limit(100)
+          .get();
+
+      if (snapshot.docs.isEmpty) {
+        break;
+      }
+
+      final batch = _db.batch();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+  }
+
+  Future<void> _deleteSubcollection(
+    CollectionReference<Map<String, dynamic>> collection,
+  ) async {
+    while (true) {
+      final snapshot = await collection.limit(100).get();
+      if (snapshot.docs.isEmpty) {
+        break;
+      }
+
+      final batch = _db.batch();
+      for (final doc in snapshot.docs) {
+        batch.delete(doc.reference);
+      }
+      await batch.commit();
+    }
+  }
+
+  List<List<String>> _chunkList(List<String> items, int chunkSize) {
+    final List<List<String>> chunks = [];
+
+    for (int i = 0; i < items.length; i += chunkSize) {
+      final end = (i + chunkSize < items.length)
+          ? i + chunkSize
+          : items.length;
+      chunks.add(items.sublist(i, end));
+    }
+
+    return chunks;
   }
 
   int _parseInt(dynamic value) {
     if (value is int) return value;
     if (value is double) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
     return 0;
   }
 
   void _sortActivitiesByRecency(List<Activity> activities) {
     activities.sort((a, b) {
-      final aDate = a.updatedAt ?? a.createdAt ?? DateTime(2000);
-      final bDate = b.updatedAt ?? b.createdAt ?? DateTime(2000);
+      final aDate =
+          a.resolvedStartDateTime ?? a.updatedAt ?? a.createdAt ?? DateTime(2000);
+      final bDate =
+          b.resolvedStartDateTime ?? b.updatedAt ?? b.createdAt ?? DateTime(2000);
       return bDate.compareTo(aDate);
     });
   }

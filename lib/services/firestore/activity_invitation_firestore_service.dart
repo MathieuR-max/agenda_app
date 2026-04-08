@@ -11,9 +11,11 @@ class ActivityInvitationFirestoreService {
 
   String get currentUserId => CurrentUser.id;
 
+  CollectionReference<Map<String, dynamic>> get _invitations =>
+      _db.collection(FirestoreCollections.activityInvitations);
+
   Stream<List<ActivityInvitation>> getReceivedInvitations() {
-    return _db
-        .collection(FirestoreCollections.activityInvitations)
+    return _invitations
         .where('toUserId', isEqualTo: currentUserId)
         .orderBy('createdAt', descending: true)
         .snapshots()
@@ -25,10 +27,9 @@ class ActivityInvitationFirestoreService {
   }
 
   Stream<List<ActivityInvitation>> getPendingReceivedInvitations() {
-    return _db
-        .collection(FirestoreCollections.activityInvitations)
+    return _invitations
         .where('toUserId', isEqualTo: currentUserId)
-        .where('status', isEqualTo: 'pending')
+        .where('status', isEqualTo: ActivityInvitation.statusPending)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -41,9 +42,14 @@ class ActivityInvitationFirestoreService {
   Stream<List<ActivityInvitation>> getSentInvitationsForActivity(
     String activityId,
   ) {
-    return _db
-        .collection(FirestoreCollections.activityInvitations)
-        .where('activityId', isEqualTo: activityId)
+    final trimmedActivityId = activityId.trim();
+
+    if (trimmedActivityId.isEmpty) {
+      return Stream.value(<ActivityInvitation>[]);
+    }
+
+    return _invitations
+        .where('activityId', isEqualTo: trimmedActivityId)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
@@ -54,8 +60,7 @@ class ActivityInvitationFirestoreService {
   }
 
   Stream<List<ActivityInvitation>> getSentInvitations() {
-    return _db
-        .collection(FirestoreCollections.activityInvitations)
+    return _invitations
         .where('fromUserId', isEqualTo: currentUserId)
         .orderBy('createdAt', descending: true)
         .snapshots()

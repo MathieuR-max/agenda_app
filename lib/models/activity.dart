@@ -5,9 +5,17 @@ class Activity {
   final String title;
   final String description;
   final String category;
+
+  /// Legacy compatibility fields.
+  /// À supprimer quand toute la migration Firestore sera terminée.
   final String day;
   final String startTime;
   final String endTime;
+
+  /// New source of truth.
+  final DateTime? startDateTime;
+  final DateTime? endDateTime;
+
   final String location;
   final int maxParticipants;
   final String level;
@@ -42,6 +50,8 @@ class Activity {
     required this.day,
     required this.startTime,
     required this.endTime,
+    required this.startDateTime,
+    required this.endDateTime,
     required this.location,
     required this.maxParticipants,
     required this.level,
@@ -61,14 +71,34 @@ class Activity {
   });
 
   factory Activity.fromMap(String id, Map<String, dynamic> map) {
+    final DateTime? resolvedStartDateTime = _resolveStartDateTime(map);
+    final DateTime? resolvedEndDateTime = _resolveEndDateTime(
+      map,
+      fallbackStartDateTime: resolvedStartDateTime,
+    );
+
+    final String resolvedDay = resolvedStartDateTime != null
+        ? _formatDateOnly(resolvedStartDateTime)
+        : _parseString(map['day']);
+
+    final String resolvedStartTime = resolvedStartDateTime != null
+        ? _formatTimeOnly(resolvedStartDateTime)
+        : _parseString(map['startTime']);
+
+    final String resolvedEndTime = resolvedEndDateTime != null
+        ? _formatTimeOnly(resolvedEndDateTime)
+        : _parseString(map['endTime']);
+
     return Activity(
       id: _parseString(id),
       title: _parseString(map['title']),
       description: _parseString(map['description']),
       category: _parseString(map['category']),
-      day: _parseString(map['day']),
-      startTime: _parseString(map['startTime']),
-      endTime: _parseString(map['endTime']),
+      day: resolvedDay,
+      startTime: resolvedStartTime,
+      endTime: resolvedEndTime,
+      startDateTime: resolvedStartDateTime,
+      endDateTime: resolvedEndDateTime,
       location: _parseString(map['location']),
       maxParticipants: _parseInt(map['maxParticipants']),
       level: _parseString(map['level']),
@@ -96,9 +126,7 @@ class Activity {
     return Activity.fromMap(id, data);
   }
 
-  factory Activity.fromDocument(
-    DocumentSnapshot<Map<String, dynamic>> doc,
-  ) {
+  factory Activity.fromDocument(DocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
     if (data == null) {
       return Activity.empty(doc.id);
@@ -115,6 +143,8 @@ class Activity {
       day: '',
       startTime: '',
       endTime: '',
+      startDateTime: null,
+      endDateTime: null,
       location: '',
       maxParticipants: 0,
       level: '',
@@ -134,14 +164,17 @@ class Activity {
     );
   }
 
-  Map<String, dynamic> toMap() {
-    return {
+  Map<String, dynamic> toMap({
+    bool includeLegacyFields = true,
+  }) {
+    final map = <String, dynamic>{
       'title': title,
       'description': description,
       'category': category,
-      'day': day,
-      'startTime': startTime,
-      'endTime': endTime,
+      'startDateTime':
+          startDateTime != null ? Timestamp.fromDate(startDateTime!) : null,
+      'endDateTime':
+          endDateTime != null ? Timestamp.fromDate(endDateTime!) : null,
       'location': location,
       'maxParticipants': maxParticipants,
       'level': level,
@@ -160,6 +193,16 @@ class Activity {
       'groupId': groupId,
       'groupName': groupName,
     };
+
+    if (includeLegacyFields) {
+      map.addAll({
+        'day': effectiveDay,
+        'startTime': effectiveStartTime,
+        'endTime': effectiveEndTime,
+      });
+    }
+
+    return map;
   }
 
   Activity copyWith({
@@ -170,6 +213,8 @@ class Activity {
     String? day,
     String? startTime,
     String? endTime,
+    DateTime? startDateTime,
+    DateTime? endDateTime,
     String? location,
     int? maxParticipants,
     String? level,
@@ -188,23 +233,44 @@ class Activity {
     String? groupName,
     bool clearGroupId = false,
     bool clearGroupName = false,
+    bool clearStartDateTime = false,
+    bool clearEndDateTime = false,
+    bool clearLastMessageText = false,
+    bool clearLastMessageAt = false,
+    bool clearCreatedAt = false,
+    bool clearUpdatedAt = false,
   }) {
-    final String? normalizedGroupId = clearGroupId
+    final DateTime? nextStartDateTime = clearStartDateTime
         ? null
-        : (groupId != null ? _parseNullableString(groupId) : this.groupId);
+        : (startDateTime ?? this.startDateTime);
 
-    final String? normalizedGroupName = clearGroupName
+    final DateTime? nextEndDateTime = clearEndDateTime
         ? null
-        : (groupName != null ? _parseNullableString(groupName) : this.groupName);
+        : (endDateTime ?? this.endDateTime);
+
+    final String resolvedDay = day ??
+        (nextStartDateTime != null
+            ? _formatDateOnly(nextStartDateTime)
+            : this.day);
+
+    final String resolvedStartTime = startTime ??
+        (nextStartDateTime != null
+            ? _formatTimeOnly(nextStartDateTime)
+            : this.startTime);
+
+    final String resolvedEndTime = endTime ??
+        (nextEndDateTime != null ? _formatTimeOnly(nextEndDateTime) : this.endTime);
 
     return Activity(
       id: id ?? this.id,
       title: title ?? this.title,
       description: description ?? this.description,
       category: category ?? this.category,
-      day: day ?? this.day,
-      startTime: startTime ?? this.startTime,
-      endTime: endTime ?? this.endTime,
+      day: resolvedDay,
+      startTime: resolvedStartTime,
+      endTime: resolvedEndTime,
+      startDateTime: nextStartDateTime,
+      endDateTime: nextEndDateTime,
       location: location ?? this.location,
       maxParticipants: maxParticipants ?? this.maxParticipants,
       level: level ?? this.level,
@@ -213,14 +279,23 @@ class Activity {
       ownerPseudo: ownerPseudo ?? this.ownerPseudo,
       ownerPending: ownerPending ?? this.ownerPending,
       participantCount: participantCount ?? this.participantCount,
-      lastMessageText: lastMessageText ?? this.lastMessageText,
-      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      visibility: visibility ?? this.visibility,
-      status: status ?? this.status,
-      groupId: normalizedGroupId,
-      groupName: normalizedGroupName,
+      lastMessageText: clearLastMessageText
+          ? null
+          : (lastMessageText ?? this.lastMessageText),
+      lastMessageAt:
+          clearLastMessageAt ? null : (lastMessageAt ?? this.lastMessageAt),
+      createdAt: clearCreatedAt ? null : (createdAt ?? this.createdAt),
+      updatedAt: clearUpdatedAt ? null : (updatedAt ?? this.updatedAt),
+      visibility: visibility != null
+          ? _normalizeVisibility(visibility)
+          : this.visibility,
+      status: status != null ? _normalizeStatus(status) : this.status,
+      groupId: clearGroupId
+          ? null
+          : (groupId != null ? _parseNullableString(groupId) : this.groupId),
+      groupName: clearGroupName
+          ? null
+          : (groupName != null ? _parseNullableString(groupName) : this.groupName),
     );
   }
 
@@ -235,14 +310,54 @@ class Activity {
 
   bool get hasUnlimitedPlaces => maxParticipants <= 0;
 
-  bool get isGroupActivity =>
-      groupId != null && groupId!.trim().isNotEmpty;
+  bool get isGroupActivity => groupId != null && groupId!.trim().isNotEmpty;
 
   bool get isGroupPrivateActivity =>
       isGroupActivity && visibility == visibilityPrivate;
 
   bool get isMixedGroupActivity =>
       isGroupActivity && visibility == visibilityPublic;
+
+  bool get isStandardActivity => !isGroupActivity;
+
+  bool get hasRealDateTime => startDateTime != null && endDateTime != null;
+
+  bool get hasAnyResolvedDateTime =>
+      resolvedStartDateTime != null || resolvedEndDateTime != null;
+
+  bool get hasJoinedParticipants => participantCount > 1;
+
+  bool get canEditActivity => !hasJoinedParticipants;
+
+  DateTime? get resolvedStartDateTime => startDateTime;
+
+  DateTime? get resolvedEndDateTime =>
+      endDateTime ?? _resolveEndDateTimeFromLegacyFallback();
+
+  DateTime? get effectiveSortDateTime =>
+      resolvedStartDateTime ?? resolvedEndDateTime;
+
+  bool get hasStarted {
+    final start = resolvedStartDateTime;
+    if (start == null) return false;
+    return !DateTime.now().isBefore(start);
+  }
+
+  bool get hasEnded {
+    final end = resolvedEndDateTime;
+    if (end == null) return false;
+    return DateTime.now().isAfter(end);
+  }
+
+  bool get isOngoing {
+    final start = resolvedStartDateTime;
+    final end = resolvedEndDateTime;
+
+    if (start == null || end == null) return false;
+
+    final now = DateTime.now();
+    return !now.isBefore(start) && now.isBefore(end);
+  }
 
   int? get remainingPlaces {
     if (hasUnlimitedPlaces) return null;
@@ -259,33 +374,210 @@ class Activity {
       !isDone &&
       !isFull &&
       !isInviteOnly &&
+      !hasEnded &&
       (hasUnlimitedPlaces || participantCount < maxParticipants);
+
+  bool get requiresOwner => ownerPending;
+
+  bool get isJoinRestricted =>
+      isInviteOnly || isCancelled || isDone || isFull || hasEnded;
+
+  String get activityTypeLabel {
+    if (isMixedGroupActivity) {
+      return 'G+P';
+    }
+
+    if (isGroupPrivateActivity) {
+      return 'Groupe';
+    }
+
+    if (isInviteOnly) {
+      return 'Invite';
+    }
+
+    if (isPrivate) {
+      return 'Privée';
+    }
+
+    return 'Public';
+  }
+
+  List<String> get calendarIndicators {
+    final List<String> indicators = [];
+
+    if (hasUnlimitedPlaces) {
+      indicators.add('Illimité');
+    }
+
+    if (isFull) {
+      indicators.add('Complet');
+    }
+
+    if (requiresOwner) {
+      indicators.add('Owner requis');
+    }
+
+    return indicators;
+  }
+
+  String get effectiveDay {
+    if (resolvedStartDateTime != null) {
+      return _formatDateOnly(resolvedStartDateTime!);
+    }
+
+    if (day.trim().isNotEmpty) {
+      return day;
+    }
+
+    if (resolvedEndDateTime != null) {
+      return _formatDateOnly(resolvedEndDateTime!);
+    }
+
+    return '';
+  }
+
+  String get effectiveStartTime {
+    if (resolvedStartDateTime != null) {
+      return _formatTimeOnly(resolvedStartDateTime!);
+    }
+    return startTime;
+  }
+
+  String get effectiveEndTime {
+    if (resolvedEndDateTime != null) {
+      return _formatTimeOnly(resolvedEndDateTime!);
+    }
+    return endTime;
+  }
+
+  String get scheduleLabel {
+    final parts = <String>[];
+
+    if (effectiveDay.isNotEmpty) {
+      parts.add(effectiveDay);
+    }
+
+    final start = effectiveStartTime;
+    final end = effectiveEndTime;
+
+    if (start.isNotEmpty && end.isNotEmpty) {
+      parts.add('$start - $end');
+    } else if (start.isNotEmpty) {
+      parts.add(start);
+    } else if (end.isNotEmpty) {
+      parts.add(end);
+    }
+
+    return parts.join(' • ');
+  }
+
+  DateTime? _resolveEndDateTimeFromLegacyFallback() {
+    if (endDateTime != null) return endDateTime;
+
+    final effectiveDayValue = effectiveDay;
+    final effectiveEndTimeValue = endTime.trim();
+
+    if (effectiveDayValue.isEmpty || effectiveEndTimeValue.isEmpty) {
+      return null;
+    }
+
+    return _combineLegacyDateAndTime(
+      effectiveDayValue,
+      effectiveEndTimeValue,
+    );
+  }
+
+  static DateTime? _resolveStartDateTime(Map<String, dynamic> map) {
+    final direct = _toDateTime(map['startDateTime']);
+    if (direct != null) return direct;
+
+    final legacyDay = _parseNullableString(map['day']);
+    final legacyStartTime = _parseNullableString(map['startTime']);
+
+    if (legacyDay == null || legacyStartTime == null) return null;
+    return _combineLegacyDateAndTime(legacyDay, legacyStartTime);
+  }
+
+  static DateTime? _resolveEndDateTime(
+    Map<String, dynamic> map, {
+    DateTime? fallbackStartDateTime,
+  }) {
+    final direct = _toDateTime(map['endDateTime']);
+    if (direct != null) return direct;
+
+    final legacyDay =
+        _parseNullableString(map['day']) ??
+            (fallbackStartDateTime != null
+                ? _formatDateOnly(fallbackStartDateTime)
+                : null);
+    final legacyEndTime = _parseNullableString(map['endTime']);
+
+    if (legacyDay == null || legacyEndTime == null) return null;
+    return _combineLegacyDateAndTime(legacyDay, legacyEndTime);
+  }
 
   static DateTime? _toDateTime(dynamic value) {
     if (value == null) return null;
     if (value is Timestamp) return value.toDate();
     if (value is DateTime) return value;
+    if (value is String && value.trim().isNotEmpty) {
+      return DateTime.tryParse(value.trim());
+    }
     return null;
+  }
+
+  static DateTime? _combineLegacyDateAndTime(String day, String time) {
+    try {
+      final date = DateTime.parse(day.trim());
+      final parts = time.trim().split(':');
+      if (parts.length < 2) return null;
+
+      final hour = int.tryParse(parts[0]) ?? 0;
+      final minute = int.tryParse(parts[1]) ?? 0;
+
+      return DateTime(
+        date.year,
+        date.month,
+        date.day,
+        hour,
+        minute,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _formatDateOnly(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  static String _formatTimeOnly(DateTime value) {
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
   }
 
   static int _parseInt(dynamic value) {
     if (value is int) return value;
     if (value is double) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? 0;
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
     return 0;
   }
 
   static bool _parseBool(dynamic value) {
     if (value is bool) return value;
     if (value is String) {
-      return value.toLowerCase() == 'true';
+      return value.toLowerCase().trim() == 'true';
     }
     return false;
   }
 
   static String _parseString(dynamic value, {String fallback = ''}) {
     if (value == null) return fallback;
-    return value.toString();
+    return value.toString().trim();
   }
 
   static String? _parseNullableString(dynamic value) {
@@ -295,7 +587,7 @@ class Activity {
   }
 
   static String _normalizeVisibility(String value) {
-    switch (value) {
+    switch (value.trim()) {
       case visibilityPrivate:
         return visibilityPrivate;
       case visibilityInviteOnly:
@@ -307,7 +599,7 @@ class Activity {
   }
 
   static String _normalizeStatus(String value) {
-    switch (value) {
+    switch (value.trim()) {
       case statusFull:
         return statusFull;
       case statusCancelled:

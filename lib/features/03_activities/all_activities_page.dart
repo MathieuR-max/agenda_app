@@ -57,17 +57,36 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     'Titre A → Z',
   ];
 
-  int dayOrder(String day) {
-    const orderedDays = [
-      'Lundi',
-      'Mardi',
-      'Mercredi',
-      'Jeudi',
-      'Vendredi',
-      'Samedi',
-      'Dimanche',
-    ];
-    return orderedDays.indexOf(day);
+  int _weekdayFromFrenchDay(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'lundi':
+        return DateTime.monday;
+      case 'mardi':
+        return DateTime.tuesday;
+      case 'mercredi':
+        return DateTime.wednesday;
+      case 'jeudi':
+        return DateTime.thursday;
+      case 'vendredi':
+        return DateTime.friday;
+      case 'samedi':
+        return DateTime.saturday;
+      case 'dimanche':
+        return DateTime.sunday;
+      default:
+        return 99;
+    }
+  }
+
+  int dayOrder(Activity activity) {
+    final start = activity.resolvedStartDateTime;
+    if (start != null) {
+      return start.weekday;
+    }
+
+    final legacyDay = activity.effectiveDay;
+    final weekday = _weekdayFromFrenchDay(legacyDay);
+    return weekday == 99 ? 99 : weekday;
   }
 
   int timeToMinutes(String time) {
@@ -78,6 +97,15 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     final minute = int.tryParse(parts[1]) ?? 0;
 
     return hour * 60 + minute;
+  }
+
+  int startMinutesFor(Activity activity) {
+    final start = activity.resolvedStartDateTime;
+    if (start != null) {
+      return start.hour * 60 + start.minute;
+    }
+
+    return timeToMinutes(activity.effectiveStartTime);
   }
 
   int remainingPlacesFor(Activity activity) {
@@ -94,18 +122,32 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
             activity.participantCount >= activity.maxParticipants);
   }
 
+  bool _matchesSelectedDay(Activity activity) {
+    if (selectedDay == 'Tous') return true;
+
+    final start = activity.resolvedStartDateTime;
+    if (start != null) {
+      return _weekdayFromFrenchDay(selectedDay) == start.weekday;
+    }
+
+    return activity.effectiveDay == selectedDay;
+  }
+
   List<Activity> filterAndSortActivities(
     List<Activity> activities,
     List<String> favoriteCategories,
   ) {
     final filtered = activities.where((activity) {
-      final bool dayOk = selectedDay == 'Tous' || activity.day == selectedDay;
+      final bool dayOk = _matchesSelectedDay(activity);
       final bool categoryOk =
           selectedCategory == 'Toutes' || activity.category == selectedCategory;
 
       final bool availableOk =
           !onlyAvailable ||
-          (!isFull(activity) && !activity.isCancelled && !activity.isDone);
+          (!isFull(activity) &&
+              !activity.isCancelled &&
+              !activity.isDone &&
+              !activity.hasEnded);
 
       final bool ownerNeededOk = !onlyOwnerNeeded || activity.ownerPending;
       final bool favoriteOk =
@@ -128,18 +170,23 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
               remainingPlacesFor(b).compareTo(remainingPlacesFor(a));
           if (remainingCompare != 0) return remainingCompare;
 
-          final dayCompare = dayOrder(a.day).compareTo(dayOrder(b.day));
+          final dayCompare = dayOrder(a).compareTo(dayOrder(b));
           if (dayCompare != 0) return dayCompare;
 
-          return timeToMinutes(a.startTime)
-              .compareTo(timeToMinutes(b.startTime));
+          return startMinutesFor(a).compareTo(startMinutesFor(b));
         });
         break;
 
       case 'Plus récent':
         filtered.sort((a, b) {
-          final aTime = a.lastMessageAt ?? a.createdAt;
-          final bTime = b.lastMessageAt ?? b.createdAt;
+          final aTime = a.lastMessageAt ??
+              a.updatedAt ??
+              a.createdAt ??
+              a.resolvedStartDateTime;
+          final bTime = b.lastMessageAt ??
+              b.updatedAt ??
+              b.createdAt ??
+              b.resolvedStartDateTime;
 
           if (aTime == null && bTime == null) return 0;
           if (aTime == null) return 1;
@@ -158,10 +205,15 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
       case 'Jour / heure':
       default:
         filtered.sort((a, b) {
-          final dayCompare = dayOrder(a.day).compareTo(dayOrder(b.day));
-          if (dayCompare != 0) return dayCompare;
-          return timeToMinutes(a.startTime)
-              .compareTo(timeToMinutes(b.startTime));
+          final aDate =
+              a.effectiveSortDateTime ?? a.updatedAt ?? a.createdAt ?? DateTime(2100);
+          final bDate =
+              b.effectiveSortDateTime ?? b.updatedAt ?? b.createdAt ?? DateTime(2100);
+
+          final compareDate = aDate.compareTo(bDate);
+          if (compareDate != 0) return compareDate;
+
+          return a.title.toLowerCase().compareTo(b.title.toLowerCase());
         });
         break;
     }
@@ -171,21 +223,21 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
 
   Color _statusChipBackground(Activity activity) {
     if (activity.isCancelled) return Colors.red.shade100;
-    if (activity.isDone) return Colors.grey.shade300;
+    if (activity.isDone || activity.hasEnded) return Colors.grey.shade300;
     if (activity.isFull) return Colors.orange.shade100;
     return Colors.green.shade100;
   }
 
   Color _statusChipTextColor(Activity activity) {
     if (activity.isCancelled) return Colors.red.shade800;
-    if (activity.isDone) return Colors.grey.shade800;
+    if (activity.isDone || activity.hasEnded) return Colors.grey.shade800;
     if (activity.isFull) return Colors.orange.shade800;
     return Colors.green.shade800;
   }
 
   String _statusLabel(Activity activity) {
     if (activity.isCancelled) return 'Annulée';
-    if (activity.isDone) return 'Terminée';
+    if (activity.isDone || activity.hasEnded) return 'Terminée';
     if (activity.isFull) return 'Complète';
     return 'Ouverte';
   }
@@ -286,7 +338,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     if (activity.isCancelled) {
       return 'Activité annulée';
     }
-    if (activity.isDone) {
+    if (activity.isDone || activity.hasEnded) {
       return 'Activité terminée';
     }
     if (activity.isInviteOnly) {
@@ -299,6 +351,16 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
       return 'Rejoindre (Groupe + Public)';
     }
     return 'Rejoindre';
+  }
+
+  String _formatSchedule(Activity activity) {
+    final scheduleLabel = activity.scheduleLabel.trim();
+
+    if (scheduleLabel.isNotEmpty) {
+      return scheduleLabel;
+    }
+
+    return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
   }
 
   @override
@@ -337,7 +399,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                       children: [
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            initialValue: selectedDay,
+                            value: selectedDay,
                             decoration: const InputDecoration(
                               labelText: 'Jour',
                               border: OutlineInputBorder(),
@@ -361,7 +423,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: DropdownButtonFormField<String>(
-                            initialValue: selectedCategory,
+                            value: selectedCategory,
                             decoration: const InputDecoration(
                               labelText: 'Catégorie',
                               border: OutlineInputBorder(),
@@ -386,7 +448,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
-                      initialValue: selectedSort,
+                      value: selectedSort,
                       decoration: const InputDecoration(
                         labelText: 'Trier par',
                         border: OutlineInputBorder(),
@@ -553,9 +615,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                         ),
                                       ),
                                       const SizedBox(height: 6),
-                                      Text(
-                                        '${activity.day} • ${activity.startTime} - ${activity.endTime}',
-                                      ),
+                                      Text(_formatSchedule(activity)),
                                       const SizedBox(height: 4),
                                       Text(activity.location),
                                       const SizedBox(height: 4),

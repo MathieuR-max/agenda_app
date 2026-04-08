@@ -112,6 +112,54 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
     return currentHour;
   }
 
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
+  int _weekdayFromFrenchDay(String day) {
+    switch (day.trim().toLowerCase()) {
+      case 'lundi':
+        return DateTime.monday;
+      case 'mardi':
+        return DateTime.tuesday;
+      case 'mercredi':
+        return DateTime.wednesday;
+      case 'jeudi':
+        return DateTime.thursday;
+      case 'vendredi':
+        return DateTime.friday;
+      case 'samedi':
+        return DateTime.saturday;
+      case 'dimanche':
+        return DateTime.sunday;
+      default:
+        return DateTime.monday;
+    }
+  }
+
+  DateTime _resolveSelectedDate() {
+    final today = _normalizeDate(DateTime.now());
+    final targetWeekday = _weekdayFromFrenchDay(selectedDay);
+    final currentWeekday = today.weekday;
+    final diff = targetWeekday - currentWeekday;
+
+    return today.add(Duration(days: diff));
+  }
+
+  DateTime _combineDateAndTime(DateTime date, String time) {
+    final parts = time.split(':');
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
+
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+      hour,
+      minute,
+    );
+  }
+
   String _groupActivityInfoText() {
     final displayedGroupName = widget.groupName.trim();
 
@@ -200,6 +248,10 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
       }
     }
 
+    final baseDate = _resolveSelectedDate();
+    final startDateTime = _combineDateAndTime(baseDate, startTime);
+    final endDateTime = _combineDateAndTime(baseDate, endTime);
+
     final effectiveVisibility =
         groupActivityAccess == 'group_and_public'
             ? ActivityVisibilityValues.public
@@ -217,6 +269,8 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
         day: selectedDay,
         startTime: startTime,
         endTime: endTime,
+        startDateTime: startDateTime,
+        endDateTime: endDateTime,
         location: trimmedLocation,
         maxParticipants: normalizedMaxParticipants,
         level: level,
