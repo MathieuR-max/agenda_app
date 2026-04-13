@@ -24,12 +24,32 @@ class _GroupChatPageState extends State<GroupChatPage> {
 
   bool _isSending = false;
   int _lastMessageCount = 0;
+  bool _isMarkingRead = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _markChatAsRead();
+  }
 
   @override
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  Future<void> _markChatAsRead() async {
+    if (_isMarkingRead) return;
+
+    _isMarkingRead = true;
+    try {
+      await _chatRepository.markGroupChatAsRead(widget.groupId);
+    } catch (_) {
+      // volontairement silencieux pour ne pas gêner l’UX du chat
+    } finally {
+      _isMarkingRead = false;
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -57,6 +77,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
     if (success) {
       _controller.clear();
       _scrollToBottom(animated: true);
+      await _markChatAsRead();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -191,6 +212,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
                 if (messages.length != _lastMessageCount) {
                   _lastMessageCount = messages.length;
                   _scrollToBottom();
+                  _markChatAsRead();
                 }
 
                 if (messages.isEmpty) {

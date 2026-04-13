@@ -11,11 +11,18 @@ class ChatFirestoreService {
 
   String get currentUserId => CurrentUser.id;
 
-  Stream<List<Map<String, dynamic>>> getMessages(String activityId) {
+  DocumentReference<Map<String, dynamic>> _activityRef(String activityId) {
     return _db
         .collection(FirestoreCollections.activities)
-        .doc(activityId)
-        .collection(FirestoreCollections.messages)
+        .doc(activityId);
+  }
+
+  CollectionReference<Map<String, dynamic>> _messagesRef(String activityId) {
+    return _activityRef(activityId).collection(FirestoreCollections.messages);
+  }
+
+  Stream<List<Map<String, dynamic>>> getMessages(String activityId) {
+    return _messagesRef(activityId)
         .orderBy('createdAt', descending: false)
         .snapshots()
         .map((snapshot) {
@@ -40,48 +47,60 @@ class ChatFirestoreService {
     required String senderPseudo,
     required String text,
   }) async {
-    await _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId)
-        .collection(FirestoreCollections.messages)
-        .add({
-      'senderId': senderId,
-      'senderPseudo': senderPseudo,
-      'text': text,
-      'type': MessageTypeValues.text,
-      'createdAt': FieldValue.serverTimestamp(),
-    });
+    final trimmedText = text.trim();
+    final trimmedPseudo = senderPseudo.trim();
 
-    await _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId)
-        .update({
-      'lastMessageText': text,
-      'lastMessageAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    });
+    if (activityId.trim().isEmpty) return;
+    if (senderId.trim().isEmpty) return;
+    if (trimmedPseudo.isEmpty) return;
+    if (trimmedText.isEmpty) return;
+
+    await _addMessage(
+      activityId: activityId,
+      senderId: senderId,
+      senderPseudo: trimmedPseudo,
+      text: trimmedText,
+      type: MessageTypeValues.text,
+    );
   }
 
   Future<void> addSystemMessage({
     required String activityId,
     required String text,
   }) async {
-    await _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId)
-        .collection(FirestoreCollections.messages)
-        .add({
-      'senderId': 'system',
-      'senderPseudo': 'Système',
+    final trimmedText = text.trim();
+
+    if (activityId.trim().isEmpty) return;
+    if (trimmedText.isEmpty) return;
+
+    await _addMessage(
+      activityId: activityId,
+      senderId: 'system',
+      senderPseudo: 'Système',
+      text: trimmedText,
+      type: MessageTypeValues.system,
+    );
+  }
+
+  Future<void> _addMessage({
+    required String activityId,
+    required String senderId,
+    required String senderPseudo,
+    required String text,
+    required String type,
+  }) async {
+    final activityRef = _activityRef(activityId);
+    final messagesRef = _messagesRef(activityId);
+
+    await messagesRef.add({
+      'senderId': senderId,
+      'senderPseudo': senderPseudo,
       'text': text,
-      'type': MessageTypeValues.system,
+      'type': type,
       'createdAt': FieldValue.serverTimestamp(),
     });
 
-    await _db
-        .collection(FirestoreCollections.activities)
-        .doc(activityId)
-        .update({
+    await activityRef.update({
       'lastMessageText': text,
       'lastMessageAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/models/activity.dart';
+import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/models/group_model.dart';
 import 'package:agenda_app/repositories/activity_invitation_repository.dart';
+import 'package:agenda_app/repositories/friendship_repository.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
@@ -27,10 +29,12 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
       ActivityInvitationRepository();
   final GroupsRepository groupsRepository = GroupsRepository();
   final UserFirestoreService userService = UserFirestoreService();
+  final FriendshipRepository friendshipRepository = FriendshipRepository();
 
   final TextEditingController searchController = TextEditingController();
 
   late final TabController _tabController;
+  late Future<List<Map<String, dynamic>>> _friendsFuture;
 
   String searchText = '';
   String? selectedGroupId;
@@ -108,33 +112,31 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
         : 'Activité réservée aux membres du groupe.';
   }
 
-  Future<List<String>> _loadFriendIds() async {
-    final currentUser = await userService.getUserById(CurrentUser.id);
-    if (currentUser == null) return [];
+  Future<List<Friendship>> _loadAcceptedFriendships() async {
+    final friendships = await friendshipRepository.getAcceptedFriendships();
 
-    final rawFriends = currentUser['friends'];
-    if (rawFriends is! List) return [];
+    friendships.sort((a, b) {
+      final aDate = a.respondedAt ?? a.createdAt ?? DateTime(2000);
+      final bDate = b.respondedAt ?? b.createdAt ?? DateTime(2000);
+      return bDate.compareTo(aDate);
+    });
 
-    return rawFriends
-        .map((e) => e.toString().trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+    return friendships;
   }
 
-  Future<List<Map<String, dynamic>>> _loadFriends(
-    List<String> friendIds,
-  ) async {
+  Future<List<Map<String, dynamic>>> _loadFriendsFromFriendships() async {
+    final friendships = await _loadAcceptedFriendships();
     final List<Map<String, dynamic>> users = [];
 
-    for (final friendId in friendIds) {
-      final trimmedId = friendId.trim();
-      if (trimmedId.isEmpty) continue;
+    for (final friendship in friendships) {
+      final friendId = friendshipRepository.getOtherUserId(friendship).trim();
+      if (friendId.isEmpty) continue;
 
-      final data = await userService.getUserById(trimmedId);
+      final data = await userService.getUserById(friendId);
       if (data == null) continue;
 
       users.add({
-        'id': trimmedId,
+        'id': friendId,
         ...data,
       });
     }
@@ -146,6 +148,12 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
     });
 
     return users;
+  }
+
+  void _refreshFriends() {
+    setState(() {
+      _friendsFuture = _loadFriendsFromFriendships();
+    });
   }
 
   String _friendStatusLabel({
@@ -240,6 +248,10 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
       return;
     }
 
+    if (isSelectedGroupAlreadyLinkedToActivity) {
+      return;
+    }
+
     setState(() {
       isSendingGroup = true;
     });
@@ -280,6 +292,7 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
       }
 
       int sentCount = 0;
+      final Set<String> newlyInvitedIds = <String>{};
 
       for (final memberId in memberIds) {
         final trimmedId = memberId.trim();
@@ -297,8 +310,14 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
 
         if (sent) {
           sentCount++;
-          locallyInvitedUserIds.add(trimmedId);
+          newlyInvitedIds.add(trimmedId);
         }
+      }
+
+      if (mounted && newlyInvitedIds.isNotEmpty) {
+        setState(() {
+          locallyInvitedUserIds.addAll(newlyInvitedIds);
+        });
       }
 
       if (!mounted) return;
@@ -468,7 +487,7 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
                   ],
                   const SizedBox(height: 12),
                   DropdownButtonFormField<String>(
-                    initialValue: groupActivityAccess,
+                    value: groupActivityAccess,
                     items: groupActivityAccessOptions
                         .map(
                           (option) => DropdownMenuItem(
@@ -537,13 +556,12 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
   Widget _buildFriendsTab(
     Activity currentActivity,
     bool readOnly,
-    AsyncSnapshot<List<String>> friendIdsSnapshot,
     AsyncSnapshot<List<Map<String, dynamic>>> friendsSnapshot,
     Set<String> participantIds,
     Set<String> pendingInvitationIds,
   ) {
-    final friendIds = friendIdsSnapshot.data ?? [];
-    final friends = (friendsSnapshot.data ?? []).where(_matchesSearch).toList();
+    final allFriends = friendsSnapshot.data ?? [];
+    final friends = allFriends.where(_matchesSearch).toList();
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -563,39 +581,38 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
           },
         ),
         const SizedBox(height: 14),
-        if (friendIdsSnapshot.connectionState == ConnectionState.waiting ||
-            friendsSnapshot.connectionState == ConnectionState.waiting)
+        if (friendsSnapshot.connectionState == ConnectionState.waiting)
           const LinearProgressIndicator(),
-        if (friendIdsSnapshot.hasError)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                'Erreur chargement amis : ${friendIdsSnapshot.error}',
-              ),
-            ),
-          ),
         if (friendsSnapshot.hasError)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(
-                'Erreur chargement profils amis : ${friendsSnapshot.error}',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Erreur chargement amis : ${friendsSnapshot.error}',
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _refreshFriends,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Réessayer'),
+                  ),
+                ],
               ),
             ),
           ),
-        if (friendIdsSnapshot.connectionState != ConnectionState.waiting &&
-            friendsSnapshot.connectionState != ConnectionState.waiting &&
-            !friendIdsSnapshot.hasError &&
+        if (friendsSnapshot.connectionState != ConnectionState.waiting &&
             !friendsSnapshot.hasError &&
-            friendIds.isEmpty)
+            allFriends.isEmpty)
           const Card(
             child: Padding(
               padding: EdgeInsets.all(16),
               child: Text('Aucun ami disponible.'),
             ),
           ),
-        if (friendIds.isNotEmpty && friends.isEmpty)
+        if (allFriends.isNotEmpty && friends.isEmpty)
           const Card(
             child: Padding(
               padding: EdgeInsets.all(16),
@@ -702,6 +719,8 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
     groupActivityAccess = widget.activity.isMixedGroupActivity
         ? 'group_and_public'
         : 'group_only';
+
+    _friendsFuture = _loadFriendsFromFriendships();
   }
 
   @override
@@ -772,78 +791,72 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
               ],
             ),
           ),
-          body: FutureBuilder<List<String>>(
-            future: _loadFriendIds(),
-            builder: (context, friendIdsSnapshot) {
-              return FutureBuilder<List<Map<String, dynamic>>>(
-                future: _loadFriends(friendIdsSnapshot.data ?? []),
-                builder: (context, friendsSnapshot) {
-                  return StreamBuilder<List<GroupModel>>(
-                    stream: groupsRepository.watchMyGroups(),
-                    builder: (context, groupsSnapshot) {
-                      return StreamBuilder<List<String>>(
-                        stream: activityService.getParticipants(
+          body: FutureBuilder<List<Map<String, dynamic>>>(
+            future: _friendsFuture,
+            builder: (context, friendsSnapshot) {
+              return StreamBuilder<List<GroupModel>>(
+                stream: groupsRepository.watchMyGroups(),
+                builder: (context, groupsSnapshot) {
+                  return StreamBuilder<List<String>>(
+                    stream: activityService.getParticipants(
+                      currentActivity.id,
+                    ),
+                    builder: (context, participantsSnapshot) {
+                      final participantIds = (participantsSnapshot.data ??
+                              <String>[])
+                          .map((e) => e.trim())
+                          .where((e) => e.isNotEmpty)
+                          .toSet();
+
+                      return StreamBuilder<Set<String>>(
+                        stream:
+                            invitationRepository.watchPendingInvitationTargetIds(
                           currentActivity.id,
                         ),
-                        builder: (context, participantsSnapshot) {
-                          final participantIds = (participantsSnapshot.data ??
-                                  <String>[])
-                              .map((e) => e.trim())
-                              .where((e) => e.isNotEmpty)
-                              .toSet();
+                        builder: (context, pendingInvitationsSnapshot) {
+                          final pendingInvitationIds =
+                              pendingInvitationsSnapshot.data ?? <String>{};
 
-                          return StreamBuilder<Set<String>>(
-                            stream: invitationRepository
-                                .watchPendingInvitationTargetIds(
-                              currentActivity.id,
-                            ),
-                            builder: (context, pendingInvitationsSnapshot) {
-                              final pendingInvitationIds =
-                                  pendingInvitationsSnapshot.data ?? <String>{};
-
-                              return Column(
-                                children: [
-                                  if (readOnly)
-                                    Container(
-                                      width: double.infinity,
-                                      padding: const EdgeInsets.all(12),
-                                      color: Colors.grey.shade300,
-                                      child: Text(
-                                        currentActivity.isCancelled
-                                            ? 'Cette activité est annulée. Les invitations sont désactivées.'
-                                            : 'Cette activité est terminée ou déjà passée. Les invitations sont désactivées.',
-                                        textAlign: TextAlign.center,
-                                      ),
-                                    ),
-                                  if (participantsSnapshot.connectionState ==
-                                          ConnectionState.waiting ||
-                                      pendingInvitationsSnapshot.connectionState ==
-                                          ConnectionState.waiting)
-                                    const LinearProgressIndicator(minHeight: 2),
-                                  _buildHeader(currentActivity),
-                                  Expanded(
-                                    child: TabBarView(
-                                      controller: _tabController,
-                                      children: [
-                                        _buildGroupsTab(
-                                          currentActivity,
-                                          readOnly,
-                                          groupsSnapshot,
-                                        ),
-                                        _buildFriendsTab(
-                                          currentActivity,
-                                          readOnly,
-                                          friendIdsSnapshot,
-                                          friendsSnapshot,
-                                          participantIds,
-                                          pendingInvitationIds,
-                                        ),
-                                      ],
-                                    ),
+                          return Column(
+                            children: [
+                              if (readOnly)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  color: Colors.grey.shade300,
+                                  child: Text(
+                                    currentActivity.isCancelled
+                                        ? 'Cette activité est annulée. Les invitations sont désactivées.'
+                                        : 'Cette activité est terminée ou déjà passée. Les invitations sont désactivées.',
+                                    textAlign: TextAlign.center,
                                   ),
-                                ],
-                              );
-                            },
+                                ),
+                              if (participantsSnapshot.connectionState ==
+                                      ConnectionState.waiting ||
+                                  pendingInvitationsSnapshot.connectionState ==
+                                      ConnectionState.waiting)
+                                const LinearProgressIndicator(minHeight: 2),
+                              _buildHeader(currentActivity),
+                              Expanded(
+                                child: TabBarView(
+                                  controller: _tabController,
+                                  children: [
+                                    _buildGroupsTab(
+                                      currentActivity,
+                                      readOnly,
+                                      groupsSnapshot,
+                                    ),
+                                    _buildFriendsTab(
+                                      currentActivity,
+                                      readOnly,
+                                      friendsSnapshot,
+                                      participantIds,
+                                      pendingInvitationIds,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           );
                         },
                       );

@@ -47,11 +47,20 @@ class _CalendarPageState extends State<CalendarPage> {
     'Dimanche',
   ];
 
+  late final List<String> _timeSlots;
+
   CalendarFilterType _activeFilter = CalendarFilterType.none;
   bool _showAdvancedFilters = false;
-  DateTime _displayedWeekAnchor = DateTime.now();
+  late DateTime _displayedWeekAnchor;
 
   bool get _hasActiveFilter => _activeFilter != CalendarFilterType.none;
+
+  @override
+  void initState() {
+    super.initState();
+    _timeSlots = generateTimeSlots();
+    _displayedWeekAnchor = _normalizeDate(DateTime.now());
+  }
 
   List<String> generateTimeSlots() {
     final List<String> slots = [];
@@ -65,6 +74,10 @@ class _CalendarPageState extends State<CalendarPage> {
     return slots;
   }
 
+  DateTime _normalizeDate(DateTime date) {
+    return DateTime(date.year, date.month, date.day);
+  }
+
   int timeToMinutes(String time) {
     final parts = time.split(':');
     if (parts.length != 2) return 0;
@@ -76,7 +89,7 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   DateTime _startOfWeek(DateTime date) {
-    final normalized = DateTime(date.year, date.month, date.day);
+    final normalized = _normalizeDate(date);
     final weekday = normalized.weekday;
     return normalized.subtract(Duration(days: weekday - 1));
   }
@@ -156,19 +169,6 @@ class _CalendarPageState extends State<CalendarPage> {
     final value = search['endDateTime'];
     if (value is DateTime) return value;
     return null;
-  }
-
-  DateTime? _searchEffectiveSortDateTime(Map<String, dynamic> search) {
-    final value = search['effectiveSortDateTime'];
-    if (value is DateTime) return value;
-    return _searchResolvedStartDateTime(search);
-  }
-
-  bool _isDateInDisplayedWeek(DateTime date) {
-    final start = _startOfWeek(_displayedWeekAnchor);
-    final endExclusive = _startOfNextWeek(_displayedWeekAnchor);
-
-    return !date.isBefore(start) && date.isBefore(endExclusive);
   }
 
   bool _isRangeIntersectingDisplayedWeek(DateTime? start, DateTime? end) {
@@ -622,7 +622,7 @@ class _CalendarPageState extends State<CalendarPage> {
             runSpacing: 3,
             children: [
               _buildMiniBadge(
-                availability.type,
+                availability.typeLabel,
                 backgroundColor: Colors.white.withOpacity(0.85),
                 textColor: Colors.black87,
                 isDimmed: isDimmed,
@@ -1056,10 +1056,39 @@ class _CalendarPageState extends State<CalendarPage> {
     );
   }
 
+  Widget _buildCalendarBody(
+    BuildContext context,
+    List<Activity> createdActivities,
+    List<Activity> joinedActivities,
+    List<Availability> availabilities,
+    List<Map<String, dynamic>> searches,
+  ) {
+    return Column(
+      children: [
+        _buildWeekNavigator(),
+        _buildWeeklySummary(
+          createdActivities,
+          joinedActivities,
+          availabilities,
+          searches,
+        ),
+        buildDaysHeader(),
+        Expanded(
+          child: buildCalendarGrid(
+            context,
+            _timeSlots,
+            createdActivities,
+            joinedActivities,
+            availabilities,
+            searches,
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final timeSlots = generateTimeSlots();
-
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyLeading: false,
@@ -1141,47 +1170,39 @@ class _CalendarPageState extends State<CalendarPage> {
                         );
                       }
 
-                      final createdActivities = _filterActivitiesForDisplayedWeek(
-                        createdSnapshot.data ?? [],
+                      final rawCreatedActivities = createdSnapshot.data ?? [];
+                      final rawJoinedActivities = joinedSnapshot.data ?? [];
+                      final rawAvailabilities = availabilitySnapshot.data ?? [];
+                      final rawSearches = searchSnapshot.data ?? [];
+
+                      final createdActivities =
+                          _filterActivitiesForDisplayedWeek(
+                        rawCreatedActivities,
                       );
 
-                      final joinedActivities = _filterActivitiesForDisplayedWeek(
+                      final joinedActivities =
+                          _filterActivitiesForDisplayedWeek(
                         _deduplicateJoinedActivities(
-                          createdSnapshot.data ?? [],
-                          joinedSnapshot.data ?? [],
+                          rawCreatedActivities,
+                          rawJoinedActivities,
                         ),
                       );
 
                       final availabilities =
                           _filterAvailabilitiesForDisplayedWeek(
-                        availabilitySnapshot.data ?? [],
+                        rawAvailabilities,
                       );
 
                       final searches = _filterSearchesForDisplayedWeek(
-                        searchSnapshot.data ?? [],
+                        rawSearches,
                       );
 
-                      return Column(
-                        children: [
-                          _buildWeekNavigator(),
-                          _buildWeeklySummary(
-                            createdActivities,
-                            joinedActivities,
-                            availabilities,
-                            searches,
-                          ),
-                          buildDaysHeader(),
-                          Expanded(
-                            child: buildCalendarGrid(
-                              context,
-                              timeSlots,
-                              createdActivities,
-                              joinedActivities,
-                              availabilities,
-                              searches,
-                            ),
-                          ),
-                        ],
+                      return _buildCalendarBody(
+                        context,
+                        createdActivities,
+                        joinedActivities,
+                        availabilities,
+                        searches,
                       );
                     },
                   );

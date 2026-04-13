@@ -154,7 +154,7 @@ class ActivityRepository {
       pseudo: ownerPseudo,
     );
 
-    await _chatService.addSystemMessage(
+    await _sendSystemMessage(
       activityId: activityId,
       text: trimmedGroupId != null
           ? 'Activité de groupe créée par $ownerPseudo'
@@ -226,7 +226,7 @@ class ActivityRepository {
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
-        systemMessage = 'L’activité a été mise à jour (modification limitée).';
+        systemMessage = 'L’activité a été mise à jour.';
         return;
       }
 
@@ -317,7 +317,7 @@ class ActivityRepository {
     });
 
     if (systemMessage != null) {
-      await _chatService.addSystemMessage(
+      await _sendSystemMessage(
         activityId: trimmedActivityId,
         text: systemMessage!,
       );
@@ -335,6 +335,7 @@ class ActivityRepository {
     final userRef = _usersRef.doc(currentUserId);
 
     String joinedPseudo = '';
+    String? postJoinSystemMessage;
 
     final success = await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
@@ -401,13 +402,14 @@ class ActivityRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
+      postJoinSystemMessage = '$joinedPseudo a rejoint l’activité';
       return true;
     });
 
-    if (success) {
-      await _chatService.addSystemMessage(
+    if (success && postJoinSystemMessage != null) {
+      await _sendSystemMessage(
         activityId: activityId,
-        text: '$joinedPseudo a rejoint l’activité',
+        text: postJoinSystemMessage!,
       );
     }
 
@@ -440,6 +442,10 @@ class ActivityRepository {
 
       leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString().trim();
 
+      if (leavingPseudo.isEmpty) {
+        leavingPseudo = await _userService.getCurrentUserPseudo();
+      }
+
       final participantCount = parseInt(activityData['participantCount']);
       final maxParticipants = parseInt(activityData['maxParticipants']);
       final currentStatus =
@@ -463,7 +469,7 @@ class ActivityRepository {
     });
 
     if (leavingPseudo.isNotEmpty) {
-      await _chatService.addSystemMessage(
+      await _sendSystemMessage(
         activityId: trimmedActivityId,
         text: '$leavingPseudo a quitté l’activité',
       );
@@ -497,6 +503,10 @@ class ActivityRepository {
       }
 
       leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString().trim();
+
+      if (leavingPseudo.isEmpty) {
+        leavingPseudo = await _userService.getCurrentUserPseudo();
+      }
 
       final ownerId = (data['ownerId'] ?? '').toString().trim();
       final participantCount = parseInt(data['participantCount']);
@@ -556,14 +566,14 @@ class ActivityRepository {
     }
 
     if (leavingPseudo.isNotEmpty) {
-      await _chatService.addSystemMessage(
+      await _sendSystemMessage(
         activityId: trimmedActivityId,
         text: '$leavingPseudo a quitté l’activité',
       );
     }
 
     if (ownerPendingSet) {
-      await _chatService.addSystemMessage(
+      await _sendSystemMessage(
         activityId: trimmedActivityId,
         text: 'L’activité attend un nouvel organisateur',
       );
@@ -622,7 +632,7 @@ class ActivityRepository {
     });
 
     if (success) {
-      await _chatService.addSystemMessage(
+      await _sendSystemMessage(
         activityId: trimmedActivityId,
         text: '$pseudo est devenu organisateur',
       );
@@ -698,6 +708,23 @@ class ActivityRepository {
     if (value is bool) return value;
     if (value is String) return value.trim().toLowerCase() == 'true';
     return false;
+  }
+
+  Future<void> _sendSystemMessage({
+    required String activityId,
+    required String text,
+  }) async {
+    final trimmedActivityId = activityId.trim();
+    final trimmedText = text.trim();
+
+    if (trimmedActivityId.isEmpty || trimmedText.isEmpty) {
+      return;
+    }
+
+    await _chatService.addSystemMessage(
+      activityId: trimmedActivityId,
+      text: trimmedText,
+    );
   }
 
   DateTime? _combineLegacyDateAndTime(String day, String time) {

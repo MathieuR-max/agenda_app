@@ -63,6 +63,8 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
   final Set<String> selectedFriendIds = <String>{};
 
+  late Future<List<Map<String, dynamic>>> _friendsFuture;
+
   final List<String> categories = const [
     'Sport',
     'Sortie',
@@ -283,6 +285,12 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     });
 
     return users;
+  }
+
+  void _refreshFriends() {
+    setState(() {
+      _friendsFuture = _loadFriendsFromFriendships();
+    });
   }
 
   Future<void> _openFriendSelection(
@@ -516,6 +524,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     selectedDate = _resolveSelectedDate();
     startTime = widget.hour;
     endTime = getNextSlot(widget.hour);
+    _friendsFuture = _loadFriendsFromFriendships();
 
     if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
       endTime = getNextSlot(startTime);
@@ -683,7 +692,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     final timeSlots = generateTimeSlots();
 
     return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _loadFriendsFromFriendships(),
+      future: _friendsFuture,
       builder: (context, friendsSnapshot) {
         final friends = friendsSnapshot.data ?? [];
         final selectedFriends = friends
@@ -1004,8 +1013,22 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                               const SizedBox(height: 10),
                               const LinearProgressIndicator(),
                             ],
+                            if (friendsSnapshot.hasError) ...[
+                              const SizedBox(height: 10),
+                              Text(
+                                'Erreur chargement amis : ${friendsSnapshot.error}',
+                                style: const TextStyle(color: Colors.red),
+                              ),
+                              const SizedBox(height: 8),
+                              OutlinedButton.icon(
+                                onPressed: isSaving ? null : _refreshFriends,
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Réessayer'),
+                              ),
+                            ],
                             if (friendsSnapshot.connectionState !=
                                     ConnectionState.waiting &&
+                                !friendsSnapshot.hasError &&
                                 friends.isEmpty) ...[
                               const SizedBox(height: 10),
                               const Text(

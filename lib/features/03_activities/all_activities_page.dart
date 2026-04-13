@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/user_model.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
+import 'package:agenda_app/repositories/profile_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
-import 'package:agenda_app/repositories/profile_repository.dart';
 import 'activity_detail_page.dart';
 
 class AllActivitiesPage extends StatefulWidget {
@@ -133,11 +133,16 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     return activity.effectiveDay == selectedDay;
   }
 
-  List<Activity> filterAndSortActivities(
-    List<Activity> activities,
-    List<String> favoriteCategories,
-  ) {
+  List<Activity> filterAndSortActivities({
+    required List<Activity> activities,
+    required List<String> favoriteCategories,
+    required List<String> joinedIds,
+    required String currentUserId,
+  }) {
     final filtered = activities.where((activity) {
+      final bool validActivityId = activity.id.trim().isNotEmpty;
+      final bool validTitle = activity.title.trim().isNotEmpty;
+
       final bool dayOk = _matchesSelectedDay(activity);
       final bool categoryOk =
           selectedCategory == 'Toutes' || activity.category == selectedCategory;
@@ -155,12 +160,19 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
 
       final bool visibilityOk = activity.isPublic;
 
-      return dayOk &&
+      final bool isOwner = activity.ownerId == currentUserId;
+      final bool isParticipant = joinedIds.contains(activity.id);
+      final bool participationOk = isOwner || isParticipant;
+
+      return validActivityId &&
+          validTitle &&
+          dayOk &&
           categoryOk &&
           availableOk &&
           ownerNeededOk &&
           favoriteOk &&
-          visibilityOk;
+          visibilityOk &&
+          participationOk;
     }).toList();
 
     switch (selectedSort) {
@@ -205,10 +217,14 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
       case 'Jour / heure':
       default:
         filtered.sort((a, b) {
-          final aDate =
-              a.effectiveSortDateTime ?? a.updatedAt ?? a.createdAt ?? DateTime(2100);
-          final bDate =
-              b.effectiveSortDateTime ?? b.updatedAt ?? b.createdAt ?? DateTime(2100);
+          final aDate = a.effectiveSortDateTime ??
+              a.updatedAt ??
+              a.createdAt ??
+              DateTime(2100);
+          final bDate = b.effectiveSortDateTime ??
+              b.updatedAt ??
+              b.createdAt ??
+              DateTime(2100);
 
           final compareDate = aDate.compareTo(bDate);
           if (compareDate != 0) return compareDate;
@@ -546,8 +562,10 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                         final joinedIds = joinedIdsSnapshot.data ?? [];
                         final allActivities = allSnapshot.data ?? [];
                         final activities = filterAndSortActivities(
-                          allActivities,
-                          favoriteCategories,
+                          activities: allActivities,
+                          favoriteCategories: favoriteCategories,
+                          joinedIds: joinedIds,
+                          currentUserId: currentUserId,
                         );
 
                         if (activities.isEmpty) {

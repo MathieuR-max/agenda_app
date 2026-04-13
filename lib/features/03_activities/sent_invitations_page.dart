@@ -55,23 +55,16 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
   }
 
   String _statusLabel(ActivityInvitation invitation) {
-    switch (invitation.status) {
-      case ActivityInvitation.statusAccepted:
-        return 'Acceptée';
-      case ActivityInvitation.statusRefused:
-        return 'Refusée';
-      case ActivityInvitation.statusCancelled:
-        return 'Annulée';
-      case ActivityInvitation.statusPending:
-      default:
-        return 'En attente';
-    }
+    return invitation.statusLabel;
   }
 
   String _displayUserName(ActivityInvitation invitation) {
     final pseudo = invitation.toUserPseudo.trim();
     if (pseudo.isNotEmpty) return pseudo;
-    if (invitation.toUserId.trim().isNotEmpty) return invitation.toUserId;
+
+    final userId = invitation.toUserId.trim();
+    if (userId.isNotEmpty) return userId;
+
     return 'Utilisateur';
   }
 
@@ -98,7 +91,27 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
   }
 
   String _formatActivitySchedule(Activity activity) {
+    final schedule = activity.scheduleLabel.trim();
+    if (schedule.isNotEmpty) {
+      return schedule;
+    }
+
     return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
+  }
+
+  String _formatInvitationSchedule(ActivityInvitation invitation) {
+    final day = invitation.activityDay.trim();
+    final start = invitation.activityStartTime.trim();
+
+    if (day.isNotEmpty && start.isNotEmpty) {
+      return '$day • $start';
+    }
+
+    if (day.isNotEmpty) {
+      return day;
+    }
+
+    return start;
   }
 
   Future<void> _cancelInvitation(
@@ -299,7 +312,9 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
                               : _formatActivitySchedule(widget.activity),
                         ),
                         const SizedBox(height: 2),
-                        Text(currentActivity?.location ?? widget.activity.location),
+                        Text(
+                          currentActivity?.location ?? widget.activity.location,
+                        ),
                       ],
                     ),
                   ),
@@ -403,7 +418,7 @@ class _SentInvitationsPageState extends State<SentInvitationsPage> {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  '${invitation.activityDay} • ${invitation.activityStartTime}',
+                                  _formatInvitationSchedule(invitation),
                                   style: TextStyle(
                                     color: Colors.grey.shade700,
                                   ),

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/features/main_navigation_page.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class TestUserSelectorPage extends StatefulWidget {
   const TestUserSelectorPage({super.key});
@@ -10,23 +10,35 @@ class TestUserSelectorPage extends StatefulWidget {
 }
 
 class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
-  final List<String> testUsers = ['Pierre', 'Alex', 'Jack'];
+  final List<String> testUsers = const ['Pierre', 'Alex', 'Jack'];
 
-  void _selectUser(BuildContext context, String userId) {
-    if (!CurrentUser.isSet || CurrentUser.id != userId) {
-      CurrentUser.setUser(userId);
+  Future<void> _selectUser(BuildContext context, String userId) async {
+    final String trimmedUserId = userId.trim();
+    if (trimmedUserId.isEmpty) return;
+
+    final String? currentUserId = CurrentUser.idOrNull?.trim();
+    final bool isSameUser = currentUserId == trimmedUserId;
+
+    if (!isSameUser) {
+      CurrentUser.setUser(trimmedUserId);
     }
 
-    Navigator.pushReplacement(
-      context,
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const MainNavigationPage(),
+        builder: (_) => MainNavigationPage(
+          key: ValueKey('main_nav_${CurrentUser.id}'),
+        ),
       ),
+      (route) => false,
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final String? currentUserId = CurrentUser.idOrNull?.trim();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Choisir un utilisateur de test'),
@@ -34,9 +46,8 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
       body: ListView.builder(
         itemCount: testUsers.length,
         itemBuilder: (context, index) {
-          final String userId = testUsers[index];
-          final bool isSelected =
-              CurrentUser.isSet && CurrentUser.id == userId;
+          final String userId = testUsers[index].trim();
+          final bool isSelected = currentUserId == userId;
 
           return ListTile(
             leading: Icon(

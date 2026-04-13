@@ -32,6 +32,12 @@ class ActivityInvitationRepository {
   CollectionReference<Map<String, dynamic>> get _activityInvitationsRef =>
       _db.collection(FirestoreCollections.activityInvitations);
 
+  CollectionReference<Map<String, dynamic>> _participantsRef(String activityId) {
+    return _activitiesRef
+        .doc(activityId.trim())
+        .collection(FirestoreCollections.participants);
+  }
+
   Future<bool> isUserAlreadyParticipant({
     required String activityId,
     required String userId,
@@ -43,9 +49,7 @@ class ActivityInvitationRepository {
       return false;
     }
 
-    final participantDoc = await _activitiesRef
-        .doc(trimmedActivityId)
-        .collection(FirestoreCollections.participants)
+    final participantDoc = await _participantsRef(trimmedActivityId)
         .doc(trimmedUserId)
         .get();
 
@@ -125,15 +129,39 @@ class ActivityInvitationRepository {
       return false;
     }
 
+    final alreadyParticipant = await isUserAlreadyParticipant(
+      activityId: trimmedActivityId,
+      userId: trimmedToUserId,
+    );
+
+    if (alreadyParticipant) {
+      return false;
+    }
+
+    final alreadyInvited = await hasPendingInvitation(
+      activityId: trimmedActivityId,
+      toUserId: trimmedToUserId,
+    );
+
+    if (alreadyInvited) {
+      return false;
+    }
+
     final activityRef = _activitiesRef.doc(trimmedActivityId);
     final toUserRef = _usersRef.doc(trimmedToUserId);
+    final participantRef = _participantsRef(trimmedActivityId).doc(trimmedToUserId);
     final fromUserPseudo = await _userService.getCurrentUserPseudo();
 
     return await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
       final toUserDoc = await transaction.get(toUserRef);
+      final participantDoc = await transaction.get(participantRef);
 
       if (!activityDoc.exists || !toUserDoc.exists) {
+        return false;
+      }
+
+      if (participantDoc.exists) {
         return false;
       }
 
@@ -150,27 +178,6 @@ class ActivityInvitationRepository {
       if (status == ActivityStatusValues.cancelled ||
           status == ActivityStatusValues.done ||
           currentActivity.hasEnded) {
-        return false;
-      }
-
-      final participantRef = activityRef
-          .collection(FirestoreCollections.participants)
-          .doc(trimmedToUserId);
-
-      final participantDoc = await transaction.get(participantRef);
-
-      if (participantDoc.exists) {
-        return false;
-      }
-
-      final existingInviteQuery = await _activityInvitationsRef
-          .where('activityId', isEqualTo: currentActivity.id)
-          .where('toUserId', isEqualTo: trimmedToUserId)
-          .where('status', isEqualTo: InvitationStatusValues.pending)
-          .limit(1)
-          .get();
-
-      if (existingInviteQuery.docs.isNotEmpty) {
         return false;
       }
 
@@ -198,12 +205,16 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> acceptInvitation(ActivityInvitation invitation) async {
-    final invitationRef =
-        _activityInvitationsRef.doc(invitation.id.trim());
-    final activityRef = _activitiesRef.doc(invitation.activityId.trim());
-    final participantRef = activityRef
-        .collection(FirestoreCollections.participants)
-        .doc(currentUserId);
+    final trimmedInvitationId = invitation.id.trim();
+    final trimmedActivityId = invitation.activityId.trim();
+
+    if (trimmedInvitationId.isEmpty || trimmedActivityId.isEmpty) {
+      return false;
+    }
+
+    final invitationRef = _activityInvitationsRef.doc(trimmedInvitationId);
+    final activityRef = _activitiesRef.doc(trimmedActivityId);
+    final participantRef = _participantsRef(trimmedActivityId).doc(currentUserId);
 
     final currentUserPseudo = await _userService.getCurrentUserPseudo();
 
@@ -216,14 +227,6 @@ class ActivityInvitationRepository {
         return false;
       }
 
-      if (participantDoc.exists) {
-        transaction.update(invitationRef, {
-          'status': InvitationStatusValues.accepted,
-          'respondedAt': FieldValue.serverTimestamp(),
-        });
-        return true;
-      }
-
       final invitationData = invitationDoc.data();
       final activityData = activityDoc.data();
 
@@ -233,10 +236,26 @@ class ActivityInvitationRepository {
 
       final invitationStatus =
           (invitationData['status'] ?? InvitationStatusValues.pending)
-              .toString();
+              .toString()
+              .trim();
 
       if (invitationStatus != InvitationStatusValues.pending) {
         return false;
+      }
+
+      final invitationToUserId =
+          (invitationData['toUserId'] ?? '').toString().trim();
+
+      if (invitationToUserId.isNotEmpty && invitationToUserId != currentUserId) {
+        return false;
+      }
+
+      if (participantDoc.exists) {
+        transaction.update(invitationRef, {
+          'status': InvitationStatusValues.accepted,
+          'respondedAt': FieldValue.serverTimestamp(),
+        });
+        return true;
       }
 
       final currentActivity = Activity.fromMap(activityDoc.id, activityData);
@@ -285,7 +304,7 @@ class ActivityInvitationRepository {
 
     if (success) {
       await _chatService.addSystemMessage(
-        activityId: invitation.activityId,
+        activityId: trimmedActivityId,
         text: '$currentUserPseudo a rejoint l’activité via invitation',
       );
     }
@@ -294,7 +313,13 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> refuseInvitation(String invitationId) async {
-    final invitationRef = _activityInvitationsRef.doc(invitationId.trim());
+    final trimmedInvitationId = invitationId.trim();
+
+    if (trimmedInvitationId.isEmpty) {
+      return false;
+    }
+
+    final invitationRef = _activityInvitationsRef.doc(trimmedInvitationId);
 
     return await _db.runTransaction((transaction) async {
       final invitationDoc = await transaction.get(invitationRef);
@@ -305,9 +330,14 @@ class ActivityInvitationRepository {
 
       final data = invitationDoc.data()!;
       final status =
-          (data['status'] ?? InvitationStatusValues.pending).toString();
+          (data['status'] ?? InvitationStatusValues.pending).toString().trim();
+      final toUserId = (data['toUserId'] ?? '').toString().trim();
 
       if (status != InvitationStatusValues.pending) {
+        return false;
+      }
+
+      if (toUserId.isNotEmpty && toUserId != currentUserId) {
         return false;
       }
 
@@ -321,7 +351,13 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> cancelInvitation(String invitationId) async {
-    final invitationRef = _activityInvitationsRef.doc(invitationId.trim());
+    final trimmedInvitationId = invitationId.trim();
+
+    if (trimmedInvitationId.isEmpty) {
+      return false;
+    }
+
+    final invitationRef = _activityInvitationsRef.doc(trimmedInvitationId);
 
     return await _db.runTransaction((transaction) async {
       final invitationDoc = await transaction.get(invitationRef);
@@ -332,9 +368,14 @@ class ActivityInvitationRepository {
 
       final data = invitationDoc.data()!;
       final status =
-          (data['status'] ?? InvitationStatusValues.pending).toString();
+          (data['status'] ?? InvitationStatusValues.pending).toString().trim();
+      final fromUserId = (data['fromUserId'] ?? '').toString().trim();
 
       if (status != InvitationStatusValues.pending) {
+        return false;
+      }
+
+      if (fromUserId.isNotEmpty && fromUserId != currentUserId) {
         return false;
       }
 

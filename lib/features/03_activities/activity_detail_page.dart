@@ -196,6 +196,38 @@ class ActivityDetailPage extends StatelessWidget {
     return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
   }
 
+  String _chatButtonLabel({
+    required bool isCancelled,
+    required bool isDone,
+    required bool hasEnded,
+  }) {
+    if (isCancelled) return 'Ouvrir le chat (lecture seule)';
+    if (isDone || hasEnded) return 'Ouvrir le chat (lecture seule)';
+    return 'Ouvrir le chat';
+  }
+
+  String? _chatInfoText({
+    required bool isParticipant,
+    required bool isOwner,
+    required bool isCancelled,
+    required bool isDone,
+    required bool hasEnded,
+  }) {
+    if (isCancelled) {
+      return 'Le chat reste accessible, mais aucun nouveau message ne peut être envoyé.';
+    }
+
+    if (isDone || hasEnded) {
+      return 'Le chat reste accessible après l’activité, en lecture seule.';
+    }
+
+    if (isParticipant || isOwner) {
+      return null;
+    }
+
+    return 'Vous pouvez consulter le chat de cette activité.';
+  }
+
   Future<bool> _confirmAction({
     required BuildContext context,
     required String title,
@@ -338,6 +370,20 @@ class ActivityDetailPage extends StatelessWidget {
     }
   }
 
+  void _openChat(
+    BuildContext context, {
+    required Activity activity,
+  }) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ActivityChatPage(
+          activity: activity,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final activityService = ActivityFirestoreService();
@@ -468,6 +514,14 @@ class ActivityDetailPage extends StatelessWidget {
 
                     final bool canAttemptJoin =
                         !ownerPending && !isParticipant && !isOwner;
+
+                    final String? chatInfoText = _chatInfoText(
+                      isParticipant: isParticipant,
+                      isOwner: isOwner,
+                      isCancelled: isCancelled,
+                      isDone: isDone,
+                      hasEnded: hasEnded,
+                    );
 
                     return SingleChildScrollView(
                       child: Column(
@@ -707,23 +761,40 @@ class ActivityDetailPage extends StatelessWidget {
                             ),
                           ],
                           const SizedBox(height: 16),
+                          const Text(
+                            'Discussion',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           SizedBox(
                             width: double.infinity,
                             child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => ActivityChatPage(
-                                      activity: currentActivity,
-                                    ),
-                                  ),
-                                );
-                              },
+                              onPressed: () => _openChat(
+                                context,
+                                activity: currentActivity,
+                              ),
                               icon: const Icon(Icons.chat_bubble_outline),
-                              label: const Text('Ouvrir le chat'),
+                              label: Text(
+                                _chatButtonLabel(
+                                  isCancelled: isCancelled,
+                                  isDone: isDone,
+                                  hasEnded: hasEnded,
+                                ),
+                              ),
                             ),
                           ),
+                          if (chatInfoText != null) ...[
+                            const SizedBox(height: 8),
+                            Text(
+                              chatInfoText,
+                              style: TextStyle(
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
                           if (canShowEditButton) ...[
                             const SizedBox(height: 12),
                             SizedBox(

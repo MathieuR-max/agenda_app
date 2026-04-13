@@ -1,10 +1,9 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/models/activity.dart';
+import 'package:agenda_app/models/activity_message.dart';
+import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
-import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class ActivityChatPage extends StatefulWidget {
@@ -20,38 +19,65 @@ class ActivityChatPage extends StatefulWidget {
 }
 
 class _ActivityChatPageState extends State<ActivityChatPage> {
-  final ChatFirestoreService chatService = ChatFirestoreService();
+  final ChatRepository chatRepository = ChatRepository();
   final UserFirestoreService userService = UserFirestoreService();
   final ActivityFirestoreService activityService = ActivityFirestoreService();
   final TextEditingController messageController = TextEditingController();
+  final ScrollController scrollController = ScrollController();
 
   bool isSending = false;
+  bool isMarkingRead = false;
+  int lastMessageCount = 0;
 
-  bool _isSystemMessage(Map<String, dynamic> message) {
-    return (message['type'] ?? '').toString() == MessageTypeValues.system;
+  @override
+  void initState() {
+    super.initState();
+    _markChatAsRead();
   }
 
-  bool _isCurrentUserMessage(Map<String, dynamic> message) {
-    return (message['senderId'] ?? '').toString() == CurrentUser.id;
+  bool _isCurrentUserMessage(ActivityMessage message) {
+    return message.senderId == CurrentUser.id;
   }
 
-  String _formatTime(dynamic timestamp) {
-    if (timestamp == null) return '';
-
-    DateTime? date;
-
-    if (timestamp is DateTime) {
-      date = timestamp;
-    } else if (timestamp is Timestamp) {
-      date = timestamp.toDate();
-    }
-
+  String _formatTime(DateTime? date) {
     if (date == null) return '';
 
     final hour = date.hour.toString().padLeft(2, '0');
     final minute = date.minute.toString().padLeft(2, '0');
 
     return '$hour:$minute';
+  }
+
+  Future<void> _markChatAsRead() async {
+    if (isMarkingRead) return;
+
+    isMarkingRead = true;
+
+    try {
+      await chatRepository.markActivityChatAsRead(widget.activity.id);
+    } catch (_) {
+      // silencieux volontairement pour ne pas gêner l’UX
+    } finally {
+      isMarkingRead = false;
+    }
+  }
+
+  void _scrollToBottom({bool animated = false}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!scrollController.hasClients) return;
+
+      final position = scrollController.position.maxScrollExtent;
+
+      if (animated) {
+        scrollController.animateTo(
+          position,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      } else {
+        scrollController.jumpTo(position);
+      }
+    });
   }
 
   Future<void> _sendMessage(Activity currentActivity) async {
@@ -69,14 +95,16 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
     try {
       final senderPseudo = await userService.getCurrentUserPseudo();
 
-      await chatService.sendMessage(
+      await chatRepository.sendMessage(
         activityId: currentActivity.id,
         senderId: CurrentUser.id,
         senderPseudo: senderPseudo,
-        text: text,
+        content: text,
       );
 
       messageController.clear();
+      _scrollToBottom(animated: true);
+      await _markChatAsRead();
     } catch (e) {
       if (!mounted) return;
 
@@ -94,9 +122,8 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
     }
   }
 
-  Widget _buildSystemMessage(Map<String, dynamic> message) {
-    final text = (message['text'] ?? '').toString();
-    final time = _formatTime(message['createdAt']);
+  Widget _buildSystemMessage(ActivityMessage message) {
+    final time = _formatTime(message.createdAt);
 
     return Center(
       child: Container(
@@ -109,7 +136,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
         child: Column(
           children: [
             Text(
-              text,
+              message.content,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Colors.grey.shade800,
@@ -133,11 +160,11 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
     );
   }
 
-  Widget _buildUserMessage(Map<String, dynamic> message) {
+  Widget _buildUserMessage(ActivityMessage message) {
     final bool isMe = _isCurrentUserMessage(message);
-    final String senderPseudo = (message['senderPseudo'] ?? '').toString();
-    final String text = (message['text'] ?? '').toString();
-    final String time = _formatTime(message['createdAt']);
+    final String senderPseudo = message.senderPseudo;
+    final String text = message.content;
+    final String time = _formatTime(message.createdAt);
 
     return Align(
       alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
@@ -184,8 +211,8 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
     );
   }
 
-  Widget _buildMessage(Map<String, dynamic> message) {
-    if (_isSystemMessage(message)) {
+  Widget _buildMessage(ActivityMessage message) {
+    if (message.isSystem) {
       return _buildSystemMessage(message);
     }
 
@@ -195,6 +222,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
   @override
   void dispose() {
     messageController.dispose();
+    scrollController.dispose();
     super.dispose();
   }
 
@@ -271,8 +299,8 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
                   ),
                 ),
               Expanded(
-                child: StreamBuilder<List<Map<String, dynamic>>>(
-                  stream: chatService.getMessages(currentActivity.id),
+                child: StreamBuilder<List<ActivityMessage>>(
+                  stream: chatRepository.streamMessages(currentActivity.id),
                   builder: (context, snapshot) {
                     if (snapshot.hasError) {
                       return Center(
@@ -288,6 +316,12 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
 
                     final messages = snapshot.data ?? [];
 
+                    if (messages.length != lastMessageCount) {
+                      lastMessageCount = messages.length;
+                      _scrollToBottom();
+                      _markChatAsRead();
+                    }
+
                     if (messages.isEmpty) {
                       return const Center(
                         child: Text('Aucun message pour le moment'),
@@ -295,6 +329,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
                     }
 
                     return ListView.builder(
+                      controller: scrollController,
                       padding: const EdgeInsets.all(12),
                       itemCount: messages.length,
                       itemBuilder: (context, index) {
