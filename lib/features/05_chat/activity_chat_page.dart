@@ -1,8 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/activity_message.dart';
 import 'package:agenda_app/repositories/chat_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
@@ -29,6 +29,16 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
   bool isMarkingRead = false;
   int lastMessageCount = 0;
 
+  String? get currentUserId {
+    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -36,7 +46,8 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
   }
 
   bool _isCurrentUserMessage(ActivityMessage message) {
-    return message.senderId == CurrentUser.id;
+    final uid = currentUserId;
+    return uid != null && message.senderId == uid;
   }
 
   String _formatTime(DateTime? date) {
@@ -56,7 +67,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
     try {
       await chatRepository.markActivityChatAsRead(widget.activity.id);
     } catch (_) {
-      // silencieux volontairement pour ne pas gêner l’UX
+      // Silencieux volontairement pour ne pas gêner l’UX.
     } finally {
       isMarkingRead = false;
     }
@@ -81,11 +92,14 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
   }
 
   Future<void> _sendMessage(Activity currentActivity) async {
+    final uid = currentUserId;
     final text = messageController.text.trim();
+
     final bool chatReadOnly = currentActivity.isCancelled ||
         currentActivity.isDone ||
         currentActivity.hasEnded;
 
+    if (uid == null || uid.isEmpty) return;
     if (text.isEmpty || isSending || chatReadOnly) return;
 
     setState(() {
@@ -97,7 +111,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
 
       await chatRepository.sendMessage(
         activityId: currentActivity.id,
-        senderId: CurrentUser.id,
+        senderId: uid,
         senderPseudo: senderPseudo,
         content: text,
       );
@@ -378,7 +392,9 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
                             ? const SizedBox(
                                 width: 18,
                                 height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : const Icon(Icons.send),
                       ),

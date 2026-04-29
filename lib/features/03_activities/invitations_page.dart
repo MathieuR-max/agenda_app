@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:agenda_app/features/03_activities/activity_detail_page.dart';
-import 'package:agenda_app/models/activity.dart';
+import 'package:agenda_app/features/06_groups/group_detail_page.dart';
 import 'package:agenda_app/models/activity_invitation.dart';
+import 'package:agenda_app/models/group_invitation.dart';
 import 'package:agenda_app/repositories/activity_invitation_repository.dart';
+import 'package:agenda_app/repositories/group_invitation_repository.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/activity_invitation_firestore_service.dart';
+import 'package:agenda_app/services/firestore/group_invitation_firestore_service.dart';
 
 class InvitationsPage extends StatefulWidget {
   const InvitationsPage({super.key});
@@ -14,21 +17,28 @@ class InvitationsPage extends StatefulWidget {
 }
 
 class _InvitationsPageState extends State<InvitationsPage> {
-  late final ActivityInvitationFirestoreService _invitationService;
-  late final ActivityInvitationRepository _invitationRepository;
+  late final ActivityInvitationFirestoreService _activityInvitationService;
+  late final ActivityInvitationRepository _activityInvitationRepository;
   late final ActivityFirestoreService _activityService;
 
-  final Set<String> _busyInvitationIds = <String>{};
+  late final GroupInvitationFirestoreService _groupInvitationService;
+  late final GroupInvitationRepository _groupInvitationRepository;
+
+  final Set<String> _busyActivityInvitationIds = <String>{};
+  final Set<String> _busyGroupInvitationIds = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _invitationService = ActivityInvitationFirestoreService();
-    _invitationRepository = ActivityInvitationRepository();
+    _activityInvitationService = ActivityInvitationFirestoreService();
+    _activityInvitationRepository = ActivityInvitationRepository();
     _activityService = ActivityFirestoreService();
+
+    _groupInvitationService = GroupInvitationFirestoreService();
+    _groupInvitationRepository = GroupInvitationRepository();
   }
 
-  Color _statusTextColor(ActivityInvitation invitation) {
+  Color _activityStatusTextColor(ActivityInvitation invitation) {
     switch (invitation.status) {
       case ActivityInvitation.statusAccepted:
         return Colors.green.shade800;
@@ -42,7 +52,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
     }
   }
 
-  Color _statusBackgroundColor(ActivityInvitation invitation) {
+  Color _activityStatusBackgroundColor(ActivityInvitation invitation) {
     switch (invitation.status) {
       case ActivityInvitation.statusAccepted:
         return Colors.green.shade100;
@@ -56,7 +66,39 @@ class _InvitationsPageState extends State<InvitationsPage> {
     }
   }
 
-  String _statusLabel(ActivityInvitation invitation) {
+  Color _groupStatusTextColor(GroupInvitation invitation) {
+    switch (invitation.status) {
+      case GroupInvitation.statusAccepted:
+        return Colors.green.shade800;
+      case GroupInvitation.statusRefused:
+        return Colors.red.shade800;
+      case GroupInvitation.statusCancelled:
+        return Colors.grey.shade800;
+      case GroupInvitation.statusPending:
+      default:
+        return Colors.orange.shade800;
+    }
+  }
+
+  Color _groupStatusBackgroundColor(GroupInvitation invitation) {
+    switch (invitation.status) {
+      case GroupInvitation.statusAccepted:
+        return Colors.green.shade100;
+      case GroupInvitation.statusRefused:
+        return Colors.red.shade100;
+      case GroupInvitation.statusCancelled:
+        return Colors.grey.shade300;
+      case GroupInvitation.statusPending:
+      default:
+        return Colors.orange.shade100;
+    }
+  }
+
+  String _activityStatusLabel(ActivityInvitation invitation) {
+    return invitation.statusLabel;
+  }
+
+  String _groupStatusLabel(GroupInvitation invitation) {
     return invitation.statusLabel;
   }
 
@@ -75,7 +117,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
     return startTime;
   }
 
-  String _senderLabel(ActivityInvitation invitation) {
+  String _activitySenderLabel(ActivityInvitation invitation) {
     final pseudo = invitation.fromUserPseudo.trim();
     if (pseudo.isNotEmpty) {
       return pseudo;
@@ -83,16 +125,40 @@ class _InvitationsPageState extends State<InvitationsPage> {
     return 'Utilisateur';
   }
 
-  bool _isBusy(String invitationId) => _busyInvitationIds.contains(invitationId);
+  String _groupSenderLabel(GroupInvitation invitation) {
+    final pseudo = invitation.fromUserPseudo.trim();
+    if (pseudo.isNotEmpty) {
+      return pseudo;
+    }
+    return 'Utilisateur';
+  }
 
-  void _setBusy(String invitationId, bool value) {
+  bool _isActivityBusy(String invitationId) =>
+      _busyActivityInvitationIds.contains(invitationId);
+
+  void _setActivityBusy(String invitationId, bool value) {
     if (!mounted) return;
 
     setState(() {
       if (value) {
-        _busyInvitationIds.add(invitationId);
+        _busyActivityInvitationIds.add(invitationId);
       } else {
-        _busyInvitationIds.remove(invitationId);
+        _busyActivityInvitationIds.remove(invitationId);
+      }
+    });
+  }
+
+  bool _isGroupBusy(String invitationId) =>
+      _busyGroupInvitationIds.contains(invitationId);
+
+  void _setGroupBusy(String invitationId, bool value) {
+    if (!mounted) return;
+
+    setState(() {
+      if (value) {
+        _busyGroupInvitationIds.add(invitationId);
+      } else {
+        _busyGroupInvitationIds.remove(invitationId);
       }
     });
   }
@@ -101,7 +167,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
     BuildContext context,
     ActivityInvitation invitation,
   ) async {
-    if (_isBusy(invitation.id)) return;
+    if (_isActivityBusy(invitation.id)) return;
 
     final activity =
         await _activityService.getActivityById(invitation.activityId);
@@ -153,17 +219,43 @@ class _InvitationsPageState extends State<InvitationsPage> {
     );
   }
 
-  Future<void> _acceptInvitation(
+  Future<void> _openGroupFromInvitation(
+    BuildContext context,
+    GroupInvitation invitation,
+  ) async {
+    if (_isGroupBusy(invitation.id)) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupDetailPage(groupId: invitation.groupId),
+      ),
+    );
+  }
+
+  Future<void> _openAcceptedGroup(
+    BuildContext context,
+    GroupInvitation invitation,
+  ) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GroupDetailPage(groupId: invitation.groupId),
+      ),
+    );
+  }
+
+  Future<void> _acceptActivityInvitation(
     BuildContext context,
     ActivityInvitation invitation,
   ) async {
-    if (_isBusy(invitation.id)) return;
+    if (_isActivityBusy(invitation.id)) return;
 
-    _setBusy(invitation.id, true);
+    _setActivityBusy(invitation.id, true);
 
     try {
       final accepted =
-          await _invitationRepository.acceptInvitation(invitation);
+          await _activityInvitationService.acceptInvitation(invitation);
 
       if (!context.mounted) return;
 
@@ -181,21 +273,21 @@ class _InvitationsPageState extends State<InvitationsPage> {
 
       await _openAcceptedActivityIfAvailable(context, invitation);
     } finally {
-      _setBusy(invitation.id, false);
+      _setActivityBusy(invitation.id, false);
     }
   }
 
-  Future<void> _refuseInvitation(
+  Future<void> _refuseActivityInvitation(
     BuildContext context,
     ActivityInvitation invitation,
   ) async {
-    if (_isBusy(invitation.id)) return;
+    if (_isActivityBusy(invitation.id)) return;
 
-    _setBusy(invitation.id, true);
+    _setActivityBusy(invitation.id, true);
 
     try {
       final refused =
-          await _invitationRepository.refuseInvitation(invitation.id);
+          await _activityInvitationService.declineInvitation(invitation);
 
       if (!context.mounted) return;
 
@@ -209,35 +301,115 @@ class _InvitationsPageState extends State<InvitationsPage> {
         ),
       );
     } finally {
-      _setBusy(invitation.id, false);
+      _setActivityBusy(invitation.id, false);
     }
   }
 
-  Widget _buildStatusChip(ActivityInvitation invitation) {
+  Future<void> _acceptGroupInvitation(
+    BuildContext context,
+    GroupInvitation invitation,
+  ) async {
+    if (_isGroupBusy(invitation.id)) return;
+
+    _setGroupBusy(invitation.id, true);
+
+    try {
+      final accepted =
+          await _groupInvitationService.acceptInvitation(invitation);
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            accepted
+                ? 'Invitation de groupe acceptée'
+                : 'Impossible d’accepter l’invitation de groupe',
+          ),
+        ),
+      );
+
+      if (!accepted) return;
+
+      await _openAcceptedGroup(context, invitation);
+    } finally {
+      _setGroupBusy(invitation.id, false);
+    }
+  }
+
+  Future<void> _refuseGroupInvitation(
+    BuildContext context,
+    GroupInvitation invitation,
+  ) async {
+    if (_isGroupBusy(invitation.id)) return;
+
+    _setGroupBusy(invitation.id, true);
+
+    try {
+      final refused =
+          await _groupInvitationService.declineInvitation(invitation);
+
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            refused
+                ? 'Invitation de groupe refusée'
+                : 'Impossible de refuser l’invitation de groupe',
+          ),
+        ),
+      );
+    } finally {
+      _setGroupBusy(invitation.id, false);
+    }
+  }
+
+  Widget _buildActivityStatusChip(ActivityInvitation invitation) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: 10,
         vertical: 6,
       ),
       decoration: BoxDecoration(
-        color: _statusBackgroundColor(invitation),
+        color: _activityStatusBackgroundColor(invitation),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        _statusLabel(invitation),
+        _activityStatusLabel(invitation),
         style: TextStyle(
-          color: _statusTextColor(invitation),
+          color: _activityStatusTextColor(invitation),
           fontWeight: FontWeight.bold,
         ),
       ),
     );
   }
 
-  Widget _buildInvitationCard(
+  Widget _buildGroupStatusChip(GroupInvitation invitation) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ),
+      decoration: BoxDecoration(
+        color: _groupStatusBackgroundColor(invitation),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        _groupStatusLabel(invitation),
+        style: TextStyle(
+          color: _groupStatusTextColor(invitation),
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActivityInvitationCard(
     BuildContext context,
     ActivityInvitation invitation,
   ) {
-    final isBusy = _isBusy(invitation.id);
+    final isBusy = _isActivityBusy(invitation.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -245,10 +417,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         borderRadius: BorderRadius.circular(12),
         onTap: isBusy
             ? null
-            : () => _openActivityFromInvitation(
-                  context,
-                  invitation,
-                ),
+            : () => _openActivityFromInvitation(context, invitation),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -266,11 +435,11 @@ class _InvitationsPageState extends State<InvitationsPage> {
               const SizedBox(height: 4),
               Text(invitation.activityLocation),
               const SizedBox(height: 8),
-              Text('Invité par : ${_senderLabel(invitation)}'),
+              Text('Invité par : ${_activitySenderLabel(invitation)}'),
               const SizedBox(height: 10),
               Row(
                 children: [
-                  _buildStatusChip(invitation),
+                  _buildActivityStatusChip(invitation),
                   const Spacer(),
                   if (isBusy)
                     const SizedBox(
@@ -293,7 +462,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
                       child: ElevatedButton(
                         onPressed: isBusy
                             ? null
-                            : () => _acceptInvitation(
+                            : () => _acceptActivityInvitation(
                                   context,
                                   invitation,
                                 ),
@@ -305,7 +474,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
                       child: OutlinedButton(
                         onPressed: isBusy
                             ? null
-                            : () => _refuseInvitation(
+                            : () => _refuseActivityInvitation(
                                   context,
                                   invitation,
                                 ),
@@ -322,52 +491,184 @@ class _InvitationsPageState extends State<InvitationsPage> {
     );
   }
 
-  Widget _buildEmptyState() {
-    return const Center(
-      child: Text('Aucune invitation'),
+  Widget _buildGroupInvitationCard(
+    BuildContext context,
+    GroupInvitation invitation,
+  ) {
+    final isBusy = _isGroupBusy(invitation.id);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: isBusy ? null : () => _openGroupFromInvitation(context, invitation),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                invitation.groupName,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text('Invité par : ${_groupSenderLabel(invitation)}'),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  _buildGroupStatusChip(invitation),
+                  const Spacer(),
+                  if (isBusy)
+                    const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 20,
+                    ),
+                ],
+              ),
+              if (invitation.isPending) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: isBusy
+                            ? null
+                            : () => _acceptGroupInvitation(
+                                  context,
+                                  invitation,
+                                ),
+                        child: const Text('Accepter'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: isBusy
+                            ? null
+                            : () => _refuseGroupInvitation(
+                                  context,
+                                  invitation,
+                                ),
+                        child: const Text('Refuser'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(String label) {
+    return Center(
+      child: Text(label),
+    );
+  }
+
+  Widget _buildActivitiesTab() {
+    return StreamBuilder<List<ActivityInvitation>>(
+      stream: _activityInvitationService.getReceivedInvitations(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text('Erreur invitations activités : ${snapshot.error}'),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        final invitations = snapshot.data ?? [];
+
+        if (invitations.isEmpty) {
+          return _buildEmptyState('Aucune invitation d’activité');
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: invitations.length,
+          itemBuilder: (context, index) {
+            final invitation = invitations[index];
+            return _buildActivityInvitationCard(context, invitation);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildGroupsTab() {
+    return StreamBuilder<List<GroupInvitation>>(
+      stream: _groupInvitationService.getReceivedInvitations(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text('Erreur invitations groupes : ${snapshot.error}'),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        final invitations = snapshot.data ?? [];
+
+        if (invitations.isEmpty) {
+          return _buildEmptyState('Aucune invitation de groupe');
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(12),
+          itemCount: invitations.length,
+          itemBuilder: (context, index) {
+            final invitation = invitations[index];
+            return _buildGroupInvitationCard(context, invitation);
+          },
+        );
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     debugPrint(
-      'INVITATIONS PAGE currentUserId=${_invitationService.currentUserId}',
+      'INVITATIONS PAGE activityCurrentUserId=${_activityInvitationService.currentUserId}',
     );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Invitations'),
-      ),
-      body: StreamBuilder<List<ActivityInvitation>>(
-        stream: _invitationService.getReceivedInvitations(),
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(
-              child: Text('Erreur invitations : ${snapshot.error}'),
-            );
-          }
-
-          if (!snapshot.hasData) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
-          }
-
-          final invitations = snapshot.data ?? [];
-
-          if (invitations.isEmpty) {
-            return _buildEmptyState();
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: invitations.length,
-            itemBuilder: (context, index) {
-              final invitation = invitations[index];
-              return _buildInvitationCard(context, invitation);
-            },
-          );
-        },
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Invitations'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Activités'),
+              Tab(text: 'Groupes'),
+            ],
+          ),
+        ),
+        body: TabBarView(
+          children: [
+            _buildActivitiesTab(),
+            _buildGroupsTab(),
+          ],
+        ),
       ),
     );
   }

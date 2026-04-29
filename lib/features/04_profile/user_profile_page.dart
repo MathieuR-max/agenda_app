@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../models/friendship.dart';
-import '../../services/current_user.dart';
 import '../../repositories/friendship_repository.dart';
+import '../../repositories/message_badge_repository.dart';
 import '../../repositories/profile_repository.dart';
 import '../06_groups/groups_page.dart';
 import 'friend_requests_page.dart';
@@ -89,7 +89,7 @@ class UserProfilePage extends StatelessWidget {
 
     if (result == null) return;
 
-    await repository.updateFavoriteCategories(userId, result);
+    await repository.updateFavoriteCategories(user.id, result);
 
     if (!context.mounted) return;
 
@@ -106,7 +106,7 @@ class UserProfilePage extends StatelessWidget {
     String profileUserId,
   ) async {
     final sent = await friendshipRepository.sendFriendRequest(
-      toUserId: profileUserId,
+      toUserId: profileUserId.trim(),
     );
 
     if (!context.mounted) return;
@@ -259,7 +259,10 @@ class UserProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _buildChipWrap(List<String> values, {String emptyLabel = 'Aucun élément'}) {
+  Widget _buildChipWrap(
+    List<String> values, {
+    String emptyLabel = 'Aucun élément',
+  }) {
     if (values.isEmpty) {
       return Text(emptyLabel);
     }
@@ -275,9 +278,43 @@ class UserProfilePage extends StatelessWidget {
     );
   }
 
+  Widget _buildGroupsButton(
+    BuildContext context,
+    MessageBadgeRepository messageBadgeRepository,
+  ) {
+    return StreamBuilder<int>(
+      stream: messageBadgeRepository.watchGroupUnreadCount(),
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+
+        return OutlinedButton.icon(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => const GroupsPage(),
+              ),
+            );
+          },
+          icon: Badge(
+            isLabelVisible: unreadCount > 0,
+            label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+            child: const Icon(Icons.groups),
+          ),
+          label: Text(
+            unreadCount > 0
+                ? 'Voir mes groupes ($unreadCount)'
+                : 'Voir mes groupes',
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildFriendshipSection(
     BuildContext context,
     FriendshipRepository friendshipRepository,
+    MessageBadgeRepository messageBadgeRepository,
     String profileUserId,
     bool isCurrentUser,
   ) {
@@ -314,17 +351,9 @@ class UserProfilePage extends StatelessWidget {
                 label: const Text('Voir mes demandes d’amis'),
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const GroupsPage(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.groups),
-                label: const Text('Voir mes groupes'),
+              _buildGroupsButton(
+                context,
+                messageBadgeRepository,
               ),
             ],
           ),
@@ -336,10 +365,21 @@ class UserProfilePage extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: StreamBuilder<Friendship?>(
-          stream: friendshipRepository.watchFriendshipWithUser(profileUserId),
+          stream: friendshipRepository.watchFriendshipWithUser(
+            profileUserId.trim(),
+          ),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return const Text('Erreur relation d’amitié');
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    'Erreur relation d’amitié :\n${snapshot.error}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+              );
             }
 
             if (snapshot.connectionState == ConnectionState.waiting) {
@@ -365,8 +405,10 @@ class UserProfilePage extends StatelessWidget {
               );
             }
 
+            final currentUserId = friendshipRepository.currentUserId.trim();
+
             final bool requestReceived =
-                friendship.addresseeId == CurrentUser.id;
+                friendship.addresseeId.trim() == currentUserId;
 
             final displayName = requestReceived
                 ? (friendship.requesterPseudo.trim().isNotEmpty
@@ -461,19 +503,12 @@ class UserProfilePage extends StatelessWidget {
             }
 
             if (friendship.isPending && !requestReceived) {
-              return Container(
+              return SizedBox(
                 width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.orange.shade100,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  'Demande envoyée',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                  ),
+                child: OutlinedButton.icon(
+                  onPressed: null,
+                  icon: const Icon(Icons.schedule),
+                  label: const Text('Demande d’ami envoyée'),
                 ),
               );
             }
@@ -504,14 +539,18 @@ class UserProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final repository = ProfileRepository();
     final friendshipRepository = FriendshipRepository();
-    final bool isCurrentUser = userId == CurrentUser.id;
+    final messageBadgeRepository = MessageBadgeRepository();
+
+    final currentUserId = friendshipRepository.currentUserId.trim();
+    final profileUserId = userId.trim();
+    final bool isCurrentUser = profileUserId == currentUserId;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Profil'),
       ),
       body: StreamBuilder<UserModel?>(
-        stream: repository.watchUser(userId),
+        stream: repository.watchUser(profileUserId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(
@@ -520,8 +559,10 @@ class UserProfilePage extends StatelessWidget {
           }
 
           if (snapshot.hasError) {
-            return const Center(
-              child: Text('Erreur lors du chargement du profil'),
+            return Center(
+              child: Text(
+                'Erreur lors du chargement du profil : ${snapshot.error}',
+              ),
             );
           }
 
@@ -573,7 +614,8 @@ class UserProfilePage extends StatelessWidget {
               _buildFriendshipSection(
                 context,
                 friendshipRepository,
-                userId,
+                messageBadgeRepository,
+                profileUserId,
                 isCurrentUser,
               ),
               const SizedBox(height: 12),

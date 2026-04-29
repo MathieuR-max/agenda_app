@@ -1,46 +1,41 @@
+import 'package:firebase_auth/firebase_auth.dart';
+
 class CurrentUser {
-  static String? _id;
+  CurrentUser._();
 
-  /// Retourne l'id de l'utilisateur courant.
-  /// Lance une exception si aucun utilisateur valide n'est défini.
+  /// Retourne l'UID Firebase de l'utilisateur courant.
+  /// Lance une exception si aucun utilisateur n'est connecté.
   static String get id {
-    final value = _normalizedId(_id);
+    final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    if (value == null) {
-      throw Exception('Current user not set');
+    if (uid == null || uid.trim().isEmpty) {
+      throw Exception('No authenticated Firebase user');
     }
 
-    return value;
+    return uid;
   }
 
-  /// Retourne l'id courant normalisé ou null.
-  static String? get idOrNull => _normalizedId(_id);
+  /// Retourne l'UID Firebase courant ou null.
+  static String? get idOrNull {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
 
-  /// Indique si un utilisateur valide est défini.
+    if (uid == null || uid.trim().isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  /// Indique si un utilisateur Firebase est connecté.
   static bool get isSet => idOrNull != null;
 
-  /// Définit l'utilisateur courant.
-  static void setUser(String newUserId) {
-    final normalized = _normalizedId(newUserId);
+  /// Conservé temporairement pour compatibilité.
+  /// Ne fait plus rien volontairement.
+  @Deprecated('Do not use setUser. FirebaseAuth is now the source of truth.')
+  static void setUser(String newUserId) {}
 
-    if (normalized == null) {
-      throw Exception('Invalid current user id');
-    }
-
-    _id = normalized;
-  }
-
-  /// Supprime l'utilisateur courant.
-  static void clear() {
-    _id = null;
-  }
-
-  static String? _normalizedId(String? value) {
-    if (value == null) return null;
-
-    final trimmed = value.trim();
-    if (trimmed.isEmpty) return null;
-
-    return trimmed;
-  }
+  /// Conservé temporairement pour compatibilité.
+  /// La déconnexion doit passer par FirebaseAuth.signOut().
+  @Deprecated('Do not use clear. FirebaseAuth is now the source of truth.')
+  static void clear() {}
 }

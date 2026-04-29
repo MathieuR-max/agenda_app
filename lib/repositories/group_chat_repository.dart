@@ -1,38 +1,78 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/models/group_message.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class GroupChatRepository {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
   final GroupsRepository _groupsRepository;
 
   GroupChatRepository({
     FirebaseFirestore? db,
+    FirebaseAuth? auth,
     UserFirestoreService? userService,
     GroupsRepository? groupsRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _userService = userService ?? UserFirestoreService(db: db),
-        _groupsRepository = groupsRepository ?? GroupsRepository(db: db);
+        _auth = auth ?? FirebaseAuth.instance,
+        _userService = userService ??
+            UserFirestoreService(
+              db: db,
+              auth: auth,
+            ),
+        _groupsRepository = groupsRepository ??
+            GroupsRepository(
+              db: db,
+              auth: auth,
+            );
 
-  String get currentUserId => CurrentUser.id;
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      throw FirebaseAuthException(
+        code: 'not-authenticated',
+        message: 'Aucun utilisateur Firebase authentifié.',
+      );
+    }
+
+    return uid;
+  }
 
   CollectionReference<Map<String, dynamic>> _messagesRef(String groupId) {
-    return _db.collection('groups').doc(groupId).collection('messages');
+    return _db.collection('groups').doc(groupId.trim()).collection('messages');
   }
 
   DocumentReference<Map<String, dynamic>> _messageReadRef(String groupId) {
+    final uid = currentUserId;
+
     return _db
         .collection('groups')
-        .doc(groupId)
+        .doc(groupId.trim())
         .collection('messageReads')
-        .doc(currentUserId);
+        .doc(uid);
   }
 
   Stream<List<GroupMessage>> watchMessages(String groupId) {
-    return _messagesRef(groupId)
+    final trimmedGroupId = groupId.trim();
+
+    if (trimmedGroupId.isEmpty) {
+      return Stream.value(<GroupMessage>[]);
+    }
+
+    return _messagesRef(trimmedGroupId)
         .orderBy('createdAt', descending: false)
         .snapshots()
         .map((snapshot) {
@@ -48,24 +88,32 @@ class GroupChatRepository {
   }) async {
     final trimmedGroupId = groupId.trim();
     final trimmedText = text.trim();
+    final uid = currentUserIdOrNull;
 
     if (trimmedGroupId.isEmpty || trimmedText.isEmpty) {
       return false;
     }
 
+    if (uid == null) {
+      throw FirebaseAuthException(
+        code: 'not-authenticated',
+        message: 'Aucun utilisateur Firebase authentifié.',
+      );
+    }
+
     final isMember = await _groupsRepository.isCurrentUserMember(trimmedGroupId);
+
     if (!isMember) {
       return false;
     }
 
     final senderPseudo = await _userService.getCurrentUserPseudo();
 
-    await _addMessage(
+    await _addTextMessage(
       groupId: trimmedGroupId,
       text: trimmedText,
-      senderId: currentUserId,
+      senderId: uid,
       senderPseudo: senderPseudo,
-      type: GroupMessage.typeUser,
     );
 
     await _groupsRepository.touchGroup(trimmedGroupId);
@@ -77,34 +125,28 @@ class GroupChatRepository {
     required String groupId,
     required String text,
   }) async {
-    final trimmedGroupId = groupId.trim();
-    final trimmedText = text.trim();
-
-    if (trimmedGroupId.isEmpty || trimmedText.isEmpty) {
-      return;
-    }
-
-    await _addMessage(
-      groupId: trimmedGroupId,
-      text: trimmedText,
-      senderId: '',
-      senderPseudo: 'Système',
-      type: GroupMessage.typeSystem,
+    throw UnsupportedError(
+      'Les messages système ne doivent plus être écrits côté client. '
+      'Ils doivent être créés par un backend / Cloud Function.',
     );
-
-    await _groupsRepository.touchGroup(trimmedGroupId);
   }
 
   Future<void> markGroupChatAsRead(String groupId) async {
     final trimmedGroupId = groupId.trim();
-    if (trimmedGroupId.isEmpty) return;
-    if (currentUserId.trim().isEmpty) return;
+    final uid = currentUserIdOrNull;
+
+    if (trimmedGroupId.isEmpty || uid == null) {
+      return;
+    }
 
     final isMember = await _groupsRepository.isCurrentUserMember(trimmedGroupId);
-    if (!isMember) return;
+
+    if (!isMember) {
+      return;
+    }
 
     await _messageReadRef(trimmedGroupId).set({
-      'userId': currentUserId,
+      'userId': uid,
       'lastReadAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
@@ -112,29 +154,51 @@ class GroupChatRepository {
 
   Stream<DateTime?> watchLastReadAt(String groupId) {
     final trimmedGroupId = groupId.trim();
-    if (trimmedGroupId.isEmpty || currentUserId.trim().isEmpty) {
+    final uid = currentUserIdOrNull;
+
+    if (trimmedGroupId.isEmpty || uid == null) {
       return Stream.value(null);
     }
 
-    return _messageReadRef(trimmedGroupId).snapshots().map((doc) {
+    return _db
+        .collection('groups')
+        .doc(trimmedGroupId)
+        .collection('messageReads')
+        .doc(uid)
+        .snapshots()
+        .map((doc) {
       final data = doc.data();
-      if (data == null) return null;
+
+      if (data == null) {
+        return null;
+      }
 
       final value = data['lastReadAt'];
-      if (value is Timestamp) return value.toDate();
+
+      if (value is Timestamp) {
+        return value.toDate();
+      }
+
       return null;
     });
   }
 
   Stream<int> watchUnreadCount(String groupId) {
     final trimmedGroupId = groupId.trim();
-    if (trimmedGroupId.isEmpty || currentUserId.trim().isEmpty) {
+    final uid = currentUserIdOrNull;
+
+    if (trimmedGroupId.isEmpty || uid == null) {
       return Stream.value(0);
     }
 
     return watchLastReadAt(trimmedGroupId).asyncMap((lastReadAt) async {
-      final isMember = await _groupsRepository.isCurrentUserMember(trimmedGroupId);
-      if (!isMember) return 0;
+      final isMember = await _groupsRepository.isCurrentUserMember(
+        trimmedGroupId,
+      );
+
+      if (!isMember) {
+        return 0;
+      }
 
       final snapshot = await _messagesRef(trimmedGroupId)
           .orderBy('createdAt', descending: false)
@@ -144,19 +208,20 @@ class GroupChatRepository {
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
-        final senderId = (data['senderId'] ?? '').toString();
-        final type = (data['type'] ?? '').toString();
+        final senderId = (data['senderId'] ?? '').toString().trim();
+        final type = (data['type'] ?? '').toString().trim();
         final createdAtRaw = data['createdAt'];
 
         if (type == GroupMessage.typeSystem) {
           continue;
         }
 
-        if (senderId == currentUserId) {
+        if (senderId == uid) {
           continue;
         }
 
         DateTime? createdAt;
+
         if (createdAtRaw is Timestamp) {
           createdAt = createdAtRaw.toDate();
         }
@@ -175,18 +240,17 @@ class GroupChatRepository {
     });
   }
 
-  Future<void> _addMessage({
+  Future<void> _addTextMessage({
     required String groupId,
     required String text,
     required String senderId,
     required String senderPseudo,
-    required String type,
   }) async {
     await _messagesRef(groupId).add({
       'text': text,
       'senderId': senderId,
       'senderPseudo': senderPseudo,
-      'type': type,
+      'type': GroupMessage.typeUser,
       'createdAt': FieldValue.serverTimestamp(),
     });
   }

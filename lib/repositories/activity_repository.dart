@@ -1,34 +1,63 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/parsers.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
-import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class ActivityRepository {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
   final ActivityFirestoreService _activityService;
-  final ChatFirestoreService _chatService;
   final UserFirestoreService _userService;
   final GroupsRepository _groupsRepository;
 
   ActivityRepository({
     FirebaseFirestore? db,
+    FirebaseAuth? auth,
     ActivityFirestoreService? activityService,
-    ChatFirestoreService? chatService,
     UserFirestoreService? userService,
     GroupsRepository? groupsRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _activityService = activityService ?? ActivityFirestoreService(db: db),
-        _chatService = chatService ?? ChatFirestoreService(db: db),
-        _userService = userService ?? UserFirestoreService(db: db),
-        _groupsRepository = groupsRepository ?? GroupsRepository(db: db);
+        _auth = auth ?? FirebaseAuth.instance,
+        _activityService = activityService ??
+            ActivityFirestoreService(
+              db: db,
+              auth: auth,
+            ),
+        _userService = userService ??
+            UserFirestoreService(
+              db: db,
+              auth: auth,
+            ),
+        _groupsRepository = groupsRepository ??
+            GroupsRepository(
+              db: db,
+              auth: auth,
+            );
 
-  String get currentUserId => CurrentUser.id;
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    return uid;
+  }
 
   CollectionReference<Map<String, dynamic>> get _activitiesRef =>
       _db.collection(FirestoreCollections.activities);
@@ -70,6 +99,7 @@ class ActivityRepository {
     String? groupId,
     String? groupName,
   }) async {
+    final uid = currentUserId;
     final resolvedTitle = title.trim();
     final resolvedDescription = description.trim();
     final resolvedCategory = category.trim();
@@ -114,6 +144,7 @@ class ActivityRepository {
     if (trimmedGroupId != null) {
       final isMember =
           await _groupsRepository.isCurrentUserMember(trimmedGroupId);
+
       if (!isMember) {
         throw Exception(
           'Impossible de créer une activité de groupe sans être membre du groupe.',
@@ -141,7 +172,7 @@ class ActivityRepository {
       level: resolvedLevel,
       groupType: resolvedGroupType,
       visibility: resolvedVisibility,
-      ownerId: currentUserId,
+      ownerId: uid,
       ownerPseudo: ownerPseudo,
       initialStatus: initialStatus,
       groupId: trimmedGroupId,
@@ -150,15 +181,14 @@ class ActivityRepository {
 
     await _activityService.addParticipant(
       activityId: activityId,
-      userId: currentUserId,
+      userId: uid,
       pseudo: ownerPseudo,
     );
 
-    await _sendSystemMessage(
+    await _activityService.addJoinedActivityMirror(
+      userId: uid,
       activityId: activityId,
-      text: trimmedGroupId != null
-          ? 'Activité de groupe créée par $ownerPseudo'
-          : 'Activité créée par $ownerPseudo',
+      source: 'created',
     );
 
     return activityId;
@@ -181,6 +211,7 @@ class ActivityRepository {
     String? visibility,
     bool isLimitedEdit = false,
   }) async {
+    final uid = currentUserId;
     final trimmedActivityId = activityId.trim();
 
     if (trimmedActivityId.isEmpty) {
@@ -188,8 +219,6 @@ class ActivityRepository {
     }
 
     final activityRef = _activitiesRef.doc(trimmedActivityId);
-
-    String? systemMessage;
 
     await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
@@ -201,7 +230,7 @@ class ActivityRepository {
       final data = activityDoc.data()!;
       final currentActivity = Activity.fromMap(activityDoc.id, data);
 
-      if (currentActivity.ownerId != currentUserId) {
+      if (currentActivity.ownerId != uid) {
         throw Exception('Seul l’organisateur peut modifier cette activité.');
       }
 
@@ -226,7 +255,6 @@ class ActivityRepository {
           'updatedAt': FieldValue.serverTimestamp(),
         });
 
-        systemMessage = 'L’activité a été mise à jour.';
         return;
       }
 
@@ -243,7 +271,8 @@ class ActivityRepository {
       final resolvedLocation = (location ?? currentActivity.location).trim();
       final resolvedLevel = (level ?? currentActivity.level).trim();
       final resolvedGroupType = (groupType ?? currentActivity.groupType).trim();
-      final resolvedVisibility = (visibility ?? currentActivity.visibility).trim();
+      final resolvedVisibility =
+          (visibility ?? currentActivity.visibility).trim();
 
       final normalizedMaxParticipants = maxParticipants == null
           ? currentActivity.maxParticipants.toString()
@@ -312,30 +341,21 @@ class ActivityRepository {
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-
-      systemMessage = 'L’activité a été modifiée.';
     });
-
-    if (systemMessage != null) {
-      await _sendSystemMessage(
-        activityId: trimmedActivityId,
-        text: systemMessage!,
-      );
-    }
   }
 
   Future<bool> joinActivity(Activity activity) async {
+    final uid = currentUserId;
     final activityId = activity.id.trim();
+
     if (activityId.isEmpty) return false;
 
     final activityRef = _activitiesRef.doc(activityId);
-    final participantRef = activityRef
-        .collection(FirestoreCollections.participants)
-        .doc(currentUserId);
-    final userRef = _usersRef.doc(currentUserId);
+    final participantRef =
+        activityRef.collection(FirestoreCollections.participants).doc(uid);
+    final userRef = _usersRef.doc(uid);
 
     String joinedPseudo = '';
-    String? postJoinSystemMessage;
 
     final success = await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
@@ -347,6 +367,7 @@ class ActivityRepository {
       }
 
       final activityData = activityDoc.data();
+
       if (activityData == null) {
         return false;
       }
@@ -391,7 +412,7 @@ class ActivityRepository {
       );
 
       transaction.set(participantRef, {
-        'userId': currentUserId,
+        'userId': uid,
         'pseudo': joinedPseudo,
         'joinedAt': FieldValue.serverTimestamp(),
       });
@@ -402,14 +423,14 @@ class ActivityRepository {
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
-      postJoinSystemMessage = '$joinedPseudo a rejoint l’activité';
       return true;
     });
 
-    if (success && postJoinSystemMessage != null) {
-      await _sendSystemMessage(
+    if (success) {
+      await _activityService.addJoinedActivityMirror(
+        userId: uid,
         activityId: activityId,
-        text: postJoinSystemMessage!,
+        source: 'join',
       );
     }
 
@@ -417,15 +438,14 @@ class ActivityRepository {
   }
 
   Future<void> leaveActivity(String activityId) async {
+    final uid = currentUserId;
     final trimmedActivityId = activityId.trim();
+
     if (trimmedActivityId.isEmpty) return;
 
     final activityRef = _activitiesRef.doc(trimmedActivityId);
-    final participantRef = activityRef
-        .collection(FirestoreCollections.participants)
-        .doc(currentUserId);
-
-    String leavingPseudo = '';
+    final participantRef =
+        activityRef.collection(FirestoreCollections.participants).doc(uid);
 
     await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
@@ -436,14 +456,9 @@ class ActivityRepository {
       }
 
       final activityData = activityDoc.data();
+
       if (activityData == null) {
         return;
-      }
-
-      leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString().trim();
-
-      if (leavingPseudo.isEmpty) {
-        leavingPseudo = await _userService.getCurrentUserPseudo();
       }
 
       final participantCount = parseInt(activityData['participantCount']);
@@ -468,26 +483,23 @@ class ActivityRepository {
       });
     });
 
-    if (leavingPseudo.isNotEmpty) {
-      await _sendSystemMessage(
-        activityId: trimmedActivityId,
-        text: '$leavingPseudo a quitté l’activité',
-      );
-    }
+    await _activityService.removeJoinedActivityMirror(
+      userId: uid,
+      activityId: trimmedActivityId,
+    );
   }
 
   Future<void> leaveActivityWithOwnerHandling(String activityId) async {
+    final uid = currentUserId;
     final trimmedActivityId = activityId.trim();
+
     if (trimmedActivityId.isEmpty) return;
 
     final activityRef = _activitiesRef.doc(trimmedActivityId);
-    final participantRef = activityRef
-        .collection(FirestoreCollections.participants)
-        .doc(currentUserId);
+    final participantRef =
+        activityRef.collection(FirestoreCollections.participants).doc(uid);
 
-    String leavingPseudo = '';
     bool deletedActivity = false;
-    bool ownerPendingSet = false;
 
     await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
@@ -498,14 +510,9 @@ class ActivityRepository {
       }
 
       final data = activityDoc.data();
+
       if (data == null) {
         return;
-      }
-
-      leavingPseudo = (participantDoc.data()?['pseudo'] ?? '').toString().trim();
-
-      if (leavingPseudo.isEmpty) {
-        leavingPseudo = await _userService.getCurrentUserPseudo();
       }
 
       final ownerId = (data['ownerId'] ?? '').toString().trim();
@@ -513,7 +520,7 @@ class ActivityRepository {
       final maxParticipants = parseInt(data['maxParticipants']);
       final currentStatus =
           (data['status'] ?? ActivityStatusValues.open).toString();
-      final isOwner = ownerId == currentUserId;
+      final isOwner = ownerId == uid;
 
       if (!isOwner) {
         final newParticipantCount =
@@ -558,37 +565,28 @@ class ActivityRepository {
         'status': newStatus,
         'updatedAt': FieldValue.serverTimestamp(),
       });
-      ownerPendingSet = true;
     });
+
+    await _activityService.removeJoinedActivityMirror(
+      userId: uid,
+      activityId: trimmedActivityId,
+    );
 
     if (deletedActivity) {
       return;
     }
-
-    if (leavingPseudo.isNotEmpty) {
-      await _sendSystemMessage(
-        activityId: trimmedActivityId,
-        text: '$leavingPseudo a quitté l’activité',
-      );
-    }
-
-    if (ownerPendingSet) {
-      await _sendSystemMessage(
-        activityId: trimmedActivityId,
-        text: 'L’activité attend un nouvel organisateur',
-      );
-    }
   }
 
   Future<bool> claimOwnership(String activityId) async {
+    final uid = currentUserId;
     final trimmedActivityId = activityId.trim();
+
     if (trimmedActivityId.isEmpty) return false;
 
     final activityRef = _activitiesRef.doc(trimmedActivityId);
-    final participantRef = activityRef
-        .collection(FirestoreCollections.participants)
-        .doc(currentUserId);
-    final userRef = _usersRef.doc(currentUserId);
+    final participantRef =
+        activityRef.collection(FirestoreCollections.participants).doc(uid);
+    final userRef = _usersRef.doc(uid);
 
     String pseudo = '';
 
@@ -602,6 +600,7 @@ class ActivityRepository {
       }
 
       final activityData = activityDoc.data();
+
       if (activityData == null) {
         return false;
       }
@@ -622,7 +621,7 @@ class ActivityRepository {
       }
 
       transaction.update(activityRef, {
-        'ownerId': currentUserId,
+        'ownerId': uid,
         'ownerPseudo': pseudo,
         'ownerPending': false,
         'updatedAt': FieldValue.serverTimestamp(),
@@ -631,18 +630,12 @@ class ActivityRepository {
       return true;
     });
 
-    if (success) {
-      await _sendSystemMessage(
-        activityId: trimmedActivityId,
-        text: '$pseudo est devenu organisateur',
-      );
-    }
-
     return success;
   }
 
   Future<bool> canJoinActivity(Activity activity) async {
     final freshActivity = await _activityService.getActivityById(activity.id);
+
     if (freshActivity == null) {
       return false;
     }
@@ -710,23 +703,6 @@ class ActivityRepository {
     return false;
   }
 
-  Future<void> _sendSystemMessage({
-    required String activityId,
-    required String text,
-  }) async {
-    final trimmedActivityId = activityId.trim();
-    final trimmedText = text.trim();
-
-    if (trimmedActivityId.isEmpty || trimmedText.isEmpty) {
-      return;
-    }
-
-    await _chatService.addSystemMessage(
-      activityId: trimmedActivityId,
-      text: trimmedText,
-    );
-  }
-
   DateTime? _combineLegacyDateAndTime(String day, String time) {
     try {
       final parsedDay = day.trim();
@@ -738,6 +714,7 @@ class ActivityRepository {
 
       final date = DateTime.parse(parsedDay);
       final parts = parsedTime.split(':');
+
       if (parts.length < 2) return null;
 
       final hour = int.tryParse(parts[0]) ?? 0;

@@ -1,27 +1,64 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/parsers.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/activity_invitation.dart';
-import 'package:agenda_app/services/current_user.dart';
+import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class ActivityInvitationRepository {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
   final ChatFirestoreService _chatService;
+  final ActivityFirestoreService _activityService;
 
   ActivityInvitationRepository({
     FirebaseFirestore? db,
+    FirebaseAuth? auth,
     UserFirestoreService? userService,
     ChatFirestoreService? chatService,
+    ActivityFirestoreService? activityService,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _userService = userService ?? UserFirestoreService(db: db),
-        _chatService = chatService ?? ChatFirestoreService(db: db);
+        _auth = auth ?? FirebaseAuth.instance,
+        _userService = userService ??
+            UserFirestoreService(
+              db: db,
+              auth: auth,
+            ),
+        _chatService = chatService ??
+            ChatFirestoreService(
+              db: db,
+              auth: auth,
+            ),
+        _activityService = activityService ??
+            ActivityFirestoreService(
+              db: db,
+              auth: auth,
+            );
 
-  String get currentUserId => CurrentUser.id;
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    return uid;
+  }
 
   CollectionReference<Map<String, dynamic>> get _activitiesRef =>
       _db.collection(FirestoreCollections.activities);
@@ -32,7 +69,9 @@ class ActivityInvitationRepository {
   CollectionReference<Map<String, dynamic>> get _activityInvitationsRef =>
       _db.collection(FirestoreCollections.activityInvitations);
 
-  CollectionReference<Map<String, dynamic>> _participantsRef(String activityId) {
+  CollectionReference<Map<String, dynamic>> _participantsRef(
+    String activityId,
+  ) {
     return _activitiesRef
         .doc(activityId.trim())
         .collection(FirestoreCollections.participants);
@@ -49,9 +88,8 @@ class ActivityInvitationRepository {
       return false;
     }
 
-    final participantDoc = await _participantsRef(trimmedActivityId)
-        .doc(trimmedUserId)
-        .get();
+    final participantDoc =
+        await _participantsRef(trimmedActivityId).doc(trimmedUserId).get();
 
     return participantDoc.exists;
   }
@@ -60,14 +98,16 @@ class ActivityInvitationRepository {
     required String activityId,
     required String toUserId,
   }) async {
+    final uid = currentUserIdOrNull;
     final trimmedActivityId = activityId.trim();
     final trimmedToUserId = toUserId.trim();
 
-    if (trimmedActivityId.isEmpty || trimmedToUserId.isEmpty) {
+    if (uid == null || trimmedActivityId.isEmpty || trimmedToUserId.isEmpty) {
       return false;
     }
 
     final query = await _activityInvitationsRef
+        .where('fromUserId', isEqualTo: uid)
         .where('activityId', isEqualTo: trimmedActivityId)
         .where('toUserId', isEqualTo: trimmedToUserId)
         .where('status', isEqualTo: InvitationStatusValues.pending)
@@ -78,13 +118,15 @@ class ActivityInvitationRepository {
   }
 
   Future<Set<String>> getPendingInvitationTargetIds(String activityId) async {
+    final uid = currentUserIdOrNull;
     final trimmedActivityId = activityId.trim();
 
-    if (trimmedActivityId.isEmpty) {
+    if (uid == null || trimmedActivityId.isEmpty) {
       return <String>{};
     }
 
     final snapshot = await _activityInvitationsRef
+        .where('fromUserId', isEqualTo: uid)
         .where('activityId', isEqualTo: trimmedActivityId)
         .where('status', isEqualTo: InvitationStatusValues.pending)
         .get();
@@ -96,13 +138,15 @@ class ActivityInvitationRepository {
   }
 
   Stream<Set<String>> watchPendingInvitationTargetIds(String activityId) {
+    final uid = currentUserIdOrNull;
     final trimmedActivityId = activityId.trim();
 
-    if (trimmedActivityId.isEmpty) {
+    if (uid == null || trimmedActivityId.isEmpty) {
       return Stream.value(<String>{});
     }
 
     return _activityInvitationsRef
+        .where('fromUserId', isEqualTo: uid)
         .where('activityId', isEqualTo: trimmedActivityId)
         .where('status', isEqualTo: InvitationStatusValues.pending)
         .snapshots()
@@ -118,14 +162,15 @@ class ActivityInvitationRepository {
     required Activity activity,
     required String toUserId,
   }) async {
+    final uid = currentUserIdOrNull;
     final trimmedActivityId = activity.id.trim();
     final trimmedToUserId = toUserId.trim();
 
-    if (trimmedActivityId.isEmpty || trimmedToUserId.isEmpty) {
+    if (uid == null || trimmedActivityId.isEmpty || trimmedToUserId.isEmpty) {
       return false;
     }
 
-    if (trimmedToUserId == currentUserId) {
+    if (trimmedToUserId == uid) {
       return false;
     }
 
@@ -149,10 +194,11 @@ class ActivityInvitationRepository {
 
     final activityRef = _activitiesRef.doc(trimmedActivityId);
     final toUserRef = _usersRef.doc(trimmedToUserId);
-    final participantRef = _participantsRef(trimmedActivityId).doc(trimmedToUserId);
+    final participantRef =
+        _participantsRef(trimmedActivityId).doc(trimmedToUserId);
     final fromUserPseudo = await _userService.getCurrentUserPseudo();
 
-    return await _db.runTransaction((transaction) async {
+    return _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
       final toUserDoc = await transaction.get(toUserRef);
       final participantDoc = await transaction.get(participantRef);
@@ -182,7 +228,6 @@ class ActivityInvitationRepository {
       }
 
       final toUserPseudo = (toUserData['pseudo'] ?? '').toString().trim();
-
       final newInvitationRef = _activityInvitationsRef.doc();
 
       transaction.set(newInvitationRef, {
@@ -191,7 +236,7 @@ class ActivityInvitationRepository {
         'activityDay': currentActivity.effectiveDay,
         'activityStartTime': currentActivity.effectiveStartTime,
         'activityLocation': currentActivity.location,
-        'fromUserId': currentUserId,
+        'fromUserId': uid,
         'fromUserPseudo': fromUserPseudo,
         'toUserId': trimmedToUserId,
         'toUserPseudo': toUserPseudo,
@@ -205,16 +250,19 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> acceptInvitation(ActivityInvitation invitation) async {
+    final uid = currentUserIdOrNull;
     final trimmedInvitationId = invitation.id.trim();
     final trimmedActivityId = invitation.activityId.trim();
 
-    if (trimmedInvitationId.isEmpty || trimmedActivityId.isEmpty) {
+    if (uid == null ||
+        trimmedInvitationId.isEmpty ||
+        trimmedActivityId.isEmpty) {
       return false;
     }
 
     final invitationRef = _activityInvitationsRef.doc(trimmedInvitationId);
     final activityRef = _activitiesRef.doc(trimmedActivityId);
-    final participantRef = _participantsRef(trimmedActivityId).doc(currentUserId);
+    final participantRef = _participantsRef(trimmedActivityId).doc(uid);
 
     final currentUserPseudo = await _userService.getCurrentUserPseudo();
 
@@ -246,7 +294,7 @@ class ActivityInvitationRepository {
       final invitationToUserId =
           (invitationData['toUserId'] ?? '').toString().trim();
 
-      if (invitationToUserId.isNotEmpty && invitationToUserId != currentUserId) {
+      if (invitationToUserId.isNotEmpty && invitationToUserId != uid) {
         return false;
       }
 
@@ -283,7 +331,7 @@ class ActivityInvitationRepository {
       );
 
       transaction.set(participantRef, {
-        'userId': currentUserId,
+        'userId': uid,
         'pseudo': currentUserPseudo,
         'joinedAt': FieldValue.serverTimestamp(),
       });
@@ -303,9 +351,10 @@ class ActivityInvitationRepository {
     });
 
     if (success) {
-      await _chatService.addSystemMessage(
+      await _activityService.addJoinedActivityMirror(
+        userId: uid,
         activityId: trimmedActivityId,
-        text: '$currentUserPseudo a rejoint l’activité via invitation',
+        source: 'invitation',
       );
     }
 
@@ -313,15 +362,16 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> refuseInvitation(String invitationId) async {
+    final uid = currentUserIdOrNull;
     final trimmedInvitationId = invitationId.trim();
 
-    if (trimmedInvitationId.isEmpty) {
+    if (uid == null || trimmedInvitationId.isEmpty) {
       return false;
     }
 
     final invitationRef = _activityInvitationsRef.doc(trimmedInvitationId);
 
-    return await _db.runTransaction((transaction) async {
+    return _db.runTransaction((transaction) async {
       final invitationDoc = await transaction.get(invitationRef);
 
       if (!invitationDoc.exists || invitationDoc.data() == null) {
@@ -337,7 +387,7 @@ class ActivityInvitationRepository {
         return false;
       }
 
-      if (toUserId.isNotEmpty && toUserId != currentUserId) {
+      if (toUserId.isNotEmpty && toUserId != uid) {
         return false;
       }
 
@@ -351,15 +401,16 @@ class ActivityInvitationRepository {
   }
 
   Future<bool> cancelInvitation(String invitationId) async {
+    final uid = currentUserIdOrNull;
     final trimmedInvitationId = invitationId.trim();
 
-    if (trimmedInvitationId.isEmpty) {
+    if (uid == null || trimmedInvitationId.isEmpty) {
       return false;
     }
 
     final invitationRef = _activityInvitationsRef.doc(trimmedInvitationId);
 
-    return await _db.runTransaction((transaction) async {
+    return _db.runTransaction((transaction) async {
       final invitationDoc = await transaction.get(invitationRef);
 
       if (!invitationDoc.exists || invitationDoc.data() == null) {
@@ -375,7 +426,7 @@ class ActivityInvitationRepository {
         return false;
       }
 
-      if (fromUserId.isNotEmpty && fromUserId != currentUserId) {
+      if (fromUserId.isNotEmpty && fromUserId != uid) {
         return false;
       }
 

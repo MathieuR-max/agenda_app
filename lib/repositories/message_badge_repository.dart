@@ -1,34 +1,48 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/repositories/group_chat_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class MessageBadgeRepository {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
   final ChatRepository _chatRepository;
   final GroupChatRepository _groupChatRepository;
 
   MessageBadgeRepository({
     FirebaseFirestore? db,
+    FirebaseAuth? auth,
     ChatRepository? chatRepository,
     GroupChatRepository? groupChatRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _chatRepository = chatRepository ?? ChatRepository(),
-        _groupChatRepository = groupChatRepository ?? GroupChatRepository();
+        _auth = auth ?? FirebaseAuth.instance,
+        _chatRepository = chatRepository ?? ChatRepository(db: db, auth: auth),
+        _groupChatRepository =
+            groupChatRepository ?? GroupChatRepository(db: db, auth: auth);
 
-  String get currentUserId => CurrentUser.id.trim();
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
 
   Stream<List<String>> watchMyActivityIds() {
-    if (currentUserId.isEmpty) {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       return Stream.value(<String>[]);
     }
 
     return _db
         .collectionGroup(FirestoreCollections.participants)
-        .where('userId', isEqualTo: currentUserId)
+        .where('userId', isEqualTo: uid)
         .snapshots()
         .map((snapshot) {
       final ids = snapshot.docs
@@ -43,13 +57,15 @@ class MessageBadgeRepository {
   }
 
   Stream<List<String>> watchMyGroupIds() {
-    if (currentUserId.isEmpty) {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       return Stream.value(<String>[]);
     }
 
     return _db
         .collectionGroup(FirestoreCollections.members)
-        .where('userId', isEqualTo: currentUserId)
+        .where('userId', isEqualTo: uid)
         .snapshots()
         .map((snapshot) {
       final ids = snapshot.docs
@@ -63,54 +79,120 @@ class MessageBadgeRepository {
     });
   }
 
+  Stream<int> watchActivityUnreadCount() {
+    return _watchUnreadCountForIds(
+      idsStream: watchMyActivityIds(),
+      watchUnreadCount: _chatRepository.watchUnreadCount,
+    );
+  }
+
+  Stream<int> watchGroupUnreadCount() {
+    return _watchUnreadCountForIds(
+      idsStream: watchMyGroupIds(),
+      watchUnreadCount: _groupChatRepository.watchUnreadCount,
+    );
+  }
+
   Stream<int> watchTotalUnreadCount() {
-    if (currentUserId.isEmpty) {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       return Stream.value(0);
     }
 
     final controller = StreamController<int>.broadcast();
 
-    StreamSubscription<List<String>>? activityIdsSubscription;
-    StreamSubscription<List<String>>? groupIdsSubscription;
+    StreamSubscription<int>? activitySubscription;
+    StreamSubscription<int>? groupSubscription;
 
-    final Map<String, StreamSubscription<int>> activityUnreadSubscriptions = {};
-    final Map<String, StreamSubscription<int>> groupUnreadSubscriptions = {};
-
-    final Map<String, int> activityUnreadCounts = {};
-    final Map<String, int> groupUnreadCounts = {};
+    int activityTotal = 0;
+    int groupTotal = 0;
 
     void emitTotal() {
-      final activityTotal =
-          activityUnreadCounts.values.fold<int>(0, (sum, value) => sum + value);
-      final groupTotal =
-          groupUnreadCounts.values.fold<int>(0, (sum, value) => sum + value);
+      if (!controller.isClosed) {
+        controller.add(activityTotal + groupTotal);
+      }
+    }
 
-      final total = activityTotal + groupTotal;
+    activitySubscription = watchActivityUnreadCount().listen(
+      (count) {
+        activityTotal = count;
+        emitTotal();
+      },
+      onError: (_) {
+        activityTotal = 0;
+        emitTotal();
+      },
+    );
+
+    groupSubscription = watchGroupUnreadCount().listen(
+      (count) {
+        groupTotal = count;
+        emitTotal();
+      },
+      onError: (_) {
+        groupTotal = 0;
+        emitTotal();
+      },
+    );
+
+    controller.onCancel = () async {
+      await activitySubscription?.cancel();
+      await groupSubscription?.cancel();
+    };
+
+    return controller.stream;
+  }
+
+  Stream<int> _watchUnreadCountForIds({
+    required Stream<List<String>> idsStream,
+    required Stream<int> Function(String id) watchUnreadCount,
+  }) {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(0);
+    }
+
+    final controller = StreamController<int>.broadcast();
+
+    StreamSubscription<List<String>>? idsSubscription;
+    final Map<String, StreamSubscription<int>> unreadSubscriptions = {};
+    final Map<String, int> unreadCounts = {};
+
+    void emitTotal() {
+      final total = unreadCounts.values.fold<int>(
+        0,
+        (sum, value) => sum + value,
+      );
 
       if (!controller.isClosed) {
         controller.add(total);
       }
     }
 
-    Future<void> replaceActivitySubscriptions(List<String> activityIds) async {
-      final nextIds = activityIds.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
-      final existingIds = activityUnreadSubscriptions.keys.toSet();
+    Future<void> replaceSubscriptions(List<String> ids) async {
+      final nextIds = ids
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+
+      final existingIds = unreadSubscriptions.keys.toSet();
 
       for (final removedId in existingIds.difference(nextIds)) {
-        await activityUnreadSubscriptions[removedId]?.cancel();
-        activityUnreadSubscriptions.remove(removedId);
-        activityUnreadCounts.remove(removedId);
+        await unreadSubscriptions[removedId]?.cancel();
+        unreadSubscriptions.remove(removedId);
+        unreadCounts.remove(removedId);
       }
 
-      for (final activityId in nextIds.difference(existingIds)) {
-        activityUnreadSubscriptions[activityId] =
-            _chatRepository.watchUnreadCount(activityId).listen(
+      for (final id in nextIds.difference(existingIds)) {
+        unreadSubscriptions[id] = watchUnreadCount(id).listen(
           (count) {
-            activityUnreadCounts[activityId] = count;
+            unreadCounts[id] = count;
             emitTotal();
           },
           onError: (_) {
-            activityUnreadCounts[activityId] = 0;
+            unreadCounts[id] = 0;
             emitTotal();
           },
         );
@@ -119,47 +201,9 @@ class MessageBadgeRepository {
       emitTotal();
     }
 
-    Future<void> replaceGroupSubscriptions(List<String> groupIds) async {
-      final nextIds = groupIds.map((id) => id.trim()).where((id) => id.isNotEmpty).toSet();
-      final existingIds = groupUnreadSubscriptions.keys.toSet();
-
-      for (final removedId in existingIds.difference(nextIds)) {
-        await groupUnreadSubscriptions[removedId]?.cancel();
-        groupUnreadSubscriptions.remove(removedId);
-        groupUnreadCounts.remove(removedId);
-      }
-
-      for (final groupId in nextIds.difference(existingIds)) {
-        groupUnreadSubscriptions[groupId] =
-            _groupChatRepository.watchUnreadCount(groupId).listen(
-          (count) {
-            groupUnreadCounts[groupId] = count;
-            emitTotal();
-          },
-          onError: (_) {
-            groupUnreadCounts[groupId] = 0;
-            emitTotal();
-          },
-        );
-      }
-
-      emitTotal();
-    }
-
-    activityIdsSubscription = watchMyActivityIds().listen(
-      (activityIds) {
-        replaceActivitySubscriptions(activityIds);
-      },
-      onError: (_) {
-        if (!controller.isClosed) {
-          controller.add(0);
-        }
-      },
-    );
-
-    groupIdsSubscription = watchMyGroupIds().listen(
-      (groupIds) {
-        replaceGroupSubscriptions(groupIds);
+    idsSubscription = idsStream.listen(
+      (ids) {
+        replaceSubscriptions(ids);
       },
       onError: (_) {
         if (!controller.isClosed) {
@@ -169,21 +213,14 @@ class MessageBadgeRepository {
     );
 
     controller.onCancel = () async {
-      await activityIdsSubscription?.cancel();
-      await groupIdsSubscription?.cancel();
+      await idsSubscription?.cancel();
 
-      for (final sub in activityUnreadSubscriptions.values) {
+      for (final sub in unreadSubscriptions.values) {
         await sub.cancel();
       }
 
-      for (final sub in groupUnreadSubscriptions.values) {
-        await sub.cancel();
-      }
-
-      activityUnreadSubscriptions.clear();
-      groupUnreadSubscriptions.clear();
-      activityUnreadCounts.clear();
-      groupUnreadCounts.clear();
+      unreadSubscriptions.clear();
+      unreadCounts.clear();
     };
 
     return controller.stream;

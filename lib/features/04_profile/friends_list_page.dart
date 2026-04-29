@@ -59,12 +59,13 @@ class _FriendsListPageState extends State<FriendsListPage> {
   }
 
   Future<void> _openFriendProfile(String friendId) async {
-    if (friendId.trim().isEmpty) return;
+    final trimmedFriendId = friendId.trim();
+    if (trimmedFriendId.isEmpty) return;
 
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => UserProfilePage(userId: friendId),
+        builder: (_) => UserProfilePage(userId: trimmedFriendId),
       ),
     );
 
@@ -128,36 +129,41 @@ class _FriendsListPageState extends State<FriendsListPage> {
     }
   }
 
+  Widget _buildUnavailableFriendTile(Friendship friendship) {
+    final fallbackName = _fallbackFriendName(friendship);
+    final friendshipDate = friendship.respondedAt ?? friendship.createdAt;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        leading: const CircleAvatar(
+          child: Text('?'),
+        ),
+        title: Text(fallbackName),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Utilisateur indisponible'),
+            if (friendshipDate != null)
+              Text(
+                'Ami depuis ${_formatDate(friendshipDate)}',
+              ),
+          ],
+        ),
+        isThreeLine: friendshipDate != null,
+      ),
+    );
+  }
+
   Widget _buildFriendTile(Friendship friendship) {
     final friendId = _friendshipRepository.getOtherUserId(friendship).trim();
-    final fallbackName = _fallbackFriendName(friendship);
-    final canOpenProfile = friendId.isNotEmpty;
 
-    if (!canOpenProfile) {
-      final friendshipDate = friendship.respondedAt ?? friendship.createdAt;
-
-      return Card(
-        margin: const EdgeInsets.only(bottom: 12),
-        child: ListTile(
-          leading: const CircleAvatar(
-            child: Text('?'),
-          ),
-          title: Text(fallbackName),
-          subtitle: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Utilisateur indisponible'),
-              if (friendshipDate != null)
-                Text(
-                  'Ami depuis ${_formatDate(friendshipDate)}',
-                ),
-            ],
-          ),
-          isThreeLine: friendshipDate != null,
-        ),
-      );
+    if (friendId.isEmpty) {
+      return _buildUnavailableFriendTile(friendship);
     }
+
+    final fallbackName = _fallbackFriendName(friendship);
 
     return FutureBuilder<Map<String, dynamic>?>(
       future: _userService.getUserById(friendId),
@@ -172,11 +178,56 @@ class _FriendsListPageState extends State<FriendsListPage> {
         }
 
         final user = userSnapshot.data;
+        final friendshipDate = friendship.respondedAt ?? friendship.createdAt;
 
-        final String pseudo = (user?['pseudo'] ?? '').toString().trim();
-        final String prenom = (user?['prenom'] ?? '').toString().trim();
-        final String nom = (user?['nom'] ?? '').toString().trim();
-        final String lieu = (user?['lieu'] ?? '').toString().trim();
+        if (user == null) {
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            child: ListTile(
+              leading: CircleAvatar(
+                child: Text(
+                  fallbackName.isNotEmpty
+                      ? fallbackName[0].toUpperCase()
+                      : '?',
+                ),
+              ),
+              title: Text(fallbackName),
+              subtitle: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Utilisateur introuvable en base'),
+                  if (friendshipDate != null)
+                    Text(
+                      'Ami depuis ${_formatDate(friendshipDate)}',
+                    ),
+                ],
+              ),
+              isThreeLine: friendshipDate != null,
+              trailing: PopupMenuButton<String>(
+                onSelected: (value) async {
+                  if (value == 'remove') {
+                    await _confirmRemoveFriend(
+                      friendship,
+                      fallbackName,
+                    );
+                  }
+                },
+                itemBuilder: (context) => const [
+                  PopupMenuItem<String>(
+                    value: 'remove',
+                    child: Text('Supprimer cet ami'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final String pseudo = (user['pseudo'] ?? '').toString().trim();
+        final String prenom = (user['prenom'] ?? '').toString().trim();
+        final String nom = (user['nom'] ?? '').toString().trim();
+        final String lieu = (user['lieu'] ?? '').toString().trim();
 
         String displayName = fallbackName;
 
@@ -188,17 +239,12 @@ class _FriendsListPageState extends State<FriendsListPage> {
           displayName = prenom;
         }
 
-        final friendshipDate =
-            friendship.respondedAt ?? friendship.createdAt;
-
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
             leading: CircleAvatar(
               child: Text(
-                displayName.isNotEmpty
-                    ? displayName[0].toUpperCase()
-                    : '?',
+                displayName.isNotEmpty ? displayName[0].toUpperCase() : '?',
               ),
             ),
             title: Text(displayName),

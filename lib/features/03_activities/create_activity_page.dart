@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
@@ -7,7 +8,6 @@ import 'package:agenda_app/repositories/activity_invitation_repository.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
@@ -485,6 +485,12 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     String activityId,
     List<String> friendIds,
   ) async {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid.trim();
+
+    if (currentUserId == null || currentUserId.isEmpty) {
+      return;
+    }
+
     final createdActivity = await activityService.getActivityById(activityId);
     if (createdActivity == null) return;
 
@@ -500,6 +506,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     if (selectedGroupId != null && selectedGroupId!.trim().isNotEmpty) {
       final memberIds =
           await groupsRepository.getGroupMemberIds(selectedGroupId!);
+
       for (final memberId in memberIds) {
         final trimmedId = memberId.trim();
         if (trimmedId.isNotEmpty) {
@@ -508,7 +515,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
       }
     }
 
-    recipients.remove(CurrentUser.id);
+    recipients.remove(currentUserId);
 
     for (final userId in recipients) {
       await invitationRepository.sendActivityInvitation(
@@ -1126,9 +1133,11 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                               selectedGroupName = null;
                                               groupActivityAccess = 'group_only';
                                               if (visibility ==
-                                                  ActivityVisibilityValues.private) {
+                                                  ActivityVisibilityValues
+                                                      .private) {
                                                 visibility =
-                                                    ActivityVisibilityValues.public;
+                                                    ActivityVisibilityValues
+                                                        .public;
                                               }
                                             });
                                           },
@@ -1162,7 +1171,9 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                             ? const SizedBox(
                                 height: 18,
                                 width: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : Text(
                                 isGroupActivity

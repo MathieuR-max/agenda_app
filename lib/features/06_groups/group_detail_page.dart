@@ -1,9 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/group_model.dart';
 import 'package:agenda_app/repositories/group_chat_repository.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import '../03_activities/activity_detail_page.dart';
 import 'add_group_member_page.dart';
@@ -17,6 +17,10 @@ class GroupDetailPage extends StatelessWidget {
     super.key,
     required this.groupId,
   });
+
+  String get _currentUserId {
+    return FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
+  }
 
   String _groupVisibilityLabel(String visibility) {
     switch (visibility) {
@@ -127,6 +131,46 @@ class GroupDetailPage extends StatelessWidget {
     );
   }
 
+  Widget _buildOpenGroupChatButton({
+    required BuildContext context,
+    required GroupModel group,
+    required GroupChatRepository groupChatRepository,
+  }) {
+    return StreamBuilder<int>(
+      stream: groupChatRepository.watchUnreadCount(groupId),
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+
+        return SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => GroupChatPage(
+                    groupId: groupId,
+                    groupName: group.name,
+                  ),
+                ),
+              );
+            },
+            icon: Badge(
+              isLabelVisible: unreadCount > 0,
+              label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+              child: const Icon(Icons.chat_bubble_outline),
+            ),
+            label: Text(
+              unreadCount > 0
+                  ? 'Ouvrir le chat du groupe ($unreadCount)'
+                  : 'Ouvrir le chat du groupe',
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _confirmLeaveGroup(
     BuildContext context,
     GroupsRepository repository,
@@ -160,10 +204,12 @@ class GroupDetailPage extends StatelessWidget {
     final success = await repository.leaveGroup(groupId: groupId);
 
     if (success) {
-      await groupChatRepository.sendSystemMessage(
-        groupId: groupId,
-        text: '$currentUserPseudo a quitté le groupe',
-      );
+      try {
+        await groupChatRepository.sendSystemMessage(
+          groupId: groupId,
+          text: '$currentUserPseudo a quitté le groupe',
+        );
+      } catch (_) {}
     }
 
     if (!context.mounted) return;
@@ -178,7 +224,7 @@ class GroupDetailPage extends StatelessWidget {
       ),
     );
 
-    if (success) {
+    if (success && context.mounted) {
       Navigator.pop(context);
     }
   }
@@ -220,11 +266,13 @@ class GroupDetailPage extends StatelessWidget {
     );
 
     if (success) {
-      await groupChatRepository.sendSystemMessage(
-        groupId: groupId,
-        text:
-            '${pseudo.isNotEmpty ? pseudo : 'Un utilisateur'} a été retiré du groupe',
-      );
+      try {
+        await groupChatRepository.sendSystemMessage(
+          groupId: groupId,
+          text:
+              '${pseudo.isNotEmpty ? pseudo : 'Un utilisateur'} a été retiré du groupe',
+        );
+      } catch (_) {}
     }
 
     if (!context.mounted) return;
@@ -256,10 +304,12 @@ class GroupDetailPage extends StatelessWidget {
     );
 
     if (createdTitle != null && createdTitle.trim().isNotEmpty) {
-      await groupChatRepository.sendSystemMessage(
-        groupId: groupId,
-        text: 'L’activité "$createdTitle" a été créée pour le groupe',
-      );
+      try {
+        await groupChatRepository.sendSystemMessage(
+          groupId: groupId,
+          text: 'L’activité "$createdTitle" a été créée pour le groupe',
+        );
+      } catch (_) {}
     }
   }
 
@@ -268,6 +318,7 @@ class GroupDetailPage extends StatelessWidget {
     final repository = GroupsRepository();
     final groupChatRepository = GroupChatRepository();
     final activityService = ActivityFirestoreService();
+    final currentUserId = _currentUserId;
 
     return Scaffold(
       appBar: AppBar(
@@ -296,7 +347,21 @@ class GroupDetailPage extends StatelessWidget {
             );
           }
 
-          final bool isOwner = group.ownerId == CurrentUser.id;
+          final bool isOwner = group.ownerId == currentUserId;
+          final bool isMemberFromGroupDoc =
+              currentUserId.isNotEmpty && group.memberIds.contains(currentUserId);
+
+          if (!isMemberFromGroupDoc) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (context.mounted && Navigator.canPop(context)) {
+                Navigator.pop(context);
+              }
+            });
+
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
 
           return StreamBuilder<List<Map<String, dynamic>>>(
             stream: repository.watchGroupMembers(groupId),
@@ -317,7 +382,8 @@ class GroupDetailPage extends StatelessWidget {
 
               Map<String, dynamic>? currentUserMember;
               for (final member in members) {
-                if ((member['userId'] ?? '').toString() == CurrentUser.id) {
+                if ((member['userId'] ?? '').toString().trim() ==
+                    currentUserId) {
                   currentUserMember = member;
                   break;
                 }
@@ -374,7 +440,8 @@ class GroupDetailPage extends StatelessWidget {
                                 runSpacing: 8,
                                 children: [
                                   _buildChip(
-                                    label: _groupVisibilityLabel(group.visibility),
+                                    label:
+                                        _groupVisibilityLabel(group.visibility),
                                     backgroundColor:
                                         _groupVisibilityChipBackground(
                                       group.visibility,
@@ -392,23 +459,10 @@ class GroupDetailPage extends StatelessWidget {
                               ),
                               if (isMember) ...[
                                 const SizedBox(height: 16),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: OutlinedButton.icon(
-                                    onPressed: () async {
-                                      await Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => GroupChatPage(
-                                            groupId: groupId,
-                                            groupName: group.name,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    icon: const Icon(Icons.chat_bubble_outline),
-                                    label: const Text('Ouvrir le chat du groupe'),
-                                  ),
+                                _buildOpenGroupChatButton(
+                                  context: context,
+                                  group: group,
+                                  groupChatRepository: groupChatRepository,
                                 ),
                               ],
                               if (isOwner) ...[
@@ -435,7 +489,8 @@ class GroupDetailPage extends StatelessWidget {
                                 SizedBox(
                                   width: double.infinity,
                                   child: OutlinedButton.icon(
-                                    onPressed: () => _openCreateGroupActivityPage(
+                                    onPressed: () =>
+                                        _openCreateGroupActivityPage(
                                       context,
                                       group,
                                       groupChatRepository,
@@ -568,12 +623,12 @@ class GroupDetailPage extends StatelessWidget {
                                 ...members.map((member) {
                                   final pseudo =
                                       (member['pseudo'] ?? '').toString();
-                                  final role = (member['role'] ?? '').toString();
+                                  final role =
+                                      (member['role'] ?? '').toString();
                                   final memberUserId =
                                       (member['userId'] ?? '').toString();
 
-                                  final bool canRemove =
-                                      isOwner &&
+                                  final bool canRemove = isOwner &&
                                       memberUserId.isNotEmpty &&
                                       memberUserId != group.ownerId;
 
@@ -590,7 +645,8 @@ class GroupDetailPage extends StatelessWidget {
                                         ? IconButton(
                                             tooltip: 'Retirer du groupe',
                                             icon: const Icon(Icons.close),
-                                            onPressed: () => _confirmRemoveMember(
+                                            onPressed: () =>
+                                                _confirmRemoveMember(
                                               context,
                                               repository,
                                               groupChatRepository,

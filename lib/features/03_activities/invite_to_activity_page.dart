@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/models/activity.dart';
@@ -6,7 +7,6 @@ import 'package:agenda_app/models/group_model.dart';
 import 'package:agenda_app/repositories/activity_invitation_repository.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
@@ -45,6 +45,16 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
   String? sendingFriendUserId;
 
   final Set<String> locallyInvitedUserIds = <String>{};
+
+  String? get currentUserId {
+    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
 
   final List<Map<String, String>> groupActivityAccessOptions = const [
     {
@@ -161,7 +171,9 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
     required Set<String> participantIds,
     required Set<String> pendingInvitationIds,
   }) {
-    if (userId == CurrentUser.id) {
+    final uid = currentUserId;
+
+    if (uid != null && userId == uid) {
       return 'Vous';
     }
 
@@ -189,11 +201,13 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
       return;
     }
 
+    final uid = currentUserId;
     final userId = (user['id'] ?? '').toString().trim();
     final userName = _displayUserName(user);
 
+    if (uid == null || uid.isEmpty) return;
     if (userId.isEmpty) return;
-    if (userId == CurrentUser.id) return;
+    if (userId == uid) return;
     if (participantIds.contains(userId)) return;
     if (pendingInvitationIds.contains(userId)) return;
     if (locallyInvitedUserIds.contains(userId)) return;
@@ -252,6 +266,12 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
       return;
     }
 
+    final uid = currentUserId;
+
+    if (uid == null || uid.isEmpty) {
+      return;
+    }
+
     setState(() {
       isSendingGroup = true;
     });
@@ -298,7 +318,7 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
         final trimmedId = memberId.trim();
 
         if (trimmedId.isEmpty) continue;
-        if (trimmedId == CurrentUser.id) continue;
+        if (trimmedId == uid) continue;
         if (participantIds.contains(trimmedId)) continue;
         if (pendingInvitationIds.contains(trimmedId)) continue;
         if (locallyInvitedUserIds.contains(trimmedId)) continue;
@@ -560,6 +580,7 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
     Set<String> participantIds,
     Set<String> pendingInvitationIds,
   ) {
+    final uid = currentUserId;
     final allFriends = friendsSnapshot.data ?? [];
     final friends = allFriends.where(_matchesSearch).toList();
 
@@ -623,7 +644,7 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
           ...friends.map((friend) {
             final userId = (friend['id'] ?? '').toString().trim();
             final lieu = (friend['lieu'] ?? '').toString().trim();
-            final isCurrentUser = userId == CurrentUser.id;
+            final isCurrentUser = uid != null && userId == uid;
             final isParticipant = participantIds.contains(userId);
             final isAlreadyInvited = pendingInvitationIds.contains(userId) ||
                 locallyInvitedUserIds.contains(userId);
@@ -636,6 +657,7 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
             );
 
             final canInvite = !readOnly &&
+                uid != null &&
                 userId.isNotEmpty &&
                 !isCurrentUser &&
                 !isParticipant &&
@@ -716,9 +738,8 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
         ? null
         : widget.activity.groupName!.trim();
 
-    groupActivityAccess = widget.activity.isMixedGroupActivity
-        ? 'group_and_public'
-        : 'group_only';
+    groupActivityAccess =
+        widget.activity.isMixedGroupActivity ? 'group_and_public' : 'group_only';
 
     _friendsFuture = _loadFriendsFromFriendships();
   }
@@ -802,11 +823,11 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
                       currentActivity.id,
                     ),
                     builder: (context, participantsSnapshot) {
-                      final participantIds = (participantsSnapshot.data ??
-                              <String>[])
-                          .map((e) => e.trim())
-                          .where((e) => e.isNotEmpty)
-                          .toSet();
+                      final participantIds =
+                          (participantsSnapshot.data ?? <String>[])
+                              .map((e) => e.trim())
+                              .where((e) => e.isNotEmpty)
+                              .toSet();
 
                       return StreamBuilder<Set<String>>(
                         stream:

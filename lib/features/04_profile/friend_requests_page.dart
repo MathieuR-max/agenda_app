@@ -3,10 +3,48 @@ import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
 import 'package:agenda_app/services/firestore/friendship_firestore_service.dart';
 
-class FriendRequestsPage extends StatelessWidget {
+class FriendRequestsPage extends StatefulWidget {
   const FriendRequestsPage({super.key});
 
-  Color _statusBackgroundColor(Friendship friendship) {
+  @override
+  State<FriendRequestsPage> createState() => _FriendRequestsPageState();
+}
+
+class _FriendRequestsPageState extends State<FriendRequestsPage> {
+  late final FriendshipFirestoreService _friendshipService;
+  late final FriendshipRepository _friendshipRepository;
+
+  final Set<String> _busyRequestIds = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _friendshipService = FriendshipFirestoreService();
+    _friendshipRepository = FriendshipRepository();
+  }
+
+  bool _isBusy(String friendshipId) => _busyRequestIds.contains(friendshipId);
+
+  void _setBusy(String friendshipId, bool value) {
+    if (!mounted) return;
+
+    setState(() {
+      if (value) {
+        _busyRequestIds.add(friendshipId);
+      } else {
+        _busyRequestIds.remove(friendshipId);
+      }
+    });
+  }
+
+  Color _statusBackgroundColor(
+    Friendship friendship, {
+    required bool received,
+  }) {
+    if (!received && friendship.status == Friendship.statusPending) {
+      return Colors.blue.shade100;
+    }
+
     switch (friendship.status) {
       case Friendship.statusAccepted:
         return Colors.green.shade100;
@@ -20,7 +58,14 @@ class FriendRequestsPage extends StatelessWidget {
     }
   }
 
-  Color _statusTextColor(Friendship friendship) {
+  Color _statusTextColor(
+    Friendship friendship, {
+    required bool received,
+  }) {
+    if (!received && friendship.status == Friendship.statusPending) {
+      return Colors.blue.shade800;
+    }
+
     switch (friendship.status) {
       case Friendship.statusAccepted:
         return Colors.green.shade800;
@@ -34,7 +79,14 @@ class FriendRequestsPage extends StatelessWidget {
     }
   }
 
-  String _statusLabel(Friendship friendship) {
+  String _statusLabel(
+    Friendship friendship, {
+    required bool received,
+  }) {
+    if (!received && friendship.status == Friendship.statusPending) {
+      return 'Envoyée';
+    }
+
     switch (friendship.status) {
       case Friendship.statusAccepted:
         return 'Acceptée';
@@ -86,10 +138,11 @@ class FriendRequestsPage extends StatelessWidget {
 
   Future<void> _acceptRequest(
     BuildContext context,
-    FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
-    if (friendship.id.trim().isEmpty) {
+    final friendshipId = friendship.id.trim();
+
+    if (friendshipId.isEmpty || _isBusy(friendshipId)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Impossible d’accepter cette demande'),
@@ -98,29 +151,36 @@ class FriendRequestsPage extends StatelessWidget {
       return;
     }
 
-    final accepted = await friendshipRepository.acceptFriendRequest(
-      friendship.id,
-    );
+    _setBusy(friendshipId, true);
 
-    if (!context.mounted) return;
+    try {
+      final accepted = await _friendshipRepository.acceptFriendRequest(
+        friendshipId,
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          accepted
-              ? 'Demande d’ami acceptée'
-              : 'Impossible d’accepter la demande',
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            accepted
+                ? 'Demande d’ami acceptée'
+                : 'Impossible d’accepter la demande',
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _setBusy(friendshipId, false);
+    }
   }
 
   Future<void> _refuseRequest(
     BuildContext context,
-    FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
-    if (friendship.id.trim().isEmpty) {
+    final friendshipId = friendship.id.trim();
+
+    if (friendshipId.isEmpty || _isBusy(friendshipId)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Impossible de refuser cette demande'),
@@ -129,31 +189,37 @@ class FriendRequestsPage extends StatelessWidget {
       return;
     }
 
-    final refused = await friendshipRepository.refuseFriendRequest(
-      friendship.id,
-    );
+    _setBusy(friendshipId, true);
 
-    if (!context.mounted) return;
+    try {
+      final refused = await _friendshipRepository.refuseFriendRequest(
+        friendshipId,
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          refused
-              ? 'Demande d’ami refusée'
-              : 'Impossible de refuser la demande',
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            refused
+                ? 'Demande d’ami refusée'
+                : 'Impossible de refuser la demande',
+          ),
         ),
-      ),
-    );
+      );
+    } finally {
+      _setBusy(friendshipId, false);
+    }
   }
 
   Widget _buildRequestCard({
     required BuildContext context,
-    required FriendshipRepository friendshipRepository,
     required Friendship friendship,
     required bool received,
   }) {
     final displayName = _displayName(friendship, received: received);
     final subtitle = received ? 'Demande reçue' : 'Demande envoyée';
+    final isBusy = _isBusy(friendship.id);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -177,22 +243,42 @@ class FriendRequestsPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 6,
-              ),
-              decoration: BoxDecoration(
-                color: _statusBackgroundColor(friendship),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                _statusLabel(friendship),
-                style: TextStyle(
-                  color: _statusTextColor(friendship),
-                  fontWeight: FontWeight.bold,
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _statusBackgroundColor(
+                      friendship,
+                      received: received,
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    _statusLabel(
+                      friendship,
+                      received: received,
+                    ),
+                    style: TextStyle(
+                      color: _statusTextColor(
+                        friendship,
+                        received: received,
+                      ),
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-              ),
+                const Spacer(),
+                if (isBusy)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
             ),
             if (received && friendship.isPending) ...[
               const SizedBox(height: 14),
@@ -200,22 +286,24 @@ class FriendRequestsPage extends StatelessWidget {
                 children: [
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () => _acceptRequest(
-                        context,
-                        friendshipRepository,
-                        friendship,
-                      ),
+                      onPressed: isBusy
+                          ? null
+                          : () => _acceptRequest(
+                                context,
+                                friendship,
+                              ),
                       child: const Text('Accepter'),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => _refuseRequest(
-                        context,
-                        friendshipRepository,
-                        friendship,
-                      ),
+                      onPressed: isBusy
+                          ? null
+                          : () => _refuseRequest(
+                                context,
+                                friendship,
+                              ),
                       child: const Text('Refuser'),
                     ),
                   ),
@@ -231,14 +319,19 @@ class FriendRequestsPage extends StatelessWidget {
   Widget _buildRequestsTab({
     required BuildContext context,
     required AsyncSnapshot<List<Friendship>> snapshot,
-    required FriendshipRepository friendshipRepository,
     required bool received,
     required String emptyLabel,
     required String errorLabel,
   }) {
     if (snapshot.hasError) {
       return Center(
-        child: Text('$errorLabel : ${snapshot.error}'),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            '$errorLabel : ${snapshot.error}',
+            textAlign: TextAlign.center,
+          ),
+        ),
       );
     }
 
@@ -249,82 +342,135 @@ class FriendRequestsPage extends StatelessWidget {
     }
 
     final requests = snapshot.data ?? [];
+
+    debugPrint(
+      'FRIEND REQUESTS ${received ? "received" : "sent"} '
+      'currentUserId=${_friendshipService.currentUserId} '
+      'count=${requests.length}',
+    );
+
     final pendingCount = requests.where((r) => r.isPending).length;
     final acceptedCount = requests.where((r) => r.isAccepted).length;
     final refusedCount = requests.where((r) => r.isRefused).length;
     final cancelledCount = requests.where((r) => r.isCancelled).length;
 
     if (requests.isEmpty) {
-      return Center(
-        child: Text(emptyLabel),
+      return RefreshIndicator(
+        onRefresh: () async {
+          setState(() {});
+        },
+        child: ListView(
+          children: [
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                emptyLabel,
+                textAlign: TextAlign.center,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Text(
+                'Utilisateur courant : ${_friendshipService.currentUserId}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
       );
     }
 
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildSummaryChip(
-                label: 'En attente',
-                count: pendingCount,
-                backgroundColor: Colors.orange.shade100,
-                textColor: Colors.orange.shade800,
-              ),
-              _buildSummaryChip(
-                label: 'Acceptées',
-                count: acceptedCount,
-                backgroundColor: Colors.green.shade100,
-                textColor: Colors.green.shade800,
-              ),
-              _buildSummaryChip(
-                label: 'Refusées',
-                count: refusedCount,
-                backgroundColor: Colors.red.shade100,
-                textColor: Colors.red.shade800,
-              ),
-              _buildSummaryChip(
-                label: 'Annulées',
-                count: cancelledCount,
-                backgroundColor: Colors.grey.shade300,
-                textColor: Colors.grey.shade800,
-              ),
-            ],
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {});
+      },
+      child: Column(
+        children: [
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             padding: const EdgeInsets.all(12),
-            itemCount: requests.length,
-            itemBuilder: (context, index) {
-              final friendship = requests[index];
-              return _buildRequestCard(
-                context: context,
-                friendshipRepository: friendshipRepository,
-                friendship: friendship,
-                received: received,
-              );
-            },
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                _buildSummaryChip(
+                  label: received ? 'En attente' : 'Envoyées',
+                  count: pendingCount,
+                  backgroundColor:
+                      received ? Colors.orange.shade100 : Colors.blue.shade100,
+                  textColor:
+                      received ? Colors.orange.shade800 : Colors.blue.shade800,
+                ),
+                _buildSummaryChip(
+                  label: 'Acceptées',
+                  count: acceptedCount,
+                  backgroundColor: Colors.green.shade100,
+                  textColor: Colors.green.shade800,
+                ),
+                _buildSummaryChip(
+                  label: 'Refusées',
+                  count: refusedCount,
+                  backgroundColor: Colors.red.shade100,
+                  textColor: Colors.red.shade800,
+                ),
+                _buildSummaryChip(
+                  label: 'Annulées',
+                  count: cancelledCount,
+                  backgroundColor: Colors.grey.shade300,
+                  textColor: Colors.grey.shade800,
+                ),
+              ],
+            ),
           ),
-        ),
-      ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Utilisateur courant : ${_friendshipService.currentUserId}',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: requests.length,
+              itemBuilder: (context, index) {
+                final friendship = requests[index];
+                return _buildRequestCard(
+                  context: context,
+                  friendship: friendship,
+                  received: received,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final friendshipService = FriendshipFirestoreService();
-    final friendshipRepository = FriendshipRepository();
+    debugPrint(
+      'FRIEND REQUESTS PAGE currentUserId=${_friendshipService.currentUserId}',
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -344,12 +490,11 @@ class FriendRequestsPage extends StatelessWidget {
               child: TabBarView(
                 children: [
                   StreamBuilder<List<Friendship>>(
-                    stream: friendshipService.getReceivedFriendRequests(),
+                    stream: _friendshipService.getReceivedFriendRequests(),
                     builder: (context, snapshot) {
                       return _buildRequestsTab(
                         context: context,
                         snapshot: snapshot,
-                        friendshipRepository: friendshipRepository,
                         received: true,
                         emptyLabel: 'Aucune demande reçue',
                         errorLabel: 'Erreur demandes reçues',
@@ -357,12 +502,11 @@ class FriendRequestsPage extends StatelessWidget {
                     },
                   ),
                   StreamBuilder<List<Friendship>>(
-                    stream: friendshipService.getSentFriendRequests(),
+                    stream: _friendshipService.getSentFriendRequests(),
                     builder: (context, snapshot) {
                       return _buildRequestsTab(
                         context: context,
                         snapshot: snapshot,
-                        friendshipRepository: friendshipRepository,
                         received: false,
                         emptyLabel: 'Aucune demande envoyée',
                         errorLabel: 'Erreur demandes envoyées',

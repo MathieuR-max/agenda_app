@@ -7,6 +7,7 @@ class GroupModel {
   final String ownerId;
   final String ownerPseudo;
   final String visibility;
+  final List<String> memberIds;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -20,6 +21,7 @@ class GroupModel {
     required this.ownerId,
     required this.ownerPseudo,
     required this.visibility,
+    required this.memberIds,
     this.createdAt,
     this.updatedAt,
   });
@@ -34,6 +36,7 @@ class GroupModel {
       visibility: _normalizeVisibility(
         _parseString(map['visibility'], fallback: visibilityPrivate),
       ),
+      memberIds: _parseStringList(map['memberIds']),
       createdAt: _toDateTime(map['createdAt']),
       updatedAt: _toDateTime(map['updatedAt']),
     );
@@ -46,6 +49,7 @@ class GroupModel {
       'ownerId': ownerId,
       'ownerPseudo': ownerPseudo,
       'visibility': visibility,
+      'memberIds': memberIds,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
       'updatedAt': updatedAt != null ? Timestamp.fromDate(updatedAt!) : null,
     };
@@ -54,6 +58,12 @@ class GroupModel {
   bool get isPrivate => visibility == visibilityPrivate;
 
   bool get isFriendsOnly => visibility == visibilityFriends;
+
+  bool get hasMembers => memberIds.isNotEmpty;
+
+  bool isMember(String userId) {
+    return memberIds.contains(userId);
+  }
 
   static DateTime? _toDateTime(dynamic value) {
     if (value == null) return null;
@@ -65,6 +75,20 @@ class GroupModel {
   static String _parseString(dynamic value, {String fallback = ''}) {
     if (value == null) return fallback;
     return value.toString();
+  }
+
+  static List<String> _parseStringList(dynamic value) {
+    if (value == null) return [];
+
+    if (value is Iterable) {
+      return value
+          .where((item) => item != null)
+          .map((item) => item.toString())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    return [];
   }
 
   static String _normalizeVisibility(String value) {

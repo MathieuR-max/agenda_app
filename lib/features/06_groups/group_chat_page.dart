@@ -1,7 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/group_message.dart';
 import 'package:agenda_app/repositories/group_chat_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class GroupChatPage extends StatefulWidget {
   final String groupId;
@@ -25,6 +25,16 @@ class _GroupChatPageState extends State<GroupChatPage> {
   bool _isSending = false;
   int _lastMessageCount = 0;
   bool _isMarkingRead = false;
+
+  String? get currentUserId {
+    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
 
   @override
   void initState() {
@@ -113,7 +123,8 @@ class _GroupChatPageState extends State<GroupChatPage> {
   }
 
   Widget _buildMessageBubble(GroupMessage message) {
-    final isMine = message.senderId == CurrentUser.id;
+    final uid = currentUserId;
+    final isMine = uid != null && message.senderId == uid;
     final isSystem = message.type == GroupMessage.typeSystem;
 
     if (isSystem) {

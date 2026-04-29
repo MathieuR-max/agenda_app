@@ -1,15 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/activity.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class ActivityFirestoreService {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
 
-  ActivityFirestoreService({FirebaseFirestore? db})
-      : _db = db ?? FirebaseFirestore.instance;
+  ActivityFirestoreService({
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+  })  : _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
-  String get currentUserId => CurrentUser.id;
+  String get currentUserId {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    return uid;
+  }
 
   CollectionReference<Map<String, dynamic>> get _activities =>
       _db.collection(FirestoreCollections.activities);
@@ -30,6 +43,88 @@ class ActivityFirestoreService {
 
   CollectionReference<Map<String, dynamic>> _messagesRef(String activityId) =>
       _activityDoc(activityId).collection(FirestoreCollections.messages);
+
+  DocumentReference<Map<String, dynamic>> _joinedActivityRef({
+    required String userId,
+    required String activityId,
+  }) {
+    return _users
+        .doc(userId.trim())
+        .collection('joined_activities')
+        .doc(activityId.trim());
+  }
+
+  void _log(String message) {
+    debugPrint('ACTIVITY_FS $message');
+  }
+
+  Future<void> addJoinedActivityMirror({
+    required String userId,
+    required String activityId,
+    required String source,
+  }) async {
+    final trimmedUserId = userId.trim();
+    final trimmedActivityId = activityId.trim();
+    final trimmedSource = source.trim();
+
+    if (trimmedUserId.isEmpty || trimmedActivityId.isEmpty) {
+      return;
+    }
+
+    await _joinedActivityRef(
+      userId: trimmedUserId,
+      activityId: trimmedActivityId,
+    ).set({
+      'activityId': trimmedActivityId,
+      'joinedAt': FieldValue.serverTimestamp(),
+      'source': trimmedSource.isEmpty ? 'unknown' : trimmedSource,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
+  Future<void> removeJoinedActivityMirror({
+    required String userId,
+    required String activityId,
+  }) async {
+    final trimmedUserId = userId.trim();
+    final trimmedActivityId = activityId.trim();
+
+    if (trimmedUserId.isEmpty || trimmedActivityId.isEmpty) {
+      return;
+    }
+
+    await _joinedActivityRef(
+      userId: trimmedUserId,
+      activityId: trimmedActivityId,
+    ).delete();
+  }
+
+  Stream<List<String>> watchJoinedActivityIds() {
+    final uid = currentUserId;
+
+    _log('watchJoinedActivityIds uid=$uid');
+
+    return _users
+        .doc(uid)
+        .collection('joined_activities')
+        .snapshots()
+        .map((snapshot) {
+      final ids = snapshot.docs
+          .map((doc) => (doc.data()['activityId'] ?? doc.id).toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toSet()
+          .toList();
+
+      _log('watchJoinedActivityIds result=$ids');
+      return ids;
+    }).handleError((error, stackTrace) {
+      _log('watchJoinedActivityIds ERROR: $error');
+    });
+  }
+
+  Stream<List<String>> getJoinedActivityIds() {
+    return watchJoinedActivityIds();
+  }
 
   Future<String> createActivityDocument({
     required String title,
@@ -93,6 +188,7 @@ class ActivityFirestoreService {
       'ownerPseudo': trimmedOwnerPseudo,
       'ownerPending': false,
       'participantCount': 1,
+      'participantVisibility': 'participants_only',
       'lastMessageText': null,
       'lastMessageAt': null,
       'createdAt': FieldValue.serverTimestamp(),
@@ -150,7 +246,8 @@ class ActivityFirestoreService {
       return false;
     }
 
-    final doc = await _participantsRef(trimmedActivityId).doc(trimmedUserId).get();
+    final doc =
+        await _participantsRef(trimmedActivityId).doc(trimmedUserId).get();
     return doc.exists;
   }
 
@@ -209,14 +306,18 @@ class ActivityFirestoreService {
   }
 
   Stream<List<Activity>> getCreatedActivities() {
+    final uid = currentUserId;
+    _log('getCreatedActivities uid=$uid');
+
     return _activities
-        .where('ownerId', isEqualTo: currentUserId)
+        .where('ownerId', isEqualTo: uid)
         .snapshots()
         .map((snapshot) {
       final activities =
           snapshot.docs.map((doc) => Activity.fromDocument(doc)).toList();
 
       _sortActivitiesByRecency(activities);
+      _log('getCreatedActivities resultCount=${activities.length}');
       return activities;
     });
   }
@@ -394,33 +495,23 @@ class ActivityFirestoreService {
     );
   }
 
-  Stream<List<String>> getJoinedActivityIds() {
-    return _activities.snapshots().asyncMap((snapshot) async {
-      final List<String> joinedIds = [];
-
-      for (final doc in snapshot.docs) {
-        final participantDoc =
-            await _participantsRef(doc.id).doc(currentUserId).get();
-
-        if (participantDoc.exists) {
-          joinedIds.add(doc.id);
-        }
-      }
-
-      return joinedIds;
-    });
-  }
-
   Stream<List<Activity>> getJoinedActivities() {
     return getJoinedActivityIds().asyncMap((ids) async {
-      if (ids.isEmpty) return <Activity>[];
+      if (ids.isEmpty) {
+        _log('getJoinedActivities -> no ids');
+        return <Activity>[];
+      }
 
       final List<Activity> activities = [];
 
       for (final chunk in _chunkList(ids, 10)) {
+        _log('getJoinedActivities chunk=$chunk');
+
         final snapshot = await _activities
             .where(FieldPath.documentId, whereIn: chunk)
             .get();
+
+        _log('getJoinedActivities fetchedDocs=${snapshot.docs.length}');
 
         activities.addAll(
           snapshot.docs.map((doc) => Activity.fromDocument(doc)),
@@ -428,7 +519,10 @@ class ActivityFirestoreService {
       }
 
       _sortActivitiesByRecency(activities);
+      _log('getJoinedActivities resultCount=${activities.length}');
       return activities;
+    }).handleError((error, stackTrace) {
+      _log('getJoinedActivities ERROR: $error');
     });
   }
 
@@ -439,6 +533,7 @@ class ActivityFirestoreService {
       return false;
     }
 
+    final uid = currentUserId;
     final activityRef = _activityDoc(trimmedActivityId);
 
     final canDelete = await _db.runTransaction((transaction) async {
@@ -452,7 +547,7 @@ class ActivityFirestoreService {
       final ownerId = (data['ownerId'] ?? '').toString().trim();
       final participantCount = _parseInt(data['participantCount']);
 
-      final isOwner = ownerId == currentUserId;
+      final isOwner = ownerId == uid;
 
       if (!isOwner) {
         return false;
@@ -513,14 +608,17 @@ class ActivityFirestoreService {
   ) async {
     while (true) {
       final snapshot = await collection.limit(100).get();
+
       if (snapshot.docs.isEmpty) {
         break;
       }
 
       final batch = _db.batch();
+
       for (final doc in snapshot.docs) {
         batch.delete(doc.reference);
       }
+
       await batch.commit();
     }
   }
@@ -532,6 +630,7 @@ class ActivityFirestoreService {
       final end = (i + chunkSize < items.length)
           ? i + chunkSize
           : items.length;
+
       chunks.add(items.sublist(i, end));
     }
 
@@ -551,6 +650,7 @@ class ActivityFirestoreService {
           a.resolvedStartDateTime ?? a.updatedAt ?? a.createdAt ?? DateTime(2000);
       final bDate =
           b.resolvedStartDateTime ?? b.updatedAt ?? b.createdAt ?? DateTime(2000);
+
       return bDate.compareTo(aDate);
     });
   }

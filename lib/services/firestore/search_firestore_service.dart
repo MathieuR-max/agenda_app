@@ -1,14 +1,36 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class SearchFirestoreService {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
 
-  SearchFirestoreService({FirebaseFirestore? db})
-      : _db = db ?? FirebaseFirestore.instance;
+  SearchFirestoreService({
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+  })  : _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
-  String get currentUserId => CurrentUser.id;
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    return uid;
+  }
 
   CollectionReference<Map<String, dynamic>> get _searches =>
       _db.collection(FirestoreCollections.searches);
@@ -18,9 +40,6 @@ class SearchFirestoreService {
     required String startTime,
     required String endTime,
     required String category,
-
-    /// Nouvelle projection temporelle optionnelle.
-    /// Si absente, on tente de la reconstruire à partir du legacy.
     DateTime? startDateTime,
     DateTime? endDateTime,
   }) async {
@@ -29,10 +48,10 @@ class SearchFirestoreService {
     final trimmedEndTime = endTime.trim();
     final trimmedCategory = category.trim();
 
-    final resolvedStartDateTime = startDateTime ??
-        _combineLegacyDateAndTime(trimmedDay, trimmedStartTime);
-    final resolvedEndDateTime = endDateTime ??
-        _combineLegacyDateAndTime(trimmedDay, trimmedEndTime);
+    final resolvedStartDateTime =
+        startDateTime ?? _combineLegacyDateAndTime(trimmedDay, trimmedStartTime);
+    final resolvedEndDateTime =
+        endDateTime ?? _combineLegacyDateAndTime(trimmedDay, trimmedEndTime);
 
     if (trimmedDay.isEmpty) {
       throw Exception('Le jour de recherche est requis.');
@@ -77,27 +96,31 @@ class SearchFirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> getSearches() {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<Map<String, dynamic>>[]);
+    }
+
     return _searches
-        .where('userId', isEqualTo: currentUserId)
+        .where('userId', isEqualTo: uid)
         .orderBy('createdAt', descending: true)
         .snapshots()
         .map((snapshot) {
       final items = snapshot.docs.map((doc) {
         final data = doc.data();
 
-        final resolvedStartDateTime =
-            _toDateTime(data['startDateTime']) ??
-                _combineLegacyDateAndTime(
-                  _parseString(data['day']),
-                  _parseString(data['startTime']),
-                );
+        final resolvedStartDateTime = _toDateTime(data['startDateTime']) ??
+            _combineLegacyDateAndTime(
+              _parseString(data['day']),
+              _parseString(data['startTime']),
+            );
 
-        final resolvedEndDateTime =
-            _toDateTime(data['endDateTime']) ??
-                _combineLegacyDateAndTime(
-                  _parseString(data['day']),
-                  _parseString(data['endTime']),
-                );
+        final resolvedEndDateTime = _toDateTime(data['endDateTime']) ??
+            _combineLegacyDateAndTime(
+              _parseString(data['day']),
+              _parseString(data['endTime']),
+            );
 
         return <String, dynamic>{
           'id': doc.id,
@@ -121,10 +144,14 @@ class SearchFirestoreService {
             b['effectiveSortDateTime'] as DateTime? ?? DateTime(2000);
 
         final compareDate = bDate.compareTo(aDate);
-        if (compareDate != 0) return compareDate;
+
+        if (compareDate != 0) {
+          return compareDate;
+        }
 
         final aCategory = (a['category'] as String).toLowerCase();
         final bCategory = (b['category'] as String).toLowerCase();
+
         return aCategory.compareTo(bCategory);
       });
 
@@ -136,12 +163,14 @@ class SearchFirestoreService {
     required DateTime start,
     required DateTime end,
   }) {
-    if (!end.isAfter(start)) {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null || !end.isAfter(start)) {
       return Stream.value(<Map<String, dynamic>>[]);
     }
 
     return _searches
-        .where('userId', isEqualTo: currentUserId)
+        .where('userId', isEqualTo: uid)
         .where(
           'startDateTime',
           isGreaterThanOrEqualTo: Timestamp.fromDate(start),
@@ -186,19 +215,17 @@ class SearchFirestoreService {
 
     final data = doc.data()!;
 
-    final resolvedStartDateTime =
-        _toDateTime(data['startDateTime']) ??
-            _combineLegacyDateAndTime(
-              _parseString(data['day']),
-              _parseString(data['startTime']),
-            );
+    final resolvedStartDateTime = _toDateTime(data['startDateTime']) ??
+        _combineLegacyDateAndTime(
+          _parseString(data['day']),
+          _parseString(data['startTime']),
+        );
 
-    final resolvedEndDateTime =
-        _toDateTime(data['endDateTime']) ??
-            _combineLegacyDateAndTime(
-              _parseString(data['day']),
-              _parseString(data['endTime']),
-            );
+    final resolvedEndDateTime = _toDateTime(data['endDateTime']) ??
+        _combineLegacyDateAndTime(
+          _parseString(data['day']),
+          _parseString(data['endTime']),
+        );
 
     return <String, dynamic>{
       'id': doc.id,
@@ -229,19 +256,17 @@ class SearchFirestoreService {
 
       final data = doc.data()!;
 
-      final resolvedStartDateTime =
-          _toDateTime(data['startDateTime']) ??
-              _combineLegacyDateAndTime(
-                _parseString(data['day']),
-                _parseString(data['startTime']),
-              );
+      final resolvedStartDateTime = _toDateTime(data['startDateTime']) ??
+          _combineLegacyDateAndTime(
+            _parseString(data['day']),
+            _parseString(data['startTime']),
+          );
 
-      final resolvedEndDateTime =
-          _toDateTime(data['endDateTime']) ??
-              _combineLegacyDateAndTime(
-                _parseString(data['day']),
-                _parseString(data['endTime']),
-              );
+      final resolvedEndDateTime = _toDateTime(data['endDateTime']) ??
+          _combineLegacyDateAndTime(
+            _parseString(data['day']),
+            _parseString(data['endTime']),
+          );
 
       return <String, dynamic>{
         'id': doc.id,
@@ -291,7 +316,10 @@ class SearchFirestoreService {
     try {
       final date = DateTime.parse(day);
       final parts = time.split(':');
-      if (parts.length < 2) return null;
+
+      if (parts.length < 2) {
+        return null;
+      }
 
       final hour = int.tryParse(parts[0].trim()) ?? 0;
       final minute = int.tryParse(parts[1].trim()) ?? 0;

@@ -1,9 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/user_model.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
+import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/repositories/profile_repository.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'activity_detail_page.dart';
 
@@ -17,6 +18,7 @@ class AllActivitiesPage extends StatefulWidget {
 class _AllActivitiesPageState extends State<AllActivitiesPage> {
   final ActivityFirestoreService activityService = ActivityFirestoreService();
   final ActivityRepository activityRepository = ActivityRepository();
+  final ChatRepository chatRepository = ChatRepository();
   final ProfileRepository profileRepository = ProfileRepository();
 
   String selectedDay = 'Tous';
@@ -26,6 +28,9 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
   bool onlyAvailable = false;
   bool onlyOwnerNeeded = false;
   bool onlyMyFavorites = false;
+  bool prioritizeUnreadMessages = true;
+
+  final Map<String, int> _unreadCountsByActivityId = <String, int>{};
 
   final List<String> days = const [
     'Tous',
@@ -57,6 +62,55 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     'Titre A → Z',
   ];
 
+  void _rememberUnreadCount(String activityId, int count) {
+    final trimmedActivityId = activityId.trim();
+    if (trimmedActivityId.isEmpty) return;
+
+    final previous = _unreadCountsByActivityId[trimmedActivityId] ?? 0;
+    if (previous == count) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      setState(() {
+        _unreadCountsByActivityId[trimmedActivityId] = count;
+      });
+    });
+  }
+
+  int _unreadCountFor(Activity activity) {
+    return _unreadCountsByActivityId[activity.id.trim()] ?? 0;
+  }
+
+  void _sortUnreadFirst(List<Activity> activities) {
+    if (!prioritizeUnreadMessages) return;
+
+    activities.sort((a, b) {
+      final aUnread = _unreadCountFor(a);
+      final bUnread = _unreadCountFor(b);
+
+      final aHasUnread = aUnread > 0;
+      final bHasUnread = bUnread > 0;
+
+      if (aHasUnread != bHasUnread) {
+        return bHasUnread ? 1 : -1;
+      }
+
+      if (aUnread != bUnread) {
+        return bUnread.compareTo(aUnread);
+      }
+
+      final aTime = a.lastMessageAt ?? a.updatedAt ?? a.createdAt;
+      final bTime = b.lastMessageAt ?? b.updatedAt ?? b.createdAt;
+
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+
+      return bTime.compareTo(aTime);
+    });
+  }
+
   int _weekdayFromFrenchDay(String day) {
     switch (day.trim().toLowerCase()) {
       case 'lundi':
@@ -80,12 +134,9 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
 
   int dayOrder(Activity activity) {
     final start = activity.resolvedStartDateTime;
-    if (start != null) {
-      return start.weekday;
-    }
+    if (start != null) return start.weekday;
 
-    final legacyDay = activity.effectiveDay;
-    final weekday = _weekdayFromFrenchDay(legacyDay);
+    final weekday = _weekdayFromFrenchDay(activity.effectiveDay);
     return weekday == 99 ? 99 : weekday;
   }
 
@@ -101,18 +152,13 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
 
   int startMinutesFor(Activity activity) {
     final start = activity.resolvedStartDateTime;
-    if (start != null) {
-      return start.hour * 60 + start.minute;
-    }
+    if (start != null) return start.hour * 60 + start.minute;
 
     return timeToMinutes(activity.effectiveStartTime);
   }
 
   int remainingPlacesFor(Activity activity) {
-    if (activity.maxParticipants <= 0) {
-      return 999999;
-    }
-
+    if (activity.maxParticipants <= 0) return 999999;
     return activity.maxParticipants - activity.participantCount;
   }
 
@@ -131,6 +177,27 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     }
 
     return activity.effectiveDay == selectedDay;
+  }
+
+  List<Activity> _mergeActivities({
+    required List<Activity> createdActivities,
+    required List<Activity> joinedActivities,
+  }) {
+    final Map<String, Activity> mergedById = {};
+
+    for (final activity in createdActivities) {
+      if (activity.id.trim().isNotEmpty) {
+        mergedById[activity.id] = activity;
+      }
+    }
+
+    for (final activity in joinedActivities) {
+      if (activity.id.trim().isNotEmpty) {
+        mergedById[activity.id] = activity;
+      }
+    }
+
+    return mergedById.values.toList();
   }
 
   List<Activity> filterAndSortActivities({
@@ -158,8 +225,6 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
       final bool favoriteOk =
           !onlyMyFavorites || favoriteCategories.contains(activity.category);
 
-      final bool visibilityOk = activity.isPublic;
-
       final bool isOwner = activity.ownerId == currentUserId;
       final bool isParticipant = joinedIds.contains(activity.id);
       final bool participationOk = isOwner || isParticipant;
@@ -171,7 +236,6 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
           availableOk &&
           ownerNeededOk &&
           favoriteOk &&
-          visibilityOk &&
           participationOk;
     }).toList();
 
@@ -234,6 +298,8 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
         break;
     }
 
+    _sortUnreadFirst(filtered);
+
     return filtered;
   }
 
@@ -277,41 +343,23 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
   }
 
   String _activityTypeLabel(Activity activity) {
-    if (activity.isMixedGroupActivity) {
-      return 'Groupe + Public';
-    }
-    if (activity.isGroupPrivateActivity) {
-      return 'Activité de groupe';
-    }
-    if (activity.isPublic) {
-      return 'Activité publique';
-    }
+    if (activity.isMixedGroupActivity) return 'Groupe + Public';
+    if (activity.isGroupPrivateActivity) return 'Activité de groupe';
+    if (activity.isPublic) return 'Activité publique';
     return 'Privée';
   }
 
   Color _activityTypeChipBackground(Activity activity) {
-    if (activity.isMixedGroupActivity) {
-      return Colors.teal.shade100;
-    }
-    if (activity.isGroupPrivateActivity) {
-      return Colors.indigo.shade100;
-    }
-    if (activity.isPublic) {
-      return Colors.blue.shade100;
-    }
+    if (activity.isMixedGroupActivity) return Colors.teal.shade100;
+    if (activity.isGroupPrivateActivity) return Colors.indigo.shade100;
+    if (activity.isPublic) return Colors.blue.shade100;
     return Colors.grey.shade300;
   }
 
   Color _activityTypeChipTextColor(Activity activity) {
-    if (activity.isMixedGroupActivity) {
-      return Colors.teal.shade800;
-    }
-    if (activity.isGroupPrivateActivity) {
-      return Colors.indigo.shade800;
-    }
-    if (activity.isPublic) {
-      return Colors.blue.shade800;
-    }
+    if (activity.isMixedGroupActivity) return Colors.teal.shade800;
+    if (activity.isGroupPrivateActivity) return Colors.indigo.shade800;
+    if (activity.isPublic) return Colors.blue.shade800;
     return Colors.grey.shade800;
   }
 
@@ -339,49 +387,108 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     );
   }
 
+  Widget _buildUnreadBadge(int unreadCount) {
+    if (unreadCount <= 0) return const SizedBox.shrink();
+
+    final label = unreadCount > 99 ? '99+' : unreadCount.toString();
+
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.red,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUnreadInfo({
+    required Activity activity,
+    required int unreadCount,
+  }) {
+    if (unreadCount <= 0) return const SizedBox.shrink();
+
+    final lastMessage = (activity.lastMessageText ?? '').trim();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.red.shade100),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.mark_chat_unread_outlined,
+            size: 18,
+            color: Colors.red.shade700,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              lastMessage.isNotEmpty
+                  ? '$unreadCount nouveau(x) message(s) • $lastMessage'
+                  : '$unreadCount nouveau(x) message(s)',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.red.shade800,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _joinButtonLabel({
     required Activity activity,
     required bool isOwner,
     required bool isParticipant,
     required bool full,
   }) {
-    if (isOwner) {
-      return 'Vous êtes organisateur';
-    }
-    if (isParticipant) {
-      return 'Déjà participant';
-    }
-    if (activity.isCancelled) {
-      return 'Activité annulée';
-    }
-    if (activity.isDone || activity.hasEnded) {
-      return 'Activité terminée';
-    }
-    if (activity.isInviteOnly) {
-      return 'Sur invitation';
-    }
-    if (full) {
-      return 'Activité complète';
-    }
-    if (activity.isMixedGroupActivity) {
-      return 'Rejoindre (Groupe + Public)';
-    }
+    if (isOwner) return 'Vous êtes organisateur';
+    if (isParticipant) return 'Déjà participant';
+    if (activity.isCancelled) return 'Activité annulée';
+    if (activity.isDone || activity.hasEnded) return 'Activité terminée';
+    if (activity.isInviteOnly) return 'Sur invitation';
+    if (full) return 'Activité complète';
+    if (activity.isMixedGroupActivity) return 'Rejoindre (Groupe + Public)';
     return 'Rejoindre';
   }
 
   String _formatSchedule(Activity activity) {
     final scheduleLabel = activity.scheduleLabel.trim();
 
-    if (scheduleLabel.isNotEmpty) {
-      return scheduleLabel;
-    }
+    if (scheduleLabel.isNotEmpty) return scheduleLabel;
 
     return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = CurrentUser.id;
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid.trim();
+
+    if (currentUserId == null || currentUserId.isEmpty) {
+      return const Scaffold(
+        body: Center(
+          child: Text('Utilisateur non connecté'),
+        ),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -487,6 +594,16 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                     const SizedBox(height: 12),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
+                      title: const Text('Prioriser les messages non lus'),
+                      value: prioritizeUnreadMessages,
+                      onChanged: (value) {
+                        setState(() {
+                          prioritizeUnreadMessages = value;
+                        });
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
                       title: const Text('Seulement avec places disponibles'),
                       value: onlyAvailable,
                       onChanged: (value) {
@@ -528,258 +645,343 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
               ),
               Expanded(
                 child: StreamBuilder<List<Activity>>(
-                  stream: activityService.getAllActivities(),
-                  builder: (context, allSnapshot) {
-                    if (allSnapshot.hasError) {
+                  stream: activityService.getCreatedActivities(),
+                  builder: (context, createdSnapshot) {
+                    if (createdSnapshot.hasError) {
                       return Center(
-                        child: Text('Erreur activités : ${allSnapshot.error}'),
+                        child: Text(
+                          'Erreur activités créées : ${createdSnapshot.error}',
+                        ),
                       );
                     }
 
-                    if (!allSnapshot.hasData) {
+                    if (!createdSnapshot.hasData) {
                       return const Center(
                         child: CircularProgressIndicator(),
                       );
                     }
 
-                    return StreamBuilder<List<String>>(
-                      stream: activityService.getJoinedActivityIds(),
-                      builder: (context, joinedIdsSnapshot) {
-                        if (joinedIdsSnapshot.hasError) {
+                    return StreamBuilder<List<Activity>>(
+                      stream: activityService.getJoinedActivities(),
+                      builder: (context, joinedActivitiesSnapshot) {
+                        if (joinedActivitiesSnapshot.hasError) {
                           return Center(
                             child: Text(
-                              'Erreur activités rejointes : ${joinedIdsSnapshot.error}',
+                              'Erreur activités rejointes : ${joinedActivitiesSnapshot.error}',
                             ),
                           );
                         }
 
-                        if (!joinedIdsSnapshot.hasData) {
+                        if (!joinedActivitiesSnapshot.hasData) {
                           return const Center(
                             child: CircularProgressIndicator(),
                           );
                         }
 
-                        final joinedIds = joinedIdsSnapshot.data ?? [];
-                        final allActivities = allSnapshot.data ?? [];
-                        final activities = filterAndSortActivities(
-                          activities: allActivities,
-                          favoriteCategories: favoriteCategories,
-                          joinedIds: joinedIds,
-                          currentUserId: currentUserId,
-                        );
+                        return StreamBuilder<List<String>>(
+                          stream: activityService.getJoinedActivityIds(),
+                          builder: (context, joinedIdsSnapshot) {
+                            if (joinedIdsSnapshot.hasError) {
+                              return Center(
+                                child: Text(
+                                  'Erreur IDs activités rejointes : ${joinedIdsSnapshot.error}',
+                                ),
+                              );
+                            }
 
-                        if (activities.isEmpty) {
-                          return const Center(
-                            child: Text('Aucune activité trouvée'),
-                          );
-                        }
+                            if (!joinedIdsSnapshot.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
 
-                        return ListView.builder(
-                          padding: const EdgeInsets.all(12),
-                          itemCount: activities.length,
-                          itemBuilder: (context, index) {
-                            final activity = activities[index];
+                            final createdActivities =
+                                createdSnapshot.data ?? [];
+                            final joinedActivities =
+                                joinedActivitiesSnapshot.data ?? [];
+                            final joinedIds = joinedIdsSnapshot.data ?? [];
 
-                            final int participantCount =
-                                activity.participantCount;
-                            final int maxParticipants = activity.maxParticipants;
-
-                            final bool full = isFull(activity);
-                            final int? remainingPlaces =
-                                activity.remainingPlaces;
-
-                            final String organizerName =
-                                activity.ownerPseudo.isNotEmpty
-                                    ? activity.ownerPseudo
-                                    : activity.ownerId;
-
-                            final bool isOwner =
-                                activity.ownerId == currentUserId;
-                            final bool isParticipant =
-                                joinedIds.contains(activity.id);
-
-                            final buttonLabel = _joinButtonLabel(
-                              activity: activity,
-                              isOwner: isOwner,
-                              isParticipant: isParticipant,
-                              full: full,
+                            final sourceActivities = _mergeActivities(
+                              createdActivities: createdActivities,
+                              joinedActivities: joinedActivities,
                             );
 
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => ActivityDetailPage(
-                                        activity: activity,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.all(14),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        activity.title,
-                                        style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Text(_formatSchedule(activity)),
-                                      const SizedBox(height: 4),
-                                      Text(activity.location),
-                                      const SizedBox(height: 4),
-                                      Text('Catégorie : ${activity.category}'),
-                                      if (activity.isGroupActivity &&
-                                          (activity.groupName ?? '')
-                                              .trim()
-                                              .isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          'Groupe : ${activity.groupName!.trim()}',
-                                        ),
-                                      ],
-                                      const SizedBox(height: 4),
-                                      if (activity.ownerPending)
-                                        const Text(
-                                          'Organisateur recherché',
-                                          style: TextStyle(
-                                            color: Colors.orange,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        )
-                                      else
-                                        Text('Organisé par : $organizerName'),
-                                      const SizedBox(height: 8),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          _buildChip(
-                                            label: activity.hasUnlimitedPlaces
-                                                ? '$participantCount participant(s) • illimité'
-                                                : '$participantCount / $maxParticipants participants',
-                                            backgroundColor: full
-                                                ? Colors.red.shade100
-                                                : Colors.blue.shade100,
-                                            textColor: full
-                                                ? Colors.red.shade800
-                                                : Colors.blue.shade800,
-                                          ),
-                                          if (remainingPlaces != null)
-                                            _buildChip(
-                                              label: full
-                                                  ? 'Complet'
-                                                  : '$remainingPlaces place(s)',
-                                              backgroundColor: full
-                                                  ? Colors.red.shade100
-                                                  : Colors.green.shade100,
-                                              textColor: full
-                                                  ? Colors.red.shade800
-                                                  : Colors.green.shade800,
-                                            ),
-                                          _buildChip(
-                                            label: _statusLabel(activity),
-                                            backgroundColor:
-                                                _statusChipBackground(activity),
-                                            textColor:
-                                                _statusChipTextColor(activity),
-                                          ),
-                                          _buildChip(
-                                            label: _visibilityLabel(activity),
-                                            backgroundColor:
-                                                _visibilityChipBackground(
-                                              activity,
-                                            ),
-                                            textColor:
-                                                _visibilityChipTextColor(
-                                              activity,
-                                            ),
-                                          ),
-                                          _buildChip(
-                                            label: _activityTypeLabel(activity),
-                                            backgroundColor:
-                                                _activityTypeChipBackground(
-                                              activity,
-                                            ),
-                                            textColor:
-                                                _activityTypeChipTextColor(
-                                              activity,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if ((activity.lastMessageText ?? '')
-                                          .isNotEmpty) ...[
-                                        const SizedBox(height: 10),
-                                        Text(
-                                          'Dernier message : ${activity.lastMessageText!}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            color: Colors.grey.shade700,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ],
-                                      const SizedBox(height: 12),
-                                      FutureBuilder<bool>(
-                                        future: activityRepository
-                                            .canJoinActivity(activity),
-                                        builder: (context, joinSnapshot) {
-                                          final bool repositoryCanJoin =
-                                              joinSnapshot.data ?? false;
+                            final activities = filterAndSortActivities(
+                              activities: sourceActivities,
+                              favoriteCategories: favoriteCategories,
+                              joinedIds: joinedIds,
+                              currentUserId: currentUserId,
+                            );
 
-                                          final bool canJoin =
-                                              !isOwner &&
-                                              !isParticipant &&
-                                              repositoryCanJoin;
+                            if (activities.isEmpty) {
+                              return const Center(
+                                child: Text('Aucune activité trouvée'),
+                              );
+                            }
 
-                                          return SizedBox(
-                                            width: double.infinity,
-                                            child: ElevatedButton(
-                                              onPressed: canJoin
-                                                  ? () async {
-                                                      final joined =
-                                                          await activityRepository
-                                                              .joinActivity(
-                                                        activity,
-                                                      );
+                            return ListView.builder(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: activities.length,
+                              itemBuilder: (context, index) {
+                                final activity = activities[index];
 
-                                                      if (!context.mounted) {
-                                                        return;
-                                                      }
+                                final int participantCount =
+                                    activity.participantCount;
+                                final int maxParticipants =
+                                    activity.maxParticipants;
 
-                                                      ScaffoldMessenger.of(
-                                                        context,
-                                                      ).showSnackBar(
-                                                        SnackBar(
-                                                          content: Text(
-                                                            joined
-                                                                ? 'Vous avez rejoint l’activité'
-                                                                : 'Impossible de rejoindre l’activité',
-                                                          ),
-                                                        ),
-                                                      );
-                                                    }
-                                                  : null,
-                                              child: Text(buttonLabel),
+                                final bool full = isFull(activity);
+                                final int? remainingPlaces =
+                                    activity.remainingPlaces;
+
+                                final String organizerName =
+                                    activity.ownerPseudo.isNotEmpty
+                                        ? activity.ownerPseudo
+                                        : activity.ownerId;
+
+                                final bool isOwner =
+                                    activity.ownerId == currentUserId;
+                                final bool isParticipant =
+                                    joinedIds.contains(activity.id);
+
+                                final buttonLabel = _joinButtonLabel(
+                                  activity: activity,
+                                  isOwner: isOwner,
+                                  isParticipant: isParticipant,
+                                  full: full,
+                                );
+
+                                return StreamBuilder<int>(
+                                  stream: chatRepository.watchUnreadCount(
+                                    activity.id,
+                                  ),
+                                  builder: (context, unreadSnapshot) {
+                                    final unreadCount =
+                                        unreadSnapshot.data ?? 0;
+
+                                    _rememberUnreadCount(
+                                      activity.id,
+                                      unreadCount,
+                                    );
+
+                                    return Card(
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(12),
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  ActivityDetailPage(
+                                                activity: activity,
+                                              ),
                                             ),
                                           );
                                         },
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(14),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      activity.title,
+                                                      style: const TextStyle(
+                                                        fontSize: 18,
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  _buildUnreadBadge(
+                                                    unreadCount,
+                                                  ),
+                                                ],
+                                              ),
+                                              _buildUnreadInfo(
+                                                activity: activity,
+                                                unreadCount: unreadCount,
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(_formatSchedule(activity)),
+                                              const SizedBox(height: 4),
+                                              Text(activity.location),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                'Catégorie : ${activity.category}',
+                                              ),
+                                              if (activity.isGroupActivity &&
+                                                  (activity.groupName ?? '')
+                                                      .trim()
+                                                      .isNotEmpty) ...[
+                                                const SizedBox(height: 4),
+                                                Text(
+                                                  'Groupe : ${activity.groupName!.trim()}',
+                                                ),
+                                              ],
+                                              const SizedBox(height: 4),
+                                              if (activity.ownerPending)
+                                                const Text(
+                                                  'Organisateur recherché',
+                                                  style: TextStyle(
+                                                    color: Colors.orange,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
+                                                )
+                                              else
+                                                Text(
+                                                  'Organisé par : $organizerName',
+                                                ),
+                                              const SizedBox(height: 8),
+                                              Wrap(
+                                                spacing: 8,
+                                                runSpacing: 8,
+                                                children: [
+                                                  _buildChip(
+                                                    label: activity
+                                                            .hasUnlimitedPlaces
+                                                        ? '$participantCount participant(s) • illimité'
+                                                        : '$participantCount / $maxParticipants participants',
+                                                    backgroundColor: full
+                                                        ? Colors.red.shade100
+                                                        : Colors.blue.shade100,
+                                                    textColor: full
+                                                        ? Colors.red.shade800
+                                                        : Colors.blue.shade800,
+                                                  ),
+                                                  if (remainingPlaces != null)
+                                                    _buildChip(
+                                                      label: full
+                                                          ? 'Complet'
+                                                          : '$remainingPlaces place(s)',
+                                                      backgroundColor: full
+                                                          ? Colors.red.shade100
+                                                          : Colors
+                                                              .green.shade100,
+                                                      textColor: full
+                                                          ? Colors.red.shade800
+                                                          : Colors
+                                                              .green.shade800,
+                                                    ),
+                                                  _buildChip(
+                                                    label:
+                                                        _statusLabel(activity),
+                                                    backgroundColor:
+                                                        _statusChipBackground(
+                                                      activity,
+                                                    ),
+                                                    textColor:
+                                                        _statusChipTextColor(
+                                                      activity,
+                                                    ),
+                                                  ),
+                                                  _buildChip(
+                                                    label: _visibilityLabel(
+                                                      activity,
+                                                    ),
+                                                    backgroundColor:
+                                                        _visibilityChipBackground(
+                                                      activity,
+                                                    ),
+                                                    textColor:
+                                                        _visibilityChipTextColor(
+                                                      activity,
+                                                    ),
+                                                  ),
+                                                  _buildChip(
+                                                    label: _activityTypeLabel(
+                                                      activity,
+                                                    ),
+                                                    backgroundColor:
+                                                        _activityTypeChipBackground(
+                                                      activity,
+                                                    ),
+                                                    textColor:
+                                                        _activityTypeChipTextColor(
+                                                      activity,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              if ((activity.lastMessageText ??
+                                                      '')
+                                                  .isNotEmpty) ...[
+                                                const SizedBox(height: 10),
+                                                Text(
+                                                  'Dernier message : ${activity.lastMessageText!}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade700,
+                                                    fontStyle: FontStyle.italic,
+                                                  ),
+                                                ),
+                                              ],
+                                              const SizedBox(height: 12),
+                                              FutureBuilder<bool>(
+                                                future: activityRepository
+                                                    .canJoinActivity(activity),
+                                                builder:
+                                                    (context, joinSnapshot) {
+                                                  final bool repositoryCanJoin =
+                                                      joinSnapshot.data ??
+                                                          false;
+
+                                                  final bool canJoin =
+                                                      !isOwner &&
+                                                          !isParticipant &&
+                                                          repositoryCanJoin;
+
+                                                  return SizedBox(
+                                                    width: double.infinity,
+                                                    child: ElevatedButton(
+                                                      onPressed: canJoin
+                                                          ? () async {
+                                                              final joined =
+                                                                  await activityRepository
+                                                                      .joinActivity(
+                                                                activity,
+                                                              );
+
+                                                              if (!context
+                                                                  .mounted) {
+                                                                return;
+                                                              }
+
+                                                              ScaffoldMessenger
+                                                                      .of(
+                                                                context,
+                                                              ).showSnackBar(
+                                                                SnackBar(
+                                                                  content: Text(
+                                                                    joined
+                                                                        ? 'Vous avez rejoint l’activité'
+                                                                        : 'Impossible de rejoindre l’activité',
+                                                                  ),
+                                                                ),
+                                                              );
+                                                            }
+                                                          : null,
+                                                      child: Text(buttonLabel),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                              ),
+                                    );
+                                  },
+                                );
+                              },
                             );
                           },
                         );

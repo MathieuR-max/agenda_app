@@ -1,7 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../models/activity_invitation.dart';
 import '../repositories/message_badge_repository.dart';
-import '../services/current_user.dart';
 import '../services/firestore/activity_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
 import '03_activities/all_activities_page.dart';
@@ -46,19 +46,32 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     }
   }
 
+  String _currentUserKey() {
+    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return 'anonymous';
+    }
+
+    return uid;
+  }
+
   List<Widget> _buildPages() {
-    final userKey = ValueKey('pages_${CurrentUser.id}');
+    final userKey = _currentUserKey();
 
     return [
-      CalendarPage(key: ValueKey('calendar_${userKey.value}')),
-      AllActivitiesPage(key: ValueKey('explorer_${userKey.value}')),
-      InvitationsPage(key: ValueKey('invitations_${userKey.value}')),
-      MyProfilePage(key: ValueKey('profile_${userKey.value}')),
+      CalendarPage(key: ValueKey('calendar_$userKey')),
+      AllActivitiesPage(key: ValueKey('explorer_$userKey')),
+      InvitationsPage(key: ValueKey('invitations_$userKey')),
+      MyProfilePage(key: ValueKey('profile_$userKey')),
     ];
   }
 
   @override
   Widget build(BuildContext context) {
+    final firebaseUid = FirebaseAuth.instance.currentUser?.uid;
+    debugPrint('🔍 Firebase UID: $firebaseUid');
+
     final pages = _buildPages();
 
     return PopScope(
@@ -104,9 +117,17 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
               ),
               label: 'Invitations',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
+            NavigationDestination(
+              icon: _ProfileNavIcon(
+                selected: false,
+                isCurrentTab: _currentIndex == 3,
+                messageBadgeRepository: _messageBadgeRepository,
+              ),
+              selectedIcon: _ProfileNavIcon(
+                selected: true,
+                isCurrentTab: _currentIndex == 3,
+                messageBadgeRepository: _messageBadgeRepository,
+              ),
               label: 'Profil',
             ),
           ],
@@ -130,14 +151,12 @@ class _MessagesNavIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<int>(
-      stream: messageBadgeRepository.watchTotalUnreadCount(),
+      stream: messageBadgeRepository.watchActivityUnreadCount(),
       builder: (context, snapshot) {
         final unreadCount = snapshot.data ?? 0;
 
         return _NavBadgeIcon(
-          icon: Icon(
-            selected ? Icons.explore : Icons.explore_outlined,
-          ),
+          icon: Icon(selected ? Icons.explore : Icons.explore_outlined),
           count: unreadCount,
           hideBadge: isCurrentTab,
         );
@@ -162,13 +181,39 @@ class _InvitationsNavIcon extends StatelessWidget {
     return StreamBuilder<List<ActivityInvitation>>(
       stream: invitationService.getPendingReceivedInvitations(),
       builder: (context, snapshot) {
-        final pendingCount = snapshot.data?.length ?? 0;
+        final pendingInvitationCount = snapshot.data?.length ?? 0;
 
         return _NavBadgeIcon(
-          icon: Icon(
-            selected ? Icons.mail : Icons.mail_outline,
-          ),
-          count: pendingCount,
+          icon: Icon(selected ? Icons.mail : Icons.mail_outline),
+          count: pendingInvitationCount,
+          hideBadge: isCurrentTab,
+        );
+      },
+    );
+  }
+}
+
+class _ProfileNavIcon extends StatelessWidget {
+  final bool selected;
+  final bool isCurrentTab;
+  final MessageBadgeRepository messageBadgeRepository;
+
+  const _ProfileNavIcon({
+    required this.selected,
+    required this.isCurrentTab,
+    required this.messageBadgeRepository,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: messageBadgeRepository.watchGroupUnreadCount(),
+      builder: (context, snapshot) {
+        final unreadCount = snapshot.data ?? 0;
+
+        return _NavBadgeIcon(
+          icon: Icon(selected ? Icons.person : Icons.person_outline),
+          count: unreadCount,
           hideBadge: isCurrentTab,
         );
       },
@@ -194,9 +239,7 @@ class _NavBadgeIcon extends StatelessWidget {
     }
 
     return Badge(
-      label: Text(
-        count > 99 ? '99+' : '$count',
-      ),
+      label: Text(count > 99 ? '99+' : '$count'),
       child: icon,
     );
   }

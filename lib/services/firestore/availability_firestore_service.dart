@@ -1,15 +1,37 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/availability.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class AvailabilityFirestoreService {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
 
-  AvailabilityFirestoreService({FirebaseFirestore? db})
-      : _db = db ?? FirebaseFirestore.instance;
+  AvailabilityFirestoreService({
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+  })  : _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
-  String get currentUserId => CurrentUser.id;
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    return uid;
+  }
 
   CollectionReference<Map<String, dynamic>> get _availabilities =>
       _db.collection(FirestoreCollections.availabilities);
@@ -19,16 +41,11 @@ class AvailabilityFirestoreService {
     required String title,
     required String note,
     required String visibility,
-
-    /// Legacy compatibility input.
     String? day,
     String? startTime,
     String? endTime,
-
-    /// New source of truth.
     required DateTime startDateTime,
     required DateTime endDateTime,
-
     bool includeLegacyFields = true,
   }) async {
     _validateSchedule(startDateTime, endDateTime);
@@ -58,16 +75,11 @@ class AvailabilityFirestoreService {
     required String title,
     required String note,
     required String visibility,
-
-    /// Legacy compatibility input.
     String? day,
     String? startTime,
     String? endTime,
-
-    /// New source of truth.
     required DateTime startDateTime,
     required DateTime endDateTime,
-
     bool includeLegacyFields = true,
   }) async {
     final trimmedAvailabilityId = availabilityId.trim();
@@ -129,8 +141,14 @@ class AvailabilityFirestoreService {
   }
 
   Stream<List<Availability>> getAvailabilities() {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<Availability>[]);
+    }
+
     return _availabilities
-        .where('userId', isEqualTo: currentUserId)
+        .where('userId', isEqualTo: uid)
         .snapshots()
         .map((snapshot) {
       final items = snapshot.docs
@@ -146,12 +164,14 @@ class AvailabilityFirestoreService {
     required DateTime start,
     required DateTime end,
   }) {
-    if (!end.isAfter(start)) {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null || !end.isAfter(start)) {
       return Stream.value(<Availability>[]);
     }
 
     return _availabilities
-        .where('userId', isEqualTo: currentUserId)
+        .where('userId', isEqualTo: uid)
         .where(
           'startDateTime',
           isGreaterThanOrEqualTo: Timestamp.fromDate(start),
@@ -269,7 +289,10 @@ class AvailabilityFirestoreService {
           b.effectiveSortDateTime ?? b.updatedAt ?? b.createdAt ?? DateTime(2000);
 
       final compareDate = aDate.compareTo(bDate);
-      if (compareDate != 0) return compareDate;
+
+      if (compareDate != 0) {
+        return compareDate;
+      }
 
       return a.title.toLowerCase().compareTo(b.title.toLowerCase());
     });

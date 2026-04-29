@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:agenda_app/models/group_model.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class GroupsRepository {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
 
   static const String _groupsCollection = 'groups';
@@ -12,11 +14,47 @@ class GroupsRepository {
 
   GroupsRepository({
     FirebaseFirestore? db,
+    FirebaseAuth? auth,
     UserFirestoreService? userService,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _userService = userService ?? UserFirestoreService(db: db);
+        _auth = auth ?? FirebaseAuth.instance,
+        _userService = userService ??
+            UserFirestoreService(
+              db: db,
+              auth: auth,
+            );
 
-  String get currentUserId => CurrentUser.id;
+  String get currentUserId {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    return uid;
+  }
+
+  void _log(String message) {
+    debugPrint('GROUPS $message');
+  }
+
+  List<String> _extractMemberIds(Map<String, dynamic>? data) {
+    if (data == null) {
+      return <String>[];
+    }
+
+    final raw = data['memberIds'];
+
+    if (raw is Iterable) {
+      return raw
+          .where((item) => item != null)
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .toList();
+    }
+
+    return <String>[];
+  }
 
   Future<bool> createGroup({
     required String name,
@@ -25,6 +63,7 @@ class GroupsRepository {
   }) async {
     final trimmedName = name.trim();
     final trimmedDescription = description.trim();
+    final uid = currentUserId;
 
     if (trimmedName.isEmpty) {
       return false;
@@ -32,21 +71,22 @@ class GroupsRepository {
 
     final ownerPseudo = await _userService.getCurrentUserPseudo();
     final groupRef = _db.collection(_groupsCollection).doc();
-    final memberRef = groupRef.collection(_membersCollection).doc(currentUserId);
+    final memberRef = groupRef.collection(_membersCollection).doc(uid);
 
     return _db.runTransaction((transaction) async {
       transaction.set(groupRef, {
         'name': trimmedName,
         'description': trimmedDescription,
-        'ownerId': currentUserId,
+        'ownerId': uid,
         'ownerPseudo': ownerPseudo,
-        'visibility': visibility,
+        'visibility': visibility.trim(),
+        'memberIds': [uid],
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       transaction.set(memberRef, {
-        'userId': currentUserId,
+        'userId': uid,
         'pseudo': ownerPseudo,
         'role': 'owner',
         'joinedAt': FieldValue.serverTimestamp(),
@@ -57,19 +97,21 @@ class GroupsRepository {
   }
 
   Stream<List<GroupModel>> watchMyGroups() {
-    return _db.collection(_groupsCollection).snapshots().asyncMap((snapshot) async {
-      final groups = <GroupModel>[];
+    final uid = currentUserId;
 
-      for (final doc in snapshot.docs) {
-        final memberDoc = await doc.reference
-            .collection(_membersCollection)
-            .doc(currentUserId)
-            .get();
+    _log('watchMyGroups currentUserId=$uid');
 
-        if (memberDoc.exists) {
-          groups.add(GroupModel.fromMap(doc.id, doc.data()));
-        }
-      }
+    return _db
+        .collection(_groupsCollection)
+        .where('memberIds', arrayContains: uid)
+        .snapshots()
+        .map((snapshot) {
+      _log('watchMyGroups docs count=${snapshot.docs.length}');
+
+      final groups = snapshot.docs
+          .where((doc) => doc.exists && doc.data().isNotEmpty)
+          .map((doc) => GroupModel.fromMap(doc.id, doc.data()))
+          .toList();
 
       groups.sort((a, b) {
         final aDate = a.updatedAt ?? a.createdAt ?? DateTime(2000);
@@ -77,6 +119,7 @@ class GroupsRepository {
         return bDate.compareTo(aDate);
       });
 
+      _log('watchMyGroups resultCount=${groups.length}');
       return groups;
     });
   }
@@ -88,7 +131,11 @@ class GroupsRepository {
       return Stream.value(null);
     }
 
-    return _db.collection(_groupsCollection).doc(trimmedGroupId).snapshots().map((doc) {
+    return _db
+        .collection(_groupsCollection)
+        .doc(trimmedGroupId)
+        .snapshots()
+        .map((doc) {
       if (!doc.exists || doc.data() == null) {
         return null;
       }
@@ -97,11 +144,33 @@ class GroupsRepository {
     });
   }
 
+  Future<GroupModel?> getGroupById(String groupId) async {
+    final trimmedGroupId = groupId.trim();
+
+    if (trimmedGroupId.isEmpty) {
+      return null;
+    }
+
+    try {
+      final doc =
+          await _db.collection(_groupsCollection).doc(trimmedGroupId).get();
+
+      if (!doc.exists || doc.data() == null) {
+        return null;
+      }
+
+      return GroupModel.fromMap(doc.id, doc.data()!);
+    } catch (e) {
+      _log('Error fetching group by id: $e');
+      return null;
+    }
+  }
+
   Stream<List<Map<String, dynamic>>> watchGroupMembers(String groupId) {
     final trimmedGroupId = groupId.trim();
 
     if (trimmedGroupId.isEmpty) {
-      return Stream.value([]);
+      return Stream.value(<Map<String, dynamic>>[]);
     }
 
     return _db
@@ -113,6 +182,7 @@ class GroupsRepository {
         .map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
+
         return {
           'userId': (data['userId'] ?? '').toString(),
           'pseudo': (data['pseudo'] ?? '').toString(),
@@ -124,19 +194,26 @@ class GroupsRepository {
 
   Future<bool> isCurrentUserMember(String groupId) async {
     final trimmedGroupId = groupId.trim();
+    final uid = currentUserId;
 
     if (trimmedGroupId.isEmpty) {
       return false;
     }
 
-    final memberDoc = await _db
-        .collection(_groupsCollection)
-        .doc(trimmedGroupId)
-        .collection(_membersCollection)
-        .doc(currentUserId)
-        .get();
+    try {
+      final groupDoc =
+          await _db.collection(_groupsCollection).doc(trimmedGroupId).get();
 
-    return memberDoc.exists;
+      if (!groupDoc.exists || groupDoc.data() == null) {
+        return false;
+      }
+
+      final memberIds = _extractMemberIds(groupDoc.data());
+      return memberIds.contains(uid);
+    } catch (e) {
+      _log('Error checking current user membership: $e');
+      return false;
+    }
   }
 
   Future<bool> isUserMember(String groupId, String userId) async {
@@ -147,33 +224,54 @@ class GroupsRepository {
       return false;
     }
 
-    final memberDoc = await _db
-        .collection(_groupsCollection)
-        .doc(trimmedGroupId)
-        .collection(_membersCollection)
-        .doc(trimmedUserId)
-        .get();
+    try {
+      final groupDoc =
+          await _db.collection(_groupsCollection).doc(trimmedGroupId).get();
 
-    return memberDoc.exists;
+      if (!groupDoc.exists || groupDoc.data() == null) {
+        return false;
+      }
+
+      final memberIds = _extractMemberIds(groupDoc.data());
+      return memberIds.contains(trimmedUserId);
+    } catch (e) {
+      _log('Error checking user membership: $e');
+      return false;
+    }
   }
 
   Future<List<String>> getGroupMemberIds(String groupId) async {
     final trimmedGroupId = groupId.trim();
 
     if (trimmedGroupId.isEmpty) {
-      return [];
+      return <String>[];
     }
 
-    final snapshot = await _db
-        .collection(_groupsCollection)
-        .doc(trimmedGroupId)
-        .collection(_membersCollection)
-        .get();
+    try {
+      final groupDoc =
+          await _db.collection(_groupsCollection).doc(trimmedGroupId).get();
 
-    return snapshot.docs
-        .map((doc) => (doc.data()['userId'] ?? '').toString().trim())
-        .where((id) => id.isNotEmpty)
-        .toList();
+      if (groupDoc.exists && groupDoc.data() != null) {
+        final memberIds = _extractMemberIds(groupDoc.data());
+        if (memberIds.isNotEmpty) {
+          return memberIds;
+        }
+      }
+
+      final snapshot = await _db
+          .collection(_groupsCollection)
+          .doc(trimmedGroupId)
+          .collection(_membersCollection)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => (doc.data()['userId'] ?? '').toString().trim())
+          .where((id) => id.isNotEmpty)
+          .toList();
+    } catch (e) {
+      _log('Error fetching group member ids: $e');
+      return <String>[];
+    }
   }
 
   Future<bool> addMember({
@@ -191,6 +289,7 @@ class GroupsRepository {
     final memberRef = groupRef.collection(_membersCollection).doc(trimmedUserId);
 
     final userData = await _userService.getUserById(trimmedUserId);
+
     if (userData == null) {
       return false;
     }
@@ -199,13 +298,22 @@ class GroupsRepository {
 
     return _db.runTransaction((transaction) async {
       final groupDoc = await transaction.get(groupRef);
+
       if (!groupDoc.exists) {
         return false;
       }
 
       final existingMember = await transaction.get(memberRef);
+
       if (existingMember.exists) {
         return false;
+      }
+
+      final groupData = groupDoc.data();
+      final memberIds = _extractMemberIds(groupData);
+
+      if (!memberIds.contains(trimmedUserId)) {
+        memberIds.add(trimmedUserId);
       }
 
       transaction.set(memberRef, {
@@ -216,6 +324,7 @@ class GroupsRepository {
       });
 
       transaction.update(groupRef, {
+        'memberIds': memberIds,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -245,14 +354,20 @@ class GroupsRepository {
         return false;
       }
 
-      final ownerId = (groupDoc.data()?['ownerId'] ?? '').toString();
+      final groupData = groupDoc.data();
+      final ownerId = (groupData?['ownerId'] ?? '').toString().trim();
 
       if (trimmedUserId == ownerId) {
         return false;
       }
 
+      final memberIds = _extractMemberIds(groupData)
+        ..removeWhere((id) => id == trimmedUserId);
+
       transaction.delete(memberRef);
+
       transaction.update(groupRef, {
+        'memberIds': memberIds,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
@@ -264,13 +379,14 @@ class GroupsRepository {
     required String groupId,
   }) async {
     final trimmedGroupId = groupId.trim();
+    final uid = currentUserId;
 
     if (trimmedGroupId.isEmpty) {
       return false;
     }
 
     final groupRef = _db.collection(_groupsCollection).doc(trimmedGroupId);
-    final memberRef = groupRef.collection(_membersCollection).doc(currentUserId);
+    final memberRef = groupRef.collection(_membersCollection).doc(uid);
 
     return _db.runTransaction((transaction) async {
       final groupDoc = await transaction.get(groupRef);
@@ -280,15 +396,21 @@ class GroupsRepository {
         return false;
       }
 
-      final data = memberDoc.data();
-      final role = (data?['role'] ?? 'member').toString();
+      final memberData = memberDoc.data();
+      final role = (memberData?['role'] ?? 'member').toString();
 
       if (role == 'owner') {
         return false;
       }
 
+      final groupData = groupDoc.data();
+      final memberIds = _extractMemberIds(groupData)
+        ..removeWhere((id) => id == uid);
+
       transaction.delete(memberRef);
+
       transaction.update(groupRef, {
+        'memberIds': memberIds,
         'updatedAt': FieldValue.serverTimestamp(),
       });
 

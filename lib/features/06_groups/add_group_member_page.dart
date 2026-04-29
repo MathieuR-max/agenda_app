@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
-import 'package:agenda_app/repositories/group_chat_repository.dart';
+import 'package:agenda_app/repositories/group_invitation_repository.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
@@ -20,19 +20,26 @@ class AddGroupMemberPage extends StatefulWidget {
 class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
   final FriendshipRepository _friendshipRepository = FriendshipRepository();
   final GroupsRepository _groupsRepository = GroupsRepository();
-  final GroupChatRepository _groupChatRepository = GroupChatRepository();
+  final GroupInvitationRepository _groupInvitationRepository =
+      GroupInvitationRepository();
   final UserFirestoreService _userService = UserFirestoreService();
 
   late Future<List<Friendship>> _friendsFuture;
   late Future<List<String>> _groupMemberIdsFuture;
+  late Future<Set<String>> _pendingInvitationIdsFuture;
 
-  String? addingUserId;
+  String? invitingUserId;
 
   @override
   void initState() {
     super.initState();
+    _reloadData();
+  }
+
+  void _reloadData() {
     _friendsFuture = _loadFriends();
     _groupMemberIdsFuture = _loadGroupMemberIds();
+    _pendingInvitationIdsFuture = _loadPendingInvitationIds();
   }
 
   Future<List<Friendship>> _loadFriends() {
@@ -41,6 +48,12 @@ class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
 
   Future<List<String>> _loadGroupMemberIds() {
     return _groupsRepository.getGroupMemberIds(widget.groupId);
+  }
+
+  Future<Set<String>> _loadPendingInvitationIds() {
+    return _groupInvitationRepository.getPendingInvitationTargetIds(
+      widget.groupId,
+    );
   }
 
   String _fallbackFriendName(Friendship friendship) {
@@ -52,49 +65,81 @@ class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
     return 'Utilisateur';
   }
 
-  Future<void> _addMember(Friendship friendship, String displayName) async {
+  String _buildDisplayName(
+    Friendship friendship,
+    Map<String, dynamic>? user,
+  ) {
+    final fallbackName = _fallbackFriendName(friendship);
+
+    final String pseudo = (user?['pseudo'] ?? '').toString().trim();
+    final String prenom = (user?['prenom'] ?? '').toString().trim();
+    final String nom = (user?['nom'] ?? '').toString().trim();
+
+    if (pseudo.isNotEmpty) {
+      return pseudo;
+    }
+
+    if (prenom.isNotEmpty && nom.isNotEmpty) {
+      return '$prenom $nom';
+    }
+
+    if (prenom.isNotEmpty) {
+      return prenom;
+    }
+
+    return fallbackName;
+  }
+
+  Future<void> _sendInvitation(
+    Friendship friendship,
+    String displayName,
+  ) async {
     final userId = _friendshipRepository.getOtherUserId(friendship).trim();
 
-    if (userId.isEmpty || addingUserId != null) {
+    debugPrint('GROUP INVITE target raw userId=$userId');
+    debugPrint(
+      'GROUP INVITE friendship requesterId=${friendship.requesterId} addresseeId=${friendship.addresseeId}',
+    );
+
+    if (userId.isEmpty || invitingUserId != null) {
       return;
     }
 
     setState(() {
-      addingUserId = userId;
+      invitingUserId = userId;
     });
 
     try {
-      final success = await _groupsRepository.addMember(
+      final success = await _groupInvitationRepository.sendGroupInvitation(
         groupId: widget.groupId,
-        userId: userId,
+        toUserId: userId,
       );
 
-      if (success) {
-        await _groupChatRepository.sendSystemMessage(
-          groupId: widget.groupId,
-          text: '$displayName a rejoint le groupe',
-        );
-      }
+      debugPrint(
+        'GROUP INVITE sendGroupInvitation result=$success targetUserId=$userId groupId=${widget.groupId}',
+      );
 
       if (!mounted) return;
+
+      if (success) {
+        setState(() {
+          _reloadData();
+        });
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             success
-                ? '$displayName a été ajouté au groupe.'
-                : 'Impossible d’ajouter $displayName au groupe.',
+                ? 'Invitation envoyée à $displayName.'
+                : 'Impossible d’inviter $displayName dans le groupe.',
           ),
         ),
       );
-
-      if (success) {
-        Navigator.pop(context);
-      }
     } finally {
       if (mounted) {
         setState(() {
-          addingUserId = null;
+          invitingUserId = null;
         });
       }
     }
@@ -104,7 +149,7 @@ class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Ajouter un ami'),
+        title: const Text('Inviter un ami'),
       ),
       body: FutureBuilder<List<Friendship>>(
         future: _friendsFuture,
@@ -148,87 +193,122 @@ class _AddGroupMemberPageState extends State<AddGroupMemberPage> {
                 );
               }
 
-              final friendships = friendsSnapshot.data ?? [];
-              final memberIds = membersSnapshot.data ?? [];
-
-              final availableFriendships = friendships.where((friendship) {
-                final friendId =
-                    _friendshipRepository.getOtherUserId(friendship).trim();
-                return friendId.isNotEmpty && !memberIds.contains(friendId);
-              }).toList();
-
-              if (availableFriendships.isEmpty) {
-                return const Center(
-                  child: Text(
-                    'Aucun ami disponible à ajouter dans ce groupe.',
-                  ),
-                );
-              }
-
-              return ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: availableFriendships.length,
-                itemBuilder: (context, index) {
-                  final friendship = availableFriendships[index];
-                  final friendId =
-                      _friendshipRepository.getOtherUserId(friendship).trim();
-                  final fallbackName = _fallbackFriendName(friendship);
-
-                  return FutureBuilder<Map<String, dynamic>?>(
-                    future: _userService.getUserById(friendId),
-                    builder: (context, userSnapshot) {
-                      final user = userSnapshot.data;
-
-                      final String pseudo =
-                          (user?['pseudo'] ?? '').toString().trim();
-                      final String prenom =
-                          (user?['prenom'] ?? '').toString().trim();
-                      final String nom =
-                          (user?['nom'] ?? '').toString().trim();
-                      final String lieu =
-                          (user?['lieu'] ?? '').toString().trim();
-
-                      String displayName = fallbackName;
-
-                      if (pseudo.isNotEmpty) {
-                        displayName = pseudo;
-                      } else if (prenom.isNotEmpty && nom.isNotEmpty) {
-                        displayName = '$prenom $nom';
-                      } else if (prenom.isNotEmpty) {
-                        displayName = prenom;
-                      }
-
-                      final isAdding = addingUserId == friendId;
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: ListTile(
-                          leading: CircleAvatar(
-                            child: Text(
-                              displayName.isNotEmpty
-                                  ? displayName[0].toUpperCase()
-                                  : '?',
-                            ),
-                          ),
-                          title: Text(displayName),
-                          subtitle: Text(
-                            lieu.isNotEmpty ? lieu : 'Lieu non renseigné',
-                          ),
-                          trailing: ElevatedButton(
-                            onPressed: isAdding
-                                ? null
-                                : () => _addMember(friendship, displayName),
-                            child: isAdding
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  )
-                                : const Text('Ajouter'),
-                          ),
+              return FutureBuilder<Set<String>>(
+                future: _pendingInvitationIdsFuture,
+                builder: (context, pendingSnapshot) {
+                  if (pendingSnapshot.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          'Erreur lors du chargement des invitations en attente : ${pendingSnapshot.error}',
+                          textAlign: TextAlign.center,
                         ),
+                      ),
+                    );
+                  }
+
+                  if (pendingSnapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(),
+                    );
+                  }
+
+                  final friendships = friendsSnapshot.data ?? [];
+                  final memberIds = membersSnapshot.data ?? [];
+                  final pendingInvitationIds =
+                      pendingSnapshot.data ?? <String>{};
+
+                  final availableFriendships = friendships.where((friendship) {
+                    final friendId =
+                        _friendshipRepository.getOtherUserId(friendship).trim();
+
+                    return friendId.isNotEmpty &&
+                        !memberIds.contains(friendId) &&
+                        !pendingInvitationIds.contains(friendId);
+                  }).toList();
+
+                  if (availableFriendships.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'Aucun ami disponible à inviter dans ce groupe.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: availableFriendships.length,
+                    itemBuilder: (context, index) {
+                      final friendship = availableFriendships[index];
+                      final friendId =
+                          _friendshipRepository.getOtherUserId(friendship)
+                              .trim();
+
+                      return FutureBuilder<Map<String, dynamic>?>(
+                        future: _userService.getUserById(friendId),
+                        builder: (context, userSnapshot) {
+                          final user = userSnapshot.data;
+                          final displayName =
+                              _buildDisplayName(friendship, user);
+                          final lieu = (user?['lieu'] ?? '').toString().trim();
+                          final isInviting = invitingUserId == friendId;
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: ListTile(
+                              leading: CircleAvatar(
+                                child: Text(
+                                  displayName.isNotEmpty
+                                      ? displayName[0].toUpperCase()
+                                      : '?',
+                                ),
+                              ),
+                              title: Text(displayName),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    lieu.isNotEmpty
+                                        ? lieu
+                                        : 'Lieu non renseigné',
+                                  ),
+                                  if (user == null)
+                                    const Text(
+                                      'Utilisateur introuvable en base',
+                                      style: TextStyle(
+                                        color: Colors.red,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                              trailing: ElevatedButton(
+                                onPressed: isInviting
+                                    ? null
+                                    : () => _sendInvitation(
+                                          friendship,
+                                          displayName,
+                                        ),
+                                child: isInviting
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Text('Inviter'),
+                              ),
+                            ),
+                          );
+                        },
                       );
                     },
                   );

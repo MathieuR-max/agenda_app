@@ -1,42 +1,85 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/friendship.dart';
-import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class FriendshipRepository {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
 
   FriendshipRepository({
     FirebaseFirestore? db,
+    FirebaseAuth? auth,
     UserFirestoreService? userService,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _userService = userService ?? UserFirestoreService(db: db);
+        _auth = auth ?? FirebaseAuth.instance,
+        _userService = userService ??
+            UserFirestoreService(
+              db: db,
+              auth: auth,
+            );
 
-  String get currentUserId => CurrentUser.id.trim();
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      throw Exception('No authenticated Firebase user');
+    }
+
+    return uid;
+  }
 
   CollectionReference<Map<String, dynamic>> get _friendships =>
       _db.collection(FirestoreCollections.friendships);
 
-  bool get _hasCurrentUser => currentUserId.isNotEmpty;
+  CollectionReference<Map<String, dynamic>> get _users =>
+      _db.collection(FirestoreCollections.users);
 
   Future<bool> sendFriendRequest({
     required String toUserId,
   }) async {
+    final uid = currentUserIdOrNull;
     final trimmedToUserId = toUserId.trim();
 
-    if (!_hasCurrentUser || trimmedToUserId.isEmpty) {
+    if (uid == null || trimmedToUserId.isEmpty) {
       return false;
     }
 
-    if (trimmedToUserId == currentUserId) {
+    if (trimmedToUserId == uid) {
       return false;
     }
 
     final currentUserPseudo = await _userService.getCurrentUserPseudo();
-    final toUserRef = _db.collection(FirestoreCollections.users).doc(trimmedToUserId);
+    final toUserRef = _users.doc(trimmedToUserId);
+
+    final existingRequest1 = await _friendships
+        .where('requesterId', isEqualTo: uid)
+        .where('addresseeId', isEqualTo: trimmedToUserId)
+        .limit(1)
+        .get();
+
+    final existingRequest2 = await _friendships
+        .where('requesterId', isEqualTo: trimmedToUserId)
+        .where('addresseeId', isEqualTo: uid)
+        .limit(1)
+        .get();
+
+    if (existingRequest1.docs.isNotEmpty || existingRequest2.docs.isNotEmpty) {
+      return false;
+    }
 
     return _db.runTransaction((transaction) async {
       final toUserDoc = await transaction.get(toUserRef);
@@ -45,28 +88,13 @@ class FriendshipRepository {
         return false;
       }
 
-      final toUserPseudo = (toUserDoc.data()!['pseudo'] ?? '').toString().trim();
-
-      final existingRequest1 = await _friendships
-          .where('requesterId', isEqualTo: currentUserId)
-          .where('addresseeId', isEqualTo: trimmedToUserId)
-          .limit(1)
-          .get();
-
-      final existingRequest2 = await _friendships
-          .where('requesterId', isEqualTo: trimmedToUserId)
-          .where('addresseeId', isEqualTo: currentUserId)
-          .limit(1)
-          .get();
-
-      if (existingRequest1.docs.isNotEmpty || existingRequest2.docs.isNotEmpty) {
-        return false;
-      }
+      final toUserData = toUserDoc.data()!;
+      final toUserPseudo = (toUserData['pseudo'] ?? '').toString().trim();
 
       final friendshipRef = _friendships.doc();
 
       transaction.set(friendshipRef, {
-        'requesterId': currentUserId,
+        'requesterId': uid,
         'requesterPseudo': currentUserPseudo.trim(),
         'addresseeId': trimmedToUserId,
         'addresseePseudo': toUserPseudo,
@@ -80,9 +108,10 @@ class FriendshipRepository {
   }
 
   Future<bool> acceptFriendRequest(String friendshipId) async {
+    final uid = currentUserIdOrNull;
     final trimmedFriendshipId = friendshipId.trim();
 
-    if (!_hasCurrentUser || trimmedFriendshipId.isEmpty) {
+    if (uid == null || trimmedFriendshipId.isEmpty) {
       return false;
     }
 
@@ -100,7 +129,7 @@ class FriendshipRepository {
       final status =
           (data['status'] ?? FriendshipStatusValues.pending).toString().trim();
 
-      if (addresseeId != currentUserId) {
+      if (addresseeId != uid) {
         return false;
       }
 
@@ -118,9 +147,10 @@ class FriendshipRepository {
   }
 
   Future<bool> refuseFriendRequest(String friendshipId) async {
+    final uid = currentUserIdOrNull;
     final trimmedFriendshipId = friendshipId.trim();
 
-    if (!_hasCurrentUser || trimmedFriendshipId.isEmpty) {
+    if (uid == null || trimmedFriendshipId.isEmpty) {
       return false;
     }
 
@@ -138,7 +168,7 @@ class FriendshipRepository {
       final status =
           (data['status'] ?? FriendshipStatusValues.pending).toString().trim();
 
-      if (addresseeId != currentUserId) {
+      if (addresseeId != uid) {
         return false;
       }
 
@@ -156,17 +186,19 @@ class FriendshipRepository {
   }
 
   Future<List<Friendship>> getAcceptedFriendships() async {
-    if (!_hasCurrentUser) {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       return <Friendship>[];
     }
 
     final sentQuery = await _friendships
-        .where('requesterId', isEqualTo: currentUserId)
+        .where('requesterId', isEqualTo: uid)
         .where('status', isEqualTo: FriendshipStatusValues.accepted)
         .get();
 
     final receivedQuery = await _friendships
-        .where('addresseeId', isEqualTo: currentUserId)
+        .where('addresseeId', isEqualTo: uid)
         .where('status', isEqualTo: FriendshipStatusValues.accepted)
         .get();
 
@@ -187,10 +219,11 @@ class FriendshipRepository {
   }
 
   String getOtherUserId(Friendship friendship) {
+    final uid = currentUserId;
     final requesterId = friendship.requesterId.trim();
     final addresseeId = friendship.addresseeId.trim();
 
-    if (requesterId == currentUserId) {
+    if (requesterId == uid) {
       return addresseeId;
     }
 
@@ -198,9 +231,10 @@ class FriendshipRepository {
   }
 
   String getOtherUserPseudo(Friendship friendship) {
+    final uid = currentUserId;
     final requesterId = friendship.requesterId.trim();
 
-    if (requesterId == currentUserId) {
+    if (requesterId == uid) {
       return friendship.addresseePseudo.trim();
     }
 
@@ -218,9 +252,10 @@ class FriendshipRepository {
   }
 
   Future<bool> removeFriend(String friendshipId) async {
+    final uid = currentUserIdOrNull;
     final trimmedFriendshipId = friendshipId.trim();
 
-    if (!_hasCurrentUser || trimmedFriendshipId.isEmpty) {
+    if (uid == null || trimmedFriendshipId.isEmpty) {
       return false;
     }
 
@@ -239,7 +274,7 @@ class FriendshipRepository {
       final status =
           (data['status'] ?? FriendshipStatusValues.pending).toString().trim();
 
-      if (requesterId != currentUserId && addresseeId != currentUserId) {
+      if (requesterId != uid && addresseeId != uid) {
         return false;
       }
 
@@ -257,50 +292,37 @@ class FriendshipRepository {
   }
 
   Stream<Friendship?> watchFriendshipWithUser(String otherUserId) {
-    final trimmedOtherUserId = otherUserId.trim();
+    final uid = currentUserIdOrNull;
+    final other = otherUserId.trim();
 
-    if (!_hasCurrentUser || trimmedOtherUserId.isEmpty) {
+    if (uid == null || other.isEmpty) {
       return Stream.value(null);
     }
 
-    return _friendships
-        .where('requesterId', whereIn: [currentUserId, trimmedOtherUserId])
-        .where('addresseeId', whereIn: [currentUserId, trimmedOtherUserId])
-        .snapshots()
-        .map((snapshot) {
-      Friendship? matched;
+    final sentQuery = _friendships
+        .where('requesterId', isEqualTo: uid)
+        .where('addresseeId', isEqualTo: other);
 
-      for (final doc in snapshot.docs) {
-        final friendship = Friendship.fromMap(doc.id, doc.data());
+    final receivedQuery = _friendships
+        .where('requesterId', isEqualTo: other)
+        .where('addresseeId', isEqualTo: uid);
 
-        final requesterId = friendship.requesterId.trim();
-        final addresseeId = friendship.addresseeId.trim();
+    return sentQuery.snapshots().asyncMap((sentSnapshot) async {
+      final receivedSnapshot = await receivedQuery.get();
 
-        final isExactMatch =
-            (requesterId == currentUserId && addresseeId == trimmedOtherUserId) ||
-                (requesterId == trimmedOtherUserId &&
-                    addresseeId == currentUserId);
+      final friendships = <Friendship>[
+        ...sentSnapshot.docs
+            .map((doc) => Friendship.fromMap(doc.id, doc.data())),
+        ...receivedSnapshot.docs
+            .map((doc) => Friendship.fromMap(doc.id, doc.data())),
+      ];
 
-        if (!isExactMatch) {
-          continue;
-        }
-
-        if (matched == null) {
-          matched = friendship;
-          continue;
-        }
-
-        final matchedDate =
-            matched.respondedAt ?? matched.createdAt ?? DateTime(2000);
-        final friendshipDate =
-            friendship.respondedAt ?? friendship.createdAt ?? DateTime(2000);
-
-        if (friendshipDate.isAfter(matchedDate)) {
-          matched = friendship;
-        }
+      if (friendships.isEmpty) {
+        return null;
       }
 
-      return matched;
+      _sortFriendshipsByRecentResponse(friendships);
+      return friendships.first;
     });
   }
 

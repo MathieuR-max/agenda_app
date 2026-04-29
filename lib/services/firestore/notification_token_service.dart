@@ -1,24 +1,41 @@
 import 'dart:io' show Platform;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class NotificationTokenService {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
 
-  NotificationTokenService({FirebaseFirestore? db})
-      : _db = db ?? FirebaseFirestore.instance;
+  NotificationTokenService({
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+  })  : _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
-  String get currentUserId => CurrentUser.id.trim();
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
 
   Future<void> init() async {
-    if (currentUserId.isEmpty) return;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return;
+    }
 
     final messaging = FirebaseMessaging.instance;
 
     final token = await messaging.getToken();
+
     if (token != null && token.trim().isNotEmpty) {
       await _saveToken(token);
     }
@@ -30,10 +47,10 @@ class NotificationTokenService {
   }
 
   Future<void> _saveToken(String token) async {
-    final trimmedUserId = currentUserId;
+    final trimmedUserId = currentUserIdOrNull;
     final trimmedToken = token.trim();
 
-    if (trimmedUserId.isEmpty || trimmedToken.isEmpty) {
+    if (trimmedUserId == null || trimmedToken.isEmpty) {
       return;
     }
 
@@ -72,7 +89,7 @@ class NotificationTokenService {
     final batch = _db.batch();
 
     for (final doc in snapshot.docs) {
-      final ownerUserId = doc.reference.parent.parent?.id?.trim() ?? '';
+      final ownerUserId = doc.reference.parent.parent?.id.trim() ?? '';
 
       if (ownerUserId.isEmpty) {
         continue;
@@ -92,6 +109,7 @@ class NotificationTokenService {
     if (token.length <= 20) {
       return token;
     }
+
     return token.substring(0, 20);
   }
 

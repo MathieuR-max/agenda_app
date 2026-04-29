@@ -1,20 +1,45 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class ChatFirestoreService {
   final FirebaseFirestore _db;
+  final FirebaseAuth _auth;
 
-  ChatFirestoreService({FirebaseFirestore? db})
-      : _db = db ?? FirebaseFirestore.instance;
+  ChatFirestoreService({
+    FirebaseFirestore? db,
+    FirebaseAuth? auth,
+  })  : _db = db ?? FirebaseFirestore.instance,
+        _auth = auth ?? FirebaseAuth.instance;
 
-  String get currentUserId => CurrentUser.id;
+  String? get currentUserIdOrNull {
+    final uid = _auth.currentUser?.uid.trim();
+
+    if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      throw FirebaseAuthException(
+        code: 'not-authenticated',
+        message: 'Aucun utilisateur Firebase authentifié.',
+      );
+    }
+
+    return uid;
+  }
 
   DocumentReference<Map<String, dynamic>> _activityRef(String activityId) {
     return _db
         .collection(FirestoreCollections.activities)
-        .doc(activityId);
+        .doc(activityId.trim());
   }
 
   CollectionReference<Map<String, dynamic>> _messagesRef(String activityId) {
@@ -22,7 +47,13 @@ class ChatFirestoreService {
   }
 
   Stream<List<Map<String, dynamic>>> getMessages(String activityId) {
-    return _messagesRef(activityId)
+    final trimmedActivityId = activityId.trim();
+
+    if (trimmedActivityId.isEmpty) {
+      return Stream.value(<Map<String, dynamic>>[]);
+    }
+
+    return _messagesRef(trimmedActivityId)
         .orderBy('createdAt', descending: false)
         .snapshots()
         .map((snapshot) {
@@ -47,20 +78,38 @@ class ChatFirestoreService {
     required String senderPseudo,
     required String text,
   }) async {
+    final authUid = currentUserId;
+    final trimmedActivityId = activityId.trim();
+    final trimmedSenderId = senderId.trim();
     final trimmedText = text.trim();
     final trimmedPseudo = senderPseudo.trim();
 
-    if (activityId.trim().isEmpty) return;
-    if (senderId.trim().isEmpty) return;
-    if (trimmedPseudo.isEmpty) return;
-    if (trimmedText.isEmpty) return;
+    if (trimmedActivityId.isEmpty) {
+      return;
+    }
 
-    await _addMessage(
-      activityId: activityId,
-      senderId: senderId,
+    if (trimmedPseudo.isEmpty) {
+      return;
+    }
+
+    if (trimmedText.isEmpty) {
+      return;
+    }
+
+    if (trimmedSenderId.isNotEmpty && trimmedSenderId != authUid) {
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'invalid-sender-id',
+        message:
+            'senderId ne correspond pas à l’utilisateur Firebase authentifié.',
+      );
+    }
+
+    await _addTextMessage(
+      activityId: trimmedActivityId,
+      senderId: authUid,
       senderPseudo: trimmedPseudo,
       text: trimmedText,
-      type: MessageTypeValues.text,
     );
   }
 
@@ -68,26 +117,17 @@ class ChatFirestoreService {
     required String activityId,
     required String text,
   }) async {
-    final trimmedText = text.trim();
-
-    if (activityId.trim().isEmpty) return;
-    if (trimmedText.isEmpty) return;
-
-    await _addMessage(
-      activityId: activityId,
-      senderId: 'system',
-      senderPseudo: 'Système',
-      text: trimmedText,
-      type: MessageTypeValues.system,
+    throw UnsupportedError(
+      'Les messages système ne doivent plus être écrits côté client. '
+      'Ils doivent être créés par un backend / Cloud Function.',
     );
   }
 
-  Future<void> _addMessage({
+  Future<void> _addTextMessage({
     required String activityId,
     required String senderId,
     required String senderPseudo,
     required String text,
-    required String type,
   }) async {
     final activityRef = _activityRef(activityId);
     final messagesRef = _messagesRef(activityId);
@@ -96,7 +136,7 @@ class ChatFirestoreService {
       'senderId': senderId,
       'senderPseudo': senderPseudo,
       'text': text,
-      'type': type,
+      'type': MessageTypeValues.text,
       'createdAt': FieldValue.serverTimestamp(),
     });
 

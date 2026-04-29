@@ -1,6 +1,5 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:agenda_app/features/main_navigation_page.dart';
-import 'package:agenda_app/services/current_user.dart';
 
 class TestUserSelectorPage extends StatefulWidget {
   const TestUserSelectorPage({super.key});
@@ -10,58 +9,153 @@ class TestUserSelectorPage extends StatefulWidget {
 }
 
 class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
-  final List<String> testUsers = const ['Pierre', 'Alex', 'Jack'];
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  Future<void> _selectUser(BuildContext context, String userId) async {
-    final String trimmedUserId = userId.trim();
-    if (trimmedUserId.isEmpty) return;
+  final Map<String, ({String email, String password})> testUsers = const {
+    'Pierre': (
+      email: 'pierre@agenda-social.test',
+      password: 'Test1234!',
+    ),
+    'Alex': (
+      email: 'alex@agenda-social.test',
+      password: 'Test1234!',
+    ),
+    'Jack': (
+      email: 'jack@agenda-social.test',
+      password: 'Test1234!',
+    ),
+  };
 
-    final String? currentUserId = CurrentUser.idOrNull?.trim();
-    final bool isSameUser = currentUserId == trimmedUserId;
+  String? _loadingUserLabel;
+  String? _errorMessage;
 
-    if (!isSameUser) {
-      CurrentUser.setUser(trimmedUserId);
+  Future<void> _selectUser(BuildContext context, String userLabel) async {
+    final trimmedUserLabel = userLabel.trim();
+    if (trimmedUserLabel.isEmpty) return;
+
+    final credentials = testUsers[trimmedUserLabel];
+    if (credentials == null) {
+      setState(() {
+        _errorMessage = 'Utilisateur de test introuvable.';
+      });
+      return;
     }
 
-    if (!mounted) return;
+    setState(() {
+      _loadingUserLabel = trimmedUserLabel;
+      _errorMessage = null;
+    });
 
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => MainNavigationPage(
-          key: ValueKey('main_nav_${CurrentUser.id}'),
-        ),
-      ),
-      (route) => false,
-    );
+    try {
+      final currentUser = _auth.currentUser;
+
+      if (currentUser != null) {
+        await _auth.signOut();
+      }
+
+      await _auth.signInWithEmailAndPassword(
+        email: credentials.email,
+        password: credentials.password,
+      );
+
+      if (!mounted) return;
+
+      // Rien à faire ici :
+      // app.dart écoute authStateChanges() et navigue automatiquement.
+    } on FirebaseAuthException catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage = switch (e.code) {
+          'user-not-found' => 'Compte de test introuvable dans Firebase Auth.',
+          'wrong-password' => 'Mot de passe incorrect pour ce compte de test.',
+          'invalid-email' => 'Email de test invalide.',
+          'invalid-credential' => 'Identifiants Firebase invalides.',
+          'operation-not-allowed' =>
+            'Connexion email/mot de passe non activée dans Firebase Auth.',
+          _ => 'Connexion impossible : ${e.message ?? e.code}',
+        };
+      });
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _errorMessage = 'Connexion impossible : $e';
+      });
+    } finally {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingUserLabel = null;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final String? currentUserId = CurrentUser.idOrNull?.trim();
+    final currentUserEmail = _auth.currentUser?.email?.trim().toLowerCase();
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Choisir un utilisateur de test'),
       ),
-      body: ListView.builder(
-        itemCount: testUsers.length,
-        itemBuilder: (context, index) {
-          final String userId = testUsers[index].trim();
-          final bool isSelected = currentUserId == userId;
-
-          return ListTile(
-            leading: Icon(
-              isSelected
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_off,
+      body: Column(
+        children: [
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade300),
+                ),
+                child: Text(
+                  _errorMessage!,
+                  style: TextStyle(
+                    color: Colors.red.shade800,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ),
-            title: Text(userId),
-            subtitle: isSelected
-                ? const Text('Utilisateur actuellement connecté')
-                : null,
-            onTap: () => _selectUser(context, userId),
-          );
-        },
+          Expanded(
+            child: ListView.builder(
+              itemCount: testUsers.length,
+              itemBuilder: (context, index) {
+                final String userLabel = testUsers.keys.elementAt(index).trim();
+                final credentials = testUsers[userLabel];
+                final userEmail = credentials?.email.trim().toLowerCase() ?? '';
+
+                final bool isLoading = _loadingUserLabel == userLabel;
+                final bool isSelected =
+                    currentUserEmail != null && currentUserEmail == userEmail;
+
+                return ListTile(
+                  leading: isLoading
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          isSelected
+                              ? Icons.radio_button_checked
+                              : Icons.radio_button_off,
+                        ),
+                  title: Text(userLabel),
+                  subtitle: isSelected
+                      ? const Text('Utilisateur actuellement connecté')
+                      : null,
+                  enabled: _loadingUserLabel == null,
+                  onTap: () => _selectUser(context, userLabel),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -70,3 +70,5 @@ firebase-adminsdk.json
 # Environment variables
 .env
 .env.*
+
+serviceAccountKey.json
