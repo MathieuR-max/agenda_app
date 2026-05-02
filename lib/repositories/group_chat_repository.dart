@@ -1,35 +1,24 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/models/group_message.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class GroupChatRepository {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
   final GroupsRepository _groupsRepository;
 
   GroupChatRepository({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
     UserFirestoreService? userService,
     GroupsRepository? groupsRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _userService = userService ??
-            UserFirestoreService(
-              db: db,
-              auth: auth,
-            ),
-        _groupsRepository = groupsRepository ??
-            GroupsRepository(
-              db: db,
-              auth: auth,
-            );
+        _userService = userService ?? UserFirestoreService(db: db),
+        _groupsRepository = groupsRepository ?? GroupsRepository(db: db);
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;
@@ -42,10 +31,7 @@ class GroupChatRepository {
     final uid = currentUserIdOrNull;
 
     if (uid == null) {
-      throw FirebaseAuthException(
-        code: 'not-authenticated',
-        message: 'Aucun utilisateur Firebase authentifié.',
-      );
+      throw Exception('No authenticated Firebase user');
     }
 
     return uid;
@@ -90,15 +76,8 @@ class GroupChatRepository {
     final trimmedText = text.trim();
     final uid = currentUserIdOrNull;
 
-    if (trimmedGroupId.isEmpty || trimmedText.isEmpty) {
+    if (trimmedGroupId.isEmpty || trimmedText.isEmpty || uid == null) {
       return false;
-    }
-
-    if (uid == null) {
-      throw FirebaseAuthException(
-        code: 'not-authenticated',
-        message: 'Aucun utilisateur Firebase authentifié.',
-      );
     }
 
     final isMember = await _groupsRepository.isCurrentUserMember(trimmedGroupId);

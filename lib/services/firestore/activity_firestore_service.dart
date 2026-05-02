@@ -1,23 +1,30 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/activity.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class ActivityFirestoreService {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
 
   ActivityFirestoreService({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
-  })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _db = db ?? FirebaseFirestore.instance;
 
-  String get currentUserId {
-    final uid = _auth.currentUser?.uid.trim();
+  String? get currentUserIdOrNull {
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       throw Exception('No authenticated Firebase user');
     }
 
@@ -100,7 +107,11 @@ class ActivityFirestoreService {
   }
 
   Stream<List<String>> watchJoinedActivityIds() {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<String>[]);
+    }
 
     _log('watchJoinedActivityIds uid=$uid');
 
@@ -306,7 +317,12 @@ class ActivityFirestoreService {
   }
 
   Stream<List<Activity>> getCreatedActivities() {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<Activity>[]);
+    }
+
     _log('getCreatedActivities uid=$uid');
 
     return _activities
@@ -445,8 +461,9 @@ class ActivityFirestoreService {
 
   Stream<List<Map<String, dynamic>>> getInviteableUsers(String activityId) {
     final trimmedActivityId = activityId.trim();
+    final uid = currentUserIdOrNull;
 
-    if (trimmedActivityId.isEmpty) {
+    if (trimmedActivityId.isEmpty || uid == null) {
       return Stream.value(<Map<String, dynamic>>[]);
     }
 
@@ -457,7 +474,7 @@ class ActivityFirestoreService {
             .where((id) => id.isNotEmpty)
             .toSet();
 
-        participantIds.add(currentUserId);
+        participantIds.add(uid);
 
         final usersSnapshot = await _users.get();
 
@@ -528,12 +545,12 @@ class ActivityFirestoreService {
 
   Future<bool> deleteActivityIfNoParticipants(String activityId) async {
     final trimmedActivityId = activityId.trim();
+    final uid = currentUserIdOrNull;
 
-    if (trimmedActivityId.isEmpty) {
+    if (trimmedActivityId.isEmpty || uid == null) {
       return false;
     }
 
-    final uid = currentUserId;
     final activityRef = _activityDoc(trimmedActivityId);
 
     final canDelete = await _db.runTransaction((transaction) async {
@@ -646,10 +663,14 @@ class ActivityFirestoreService {
 
   void _sortActivitiesByRecency(List<Activity> activities) {
     activities.sort((a, b) {
-      final aDate =
-          a.resolvedStartDateTime ?? a.updatedAt ?? a.createdAt ?? DateTime(2000);
-      final bDate =
-          b.resolvedStartDateTime ?? b.updatedAt ?? b.createdAt ?? DateTime(2000);
+      final aDate = a.resolvedStartDateTime ??
+          a.updatedAt ??
+          a.createdAt ??
+          DateTime(2000);
+      final bDate = b.resolvedStartDateTime ??
+          b.updatedAt ??
+          b.createdAt ??
+          DateTime(2000);
 
       return bDate.compareTo(aDate);
     });

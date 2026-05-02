@@ -1,27 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/models/activity_message.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
 
 class ChatRepository {
   final ChatFirestoreService _service;
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
 
   ChatRepository({
     ChatFirestoreService? service,
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _service = service ??
-            ChatFirestoreService(
-              db: db,
-              auth: auth,
-            );
+        _service = service ?? ChatFirestoreService(db: db);
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;
@@ -66,17 +59,19 @@ class ChatRepository {
     }
 
     return _service.getMessages(trimmedActivityId).map(
-      (messages) => messages.map((data) {
-        return ActivityMessage(
-          id: (data['id'] ?? '').toString(),
-          activityId: trimmedActivityId,
-          senderId: (data['senderId'] ?? '').toString(),
-          senderPseudo: (data['senderPseudo'] ?? '').toString(),
-          content: (data['text'] ?? '').toString(),
-          type: (data['type'] ?? 'text').toString(),
-          createdAt: _parseDate(data['createdAt']),
-        );
-      }).toList(),
+      (messages) {
+        return messages.map((data) {
+          return ActivityMessage(
+            id: (data['id'] ?? '').toString(),
+            activityId: trimmedActivityId,
+            senderId: (data['senderId'] ?? '').toString(),
+            senderPseudo: (data['senderPseudo'] ?? '').toString(),
+            content: (data['text'] ?? '').toString(),
+            type: (data['type'] ?? 'text').toString(),
+            createdAt: _parseDate(data['createdAt']),
+          );
+        }).toList();
+      },
     );
   }
 
@@ -87,19 +82,18 @@ class ChatRepository {
     required String content,
   }) async {
     final trimmedActivityId = activityId.trim();
-    final trimmedSenderId = senderId.trim();
     final trimmedContent = content.trim();
+    final trimmedPseudo = senderPseudo.trim();
 
     if (trimmedActivityId.isEmpty ||
-        trimmedSenderId.isEmpty ||
-        trimmedContent.isEmpty) {
+        trimmedContent.isEmpty ||
+        trimmedPseudo.isEmpty) {
       return;
     }
 
     await _service.sendMessage(
       activityId: trimmedActivityId,
-      senderId: trimmedSenderId,
-      senderPseudo: senderPseudo.trim(),
+      senderPseudo: trimmedPseudo,
       text: trimmedContent,
     );
   }

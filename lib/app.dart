@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/app_navigator.dart';
 import 'package:agenda_app/features/01_auth/test_user_selector_page.dart';
@@ -24,13 +27,35 @@ class _AgendaAppState extends State<AgendaApp> {
   Future<void>? _userBootstrapFuture;
   String? _bootstrappedUid;
 
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+
+  bool _notificationsInitialized = false;
+  bool _notificationNavigationInitialized = false;
+
   @override
   void initState() {
     super.initState();
-    _initNotifications();
+    _initNotificationsOnce();
   }
 
-  Future<void> _initNotifications() async {
+  @override
+  void dispose() {
+    _foregroundMessageSubscription?.cancel();
+    _tokenRefreshSubscription?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _initNotificationsOnce() async {
+    if (_notificationsInitialized) return;
+    _notificationsInitialized = true;
+
+    // ✅ FIX : désactive FCM sur le web
+    if (kIsWeb) {
+      debugPrint('FCM désactivé sur Flutter Web.');
+      return;
+    }
+
     final messaging = FirebaseMessaging.instance;
 
     await messaging.requestPermission(
@@ -39,33 +64,41 @@ class _AgendaAppState extends State<AgendaApp> {
       sound: true,
     );
 
-    await _tokenService.init();
-
     final token = await messaging.getToken();
     debugPrint('FCM token: $token');
 
-    FirebaseMessaging.onMessage.listen((message) {
-      final notification = message.notification;
+    _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
+      (message) {
+        final notification = message.notification;
 
-      if (!mounted || notification == null) return;
+        if (!mounted || notification == null) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            notification.body?.trim().isNotEmpty == true
-                ? notification.body!
-                : (notification.title ?? 'Nouvelle notification'),
+        final body = notification.body?.trim();
+        final title = notification.title?.trim();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              body?.isNotEmpty == true
+                  ? body!
+                  : title?.isNotEmpty == true
+                      ? title!
+                      : 'Nouvelle notification',
+            ),
           ),
-        ),
-      );
+        );
+      },
+    );
+
+    _tokenRefreshSubscription = messaging.onTokenRefresh.listen((newToken) {
+      debugPrint('FCM token refreshed: $newToken');
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _notificationNavigationService.init();
-    });
+      if (_notificationNavigationInitialized) return;
+      _notificationNavigationInitialized = true;
 
-    messaging.onTokenRefresh.listen((newToken) {
-      debugPrint('FCM token refreshed: $newToken');
+      await _notificationNavigationService.init();
     });
   }
 
@@ -109,6 +142,7 @@ class _AgendaAppState extends State<AgendaApp> {
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
       return;
     }
 
@@ -151,7 +185,15 @@ class _AgendaAppState extends State<AgendaApp> {
     }
 
     _bootstrappedUid = uid;
-    _userBootstrapFuture = _ensureUserDocument(firebaseUser);
+
+    _userBootstrapFuture = Future(() async {
+      await _ensureUserDocument(firebaseUser);
+
+      // ✅ FIX : pas de token sur le web
+      if (!kIsWeb) {
+        await _tokenService.init();
+      }
+    });
 
     return _userBootstrapFuture!;
   }

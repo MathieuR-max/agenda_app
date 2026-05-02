@@ -1,10 +1,10 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/repositories/chat_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 import 'package:agenda_app/features/04_profile/user_profile_page.dart';
@@ -100,12 +100,8 @@ class ActivityDetailPage extends StatelessWidget {
   }
 
   Color _activityTypeColor(Activity activity) {
-    if (activity.isMixedGroupActivity) {
-      return Colors.teal.shade100;
-    }
-    if (activity.isGroupActivity) {
-      return Colors.indigo.shade100;
-    }
+    if (activity.isMixedGroupActivity) return Colors.teal.shade100;
+    if (activity.isGroupActivity) return Colors.indigo.shade100;
     if (activity.visibility == Activity.visibilityPublic) {
       return Colors.blue.shade100;
     }
@@ -113,12 +109,8 @@ class ActivityDetailPage extends StatelessWidget {
   }
 
   String _activityTypeLabel(Activity activity) {
-    if (activity.isMixedGroupActivity) {
-      return 'Groupe + Public';
-    }
-    if (activity.isGroupPrivateActivity) {
-      return 'Activité de groupe';
-    }
+    if (activity.isMixedGroupActivity) return 'Groupe + Public';
+    if (activity.isGroupPrivateActivity) return 'Activité de groupe';
     if (activity.visibility == Activity.visibilityPublic) {
       return 'Activité publique';
     }
@@ -147,8 +139,7 @@ class ActivityDetailPage extends StatelessWidget {
     required bool isFull,
   }) {
     if (isCancelled) return 'Activité annulée';
-    if (isDone) return 'Activité terminée';
-    if (activity.hasEnded) return 'Activité terminée';
+    if (isDone || activity.hasEnded) return 'Activité terminée';
     if (isInviteOnly) return 'Sur invitation';
     if (isFull) return 'Activité complète';
     if (activity.isMixedGroupActivity) {
@@ -178,23 +169,15 @@ class ActivityDetailPage extends StatelessWidget {
     required bool canFullyEdit,
     required bool canPartiallyEdit,
   }) {
-    if (canFullyEdit) {
-      return 'Modifier l’activité';
-    }
-
-    if (canPartiallyEdit) {
-      return 'Modifier description et lieu';
-    }
-
+    if (canFullyEdit) return 'Modifier l’activité';
+    if (canPartiallyEdit) return 'Modifier description et lieu';
     return 'Modifier';
   }
 
   String _formatSchedule(Activity activity) {
     final scheduleLabel = activity.scheduleLabel.trim();
 
-    if (scheduleLabel.isNotEmpty) {
-      return scheduleLabel;
-    }
+    if (scheduleLabel.isNotEmpty) return scheduleLabel;
 
     return '${activity.effectiveDay} • ${activity.effectiveStartTime} - ${activity.effectiveEndTime}';
   }
@@ -224,9 +207,7 @@ class ActivityDetailPage extends StatelessWidget {
       return 'Le chat reste accessible après l’activité, en lecture seule.';
     }
 
-    if (isParticipant || isOwner) {
-      return null;
-    }
+    if (isParticipant || isOwner) return null;
 
     return 'Vous pouvez consulter le chat de cette activité.';
   }
@@ -300,9 +281,7 @@ class ActivityDetailPage extends StatelessWidget {
     required bool isOwner,
     required bool isParticipant,
   }) {
-    if (isOwner) {
-      return '';
-    }
+    if (isOwner) return '';
 
     switch (participantVisibility.trim()) {
       case 'public':
@@ -360,7 +339,7 @@ class ActivityDetailPage extends StatelessWidget {
       context: context,
       title: isOwner ? 'Quitter en tant qu’organisateur' : 'Quitter l’activité',
       content: isOwner
-          ? 'Voulez-vous vraiment quitter cette activité en tant qu’organisateur ?'
+          ? 'Voulez-vous vraiment quitter cette activité en tant qu’organisateur ? Les autres participants pourront reprendre le rôle d’organisateur.'
           : 'Voulez-vous vraiment quitter cette activité ?',
       confirmLabel: 'Quitter',
     );
@@ -377,7 +356,7 @@ class ActivityDetailPage extends StatelessWidget {
       SnackBar(
         content: Text(
           isOwner
-              ? 'Vous avez quitté l’activité en tant qu’organisateur'
+              ? 'Vous avez quitté l’activité. Un autre participant pourra devenir organisateur.'
               : 'Vous avez quitté l’activité',
         ),
       ),
@@ -390,6 +369,17 @@ class ActivityDetailPage extends StatelessWidget {
     String activityId,
     int participantCount,
   ) async {
+    if (participantCount > 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Suppression impossible : des participants ont rejoint l’activité',
+          ),
+        ),
+      );
+      return;
+    }
+
     final confirmed = await _confirmAction(
       context: context,
       title: 'Supprimer l’activité',
@@ -398,19 +388,6 @@ class ActivityDetailPage extends StatelessWidget {
     );
 
     if (!confirmed) return;
-
-    if (participantCount > 1) {
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Impossible de supprimer : d’autres participants sont encore inscrits',
-          ),
-        ),
-      );
-      return;
-    }
 
     try {
       await activityService.deleteActivityWithDependencies(activityId);
@@ -501,7 +478,7 @@ class ActivityDetailPage extends StatelessWidget {
             );
           }
 
-          final Activity? currentActivity = activitySnapshot.data;
+          final currentActivity = activitySnapshot.data;
 
           if (currentActivity == null) {
             return const Center(
@@ -509,8 +486,7 @@ class ActivityDetailPage extends StatelessWidget {
             );
           }
 
-          final String? currentUserId =
-              FirebaseAuth.instance.currentUser?.uid.trim();
+          final currentUserId = AuthUser.uidOrNull?.trim();
 
           if (currentUserId == null || currentUserId.isEmpty) {
             return const Center(
@@ -518,20 +494,20 @@ class ActivityDetailPage extends StatelessWidget {
             );
           }
 
-          final String currentOwnerId = currentActivity.ownerId;
-          final String currentOwnerPseudo = currentActivity.ownerPseudo;
-          final bool ownerPending = currentActivity.ownerPending;
+          final currentOwnerId = currentActivity.ownerId.trim();
+          final currentOwnerPseudo = currentActivity.ownerPseudo;
+          final ownerPending = currentActivity.ownerPending;
 
-          final String title = currentActivity.title;
-          final String description = currentActivity.description;
-          final String location = currentActivity.location;
-          final String category = currentActivity.category;
-          final int maxParticipants = currentActivity.maxParticipants;
-          final String status = currentActivity.status;
-          final String visibility = currentActivity.visibility;
-          final bool isGroupActivity = currentActivity.isGroupActivity;
+          final title = currentActivity.title;
+          final description = currentActivity.description;
+          final location = currentActivity.location;
+          final category = currentActivity.category;
+          final maxParticipants = currentActivity.maxParticipants;
+          final status = currentActivity.status;
+          final visibility = currentActivity.visibility;
+          final isGroupActivity = currentActivity.isGroupActivity;
 
-          final bool isOwner = currentOwnerId == currentUserId;
+          final isOwner = currentOwnerId == currentUserId;
 
           return Padding(
             padding: const EdgeInsets.all(16),
@@ -552,27 +528,25 @@ class ActivityDetailPage extends StatelessWidget {
                   );
                 }
 
-                final int participantCount = countSnapshot.data ?? 0;
+                final participantCount = countSnapshot.data ?? 0;
 
-                final bool canFullyEdit = _canFullyEditActivity(
+                final canFullyEdit = _canFullyEditActivity(
                   isOwner: isOwner,
                   participantCount: participantCount,
                 );
 
-                final bool canPartiallyEdit = _canPartiallyEditActivity(
+                final canPartiallyEdit = _canPartiallyEditActivity(
                   isOwner: isOwner,
                   participantCount: participantCount,
                 );
 
-                final bool canShowEditButton =
-                    canFullyEdit || canPartiallyEdit;
+                final canShowEditButton = canFullyEdit || canPartiallyEdit;
 
-                final String displayedMaxParticipants = maxParticipants > 0
-                    ? maxParticipants.toString()
-                    : 'Illimité';
+                final displayedMaxParticipants =
+                    maxParticipants > 0 ? maxParticipants.toString() : 'Illimité';
 
                 final int? remainingPlaces =
-                    maxParticipants > 0 ? (maxParticipants - participantCount) : null;
+                    maxParticipants > 0 ? maxParticipants - participantCount : null;
 
                 return StreamBuilder<List<String>>(
                   stream: activityService.getParticipants(currentActivity.id),
@@ -592,31 +566,34 @@ class ActivityDetailPage extends StatelessWidget {
                     }
 
                     final participantIds = participantIdsSnapshot.data ?? [];
-                    final bool isParticipant =
-                        participantIds.contains(currentUserId);
+                    final normalizedParticipantIds =
+                        participantIds.map((id) => id.trim()).toSet();
 
-                    final bool isFull = currentActivity.isFull ||
+                    final isParticipant =
+                        normalizedParticipantIds.contains(currentUserId);
+
+                    final isFull = currentActivity.isFull ||
                         (maxParticipants > 0 &&
                             participantCount >= maxParticipants);
 
-                    final bool isCancelled = currentActivity.isCancelled;
-                    final bool isDone = currentActivity.isDone;
-                    final bool isInviteOnly = currentActivity.isInviteOnly;
-                    final bool hasEnded = currentActivity.hasEnded;
+                    final isCancelled = currentActivity.isCancelled;
+                    final isDone = currentActivity.isDone;
+                    final isInviteOnly = currentActivity.isInviteOnly;
+                    final hasEnded = currentActivity.hasEnded;
 
-                    final bool canInvite = isOwner &&
+                    final canInvite = isOwner &&
                         !isCancelled &&
                         !isDone &&
                         !hasEnded &&
                         !ownerPending;
 
-                    final bool canClaimOwnership =
+                    final canClaimOwnership =
                         ownerPending && isParticipant && !isOwner;
 
-                    final bool canAttemptJoin =
+                    final canAttemptJoin =
                         !ownerPending && !isParticipant && !isOwner;
 
-                    final String? chatInfoText = _chatInfoText(
+                    final chatInfoText = _chatInfoText(
                       isParticipant: isParticipant,
                       isOwner: isOwner,
                       isCancelled: isCancelled,
@@ -764,8 +741,9 @@ class ActivityDetailPage extends StatelessWidget {
                                 )
                               else if (currentOwnerId.isNotEmpty)
                                 FutureBuilder<Map<String, dynamic>?>(
-                                  future:
-                                      userService.getUserById(currentOwnerId),
+                                  future: userService.getUserById(
+                                    currentOwnerId,
+                                  ),
                                   builder: (context, ownerSnapshot) {
                                     if (ownerSnapshot.connectionState ==
                                         ConnectionState.waiting) {
@@ -783,20 +761,20 @@ class ActivityDetailPage extends StatelessWidget {
                                     final owner = ownerSnapshot.data;
 
                                     if (ownerName.isEmpty && owner != null) {
-                                      final String pseudo =
+                                      final pseudo =
                                           (owner['pseudo'] ?? '')
                                               .toString()
                                               .trim();
-                                      final String prenom =
+                                      final prenom =
                                           (owner['prenom'] ?? '')
                                               .toString()
                                               .trim();
 
                                       ownerName = pseudo.isNotEmpty
                                           ? pseudo
-                                          : (prenom.isNotEmpty
+                                          : prenom.isNotEmpty
                                               ? prenom
-                                              : 'Utilisateur inconnu');
+                                              : 'Utilisateur inconnu';
                                     }
 
                                     if (ownerName.isEmpty) {
@@ -1001,35 +979,48 @@ class ActivityDetailPage extends StatelessWidget {
                                 ),
                               ],
                               if (canClaimOwnership) ...[
-                                const SizedBox(height: 12),
-                                SizedBox(
-                                  width: double.infinity,
-                                  child: ElevatedButton(
-                                    onPressed: () async {
-                                      final accepted =
-                                          await activityRepository
-                                              .claimOwnership(
-                                        currentActivity.id,
-                                      );
+  const SizedBox(height: 12),
+  SizedBox(
+    width: double.infinity,
+    child: ElevatedButton(
+      onPressed: () async {
+        try {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Reprise du rôle d’organisateur en cours...'),
+              duration: Duration(seconds: 1),
+            ),
+          );
 
-                                      if (!context.mounted) return;
+          final accepted = await activityRepository.claimOwnership(
+            currentActivity.id,
+          );
 
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            accepted
-                                                ? 'Vous êtes devenu organisateur'
-                                                : 'Un autre participant a déjà repris le rôle',
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                    child:
-                                        const Text('Je deviens organisateur'),
-                                  ),
-                                ),
-                              ],
+          if (!context.mounted) return;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                accepted
+                    ? 'Vous êtes devenu organisateur'
+                    : 'Impossible de devenir organisateur. Un autre participant a peut-être déjà repris le rôle.',
+              ),
+            ),
+          );
+        } catch (e) {
+          if (!context.mounted) return;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erreur reprise organisateur : $e'),
+            ),
+          );
+        }
+      },
+      child: const Text('Je deviens organisateur'),
+    ),
+  ),
+],
                               if (canAttemptJoin) ...[
                                 const SizedBox(height: 12),
                                 FutureBuilder<bool>(
@@ -1149,28 +1140,32 @@ class ActivityDetailPage extends StatelessWidget {
                                         itemBuilder: (context, index) {
                                           final user = participants[index];
 
-                                          final String userId =
-                                              (user['id'] ?? '').toString();
-                                          final String pseudo =
+                                          final userId =
+                                              (user['id'] ?? '')
+                                                  .toString()
+                                                  .trim();
+                                          final pseudo =
                                               (user['pseudo'] ?? '')
-                                                  .toString();
-                                          final String prenom =
+                                                  .toString()
+                                                  .trim();
+                                          final prenom =
                                               (user['prenom'] ?? '')
-                                                  .toString();
-                                          final String lieu =
-                                              (user['lieu'] ?? '').toString();
+                                                  .toString()
+                                                  .trim();
+                                          final lieu =
+                                              (user['lieu'] ?? '')
+                                                  .toString()
+                                                  .trim();
 
-                                          String participantTitle =
-                                              pseudo.trim();
+                                          String participantTitle = pseudo;
 
                                           if (participantTitle.isEmpty) {
-                                            participantTitle =
-                                                prenom.trim().isNotEmpty
-                                                    ? prenom
-                                                    : 'Utilisateur';
+                                            participantTitle = prenom.isNotEmpty
+                                                ? prenom
+                                                : 'Utilisateur';
                                           }
 
-                                          final bool participantIsOwner =
+                                          final participantIsOwner =
                                               userId == currentOwnerId &&
                                                   !ownerPending;
 
@@ -1212,7 +1207,7 @@ class ActivityDetailPage extends StatelessWidget {
                                               ],
                                             ),
                                             subtitle: Text(
-                                              lieu.trim().isNotEmpty
+                                              lieu.isNotEmpty
                                                   ? lieu
                                                   : 'Lieu non renseigné',
                                             ),
@@ -1256,7 +1251,7 @@ class ActivityDetailPage extends StatelessWidget {
                                     ),
                                   ),
                                 ),
-                              if (isOwner) ...[
+                              if (isOwner && participantCount <= 1) ...[
                                 const SizedBox(height: 12),
                                 SizedBox(
                                   width: double.infinity,
@@ -1268,6 +1263,24 @@ class ActivityDetailPage extends StatelessWidget {
                                       participantCount,
                                     ),
                                     child: const Text('Supprimer l’activité'),
+                                  ),
+                                ),
+                              ],
+                              if (isOwner && participantCount > 1) ...[
+                                const SizedBox(height: 12),
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Suppression impossible : des participants ont rejoint l’activité. '
+                                    'Vous pouvez quitter l’activité. Un autre participant pourra ensuite devenir organisateur.',
                                   ),
                                 ),
                               ],

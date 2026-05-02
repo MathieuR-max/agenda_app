@@ -1,21 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class UserFirestoreService {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
 
   UserFirestoreService({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
-  })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _db = db ?? FirebaseFirestore.instance;
 
-  String get currentUserId {
-    final uid = _auth.currentUser?.uid.trim();
+  String? get currentUserIdOrNull {
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       throw Exception('No authenticated Firebase user');
     }
 
@@ -25,10 +32,8 @@ class UserFirestoreService {
   Future<String> getCurrentUserPseudo() async {
     final uid = currentUserId;
 
-    final userDoc = await _db
-        .collection(FirestoreCollections.users)
-        .doc(uid)
-        .get();
+    final userDoc =
+        await _db.collection(FirestoreCollections.users).doc(uid).get();
 
     if (userDoc.exists && userDoc.data() != null) {
       return (userDoc.data()!['pseudo'] ?? '').toString().trim();

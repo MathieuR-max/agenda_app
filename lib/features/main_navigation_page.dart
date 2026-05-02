@@ -1,7 +1,10 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../models/activity.dart';
 import '../models/activity_invitation.dart';
 import '../repositories/message_badge_repository.dart';
+import '../services/current_user.dart';
+import '../services/firestore/activity_firestore_service.dart';
 import '../services/firestore/activity_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
 import '03_activities/all_activities_page.dart';
@@ -20,12 +23,14 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   late final ActivityInvitationFirestoreService _invitationService;
   late final MessageBadgeRepository _messageBadgeRepository;
+  late final ActivityFirestoreService _activityService;
 
   @override
   void initState() {
     super.initState();
     _invitationService = ActivityInvitationFirestoreService();
     _messageBadgeRepository = MessageBadgeRepository();
+    _activityService = ActivityFirestoreService();
   }
 
   void _onTabTapped(int index) {
@@ -47,13 +52,13 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
 
   String _currentUserKey() {
-    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull;
 
-    if (uid == null || uid.isEmpty) {
-      return 'anonymous';
+    if (uid == null || uid.trim().isEmpty) {
+      return 'signed_out';
     }
 
-    return uid;
+    return uid.trim();
   }
 
   List<Widget> _buildPages() {
@@ -69,9 +74,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final firebaseUid = FirebaseAuth.instance.currentUser?.uid;
-    debugPrint('🔍 Firebase UID: $firebaseUid');
-
     final pages = _buildPages();
 
     return PopScope(
@@ -92,15 +94,17 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
               label: 'Agenda',
             ),
             NavigationDestination(
-              icon: _MessagesNavIcon(
+              icon: _ExplorerNavIcon(
                 selected: false,
                 isCurrentTab: _currentIndex == 1,
                 messageBadgeRepository: _messageBadgeRepository,
+                activityService: _activityService,
               ),
-              selectedIcon: _MessagesNavIcon(
+              selectedIcon: _ExplorerNavIcon(
                 selected: true,
                 isCurrentTab: _currentIndex == 1,
                 messageBadgeRepository: _messageBadgeRepository,
+                activityService: _activityService,
               ),
               label: 'Explorer',
             ),
@@ -137,28 +141,43 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
 }
 
-class _MessagesNavIcon extends StatelessWidget {
+class _ExplorerNavIcon extends StatelessWidget {
   final bool selected;
   final bool isCurrentTab;
   final MessageBadgeRepository messageBadgeRepository;
+  final ActivityFirestoreService activityService;
 
-  const _MessagesNavIcon({
+  const _ExplorerNavIcon({
     required this.selected,
     required this.isCurrentTab,
     required this.messageBadgeRepository,
+    required this.activityService,
   });
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<int>(
       stream: messageBadgeRepository.watchActivityUnreadCount(),
-      builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
+      builder: (context, unreadSnapshot) {
+        final unreadCount = unreadSnapshot.data ?? 0;
 
-        return _NavBadgeIcon(
-          icon: Icon(selected ? Icons.explore : Icons.explore_outlined),
-          count: unreadCount,
-          hideBadge: isCurrentTab,
+        return StreamBuilder<List<Activity>>(
+          stream: activityService.getJoinedActivities(),
+          builder: (context, activitiesSnapshot) {
+            final activities = activitiesSnapshot.data ?? [];
+
+            final ownerPendingCount = activities
+                .where((activity) => activity.ownerPending)
+                .length;
+
+            final totalBadgeCount = unreadCount + ownerPendingCount;
+
+            return _NavBadgeIcon(
+              icon: Icon(selected ? Icons.explore : Icons.explore_outlined),
+              count: totalBadgeCount,
+              hideBadge: isCurrentTab,
+            );
+          },
         );
       },
     );

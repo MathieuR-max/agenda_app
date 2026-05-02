@@ -1,22 +1,29 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/friendship.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class FriendshipFirestoreService {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
 
   FriendshipFirestoreService({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
-  })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _db = db ?? FirebaseFirestore.instance;
 
-  String get currentUserId {
-    final uid = _auth.currentUser?.uid.trim();
+  String? get currentUserIdOrNull {
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       throw Exception('No authenticated Firebase user');
     }
 
@@ -24,7 +31,11 @@ class FriendshipFirestoreService {
   }
 
   Stream<List<Friendship>> getReceivedFriendRequests() {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<Friendship>[]);
+    }
 
     return _db
         .collection(FirestoreCollections.friendships)
@@ -41,12 +52,16 @@ class FriendshipFirestoreService {
   }
 
   Stream<List<Friendship>> getPendingReceivedFriendRequests() {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<Friendship>[]);
+    }
 
     return _db
         .collection(FirestoreCollections.friendships)
         .where('addresseeId', isEqualTo: uid)
-        .where('status', isEqualTo: 'pending')
+        .where('status', isEqualTo: Friendship.statusPending)
         .snapshots()
         .map((snapshot) {
       final friendships = snapshot.docs
@@ -59,7 +74,11 @@ class FriendshipFirestoreService {
   }
 
   Stream<List<Friendship>> getSentFriendRequests() {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<Friendship>[]);
+    }
 
     return _db
         .collection(FirestoreCollections.friendships)
@@ -76,10 +95,10 @@ class FriendshipFirestoreService {
   }
 
   Stream<Friendship?> watchFriendshipWithUser(String otherUserId) {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
     final other = otherUserId.trim();
 
-    if (other.isEmpty) {
+    if (uid == null || other.isEmpty) {
       return Stream.value(null);
     }
 
@@ -113,17 +132,21 @@ class FriendshipFirestoreService {
   }
 
   Stream<List<Friendship>> getAcceptedFriendships() {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<Friendship>[]);
+    }
 
     final sentAcceptedQuery = _db
         .collection(FirestoreCollections.friendships)
         .where('requesterId', isEqualTo: uid)
-        .where('status', isEqualTo: 'accepted');
+        .where('status', isEqualTo: Friendship.statusAccepted);
 
     final receivedAcceptedQuery = _db
         .collection(FirestoreCollections.friendships)
         .where('addresseeId', isEqualTo: uid)
-        .where('status', isEqualTo: 'accepted');
+        .where('status', isEqualTo: Friendship.statusAccepted);
 
     return sentAcceptedQuery.snapshots().asyncMap((sentSnapshot) async {
       final receivedSnapshot = await receivedAcceptedQuery.get();

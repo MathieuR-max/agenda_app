@@ -1,5 +1,5 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/models/group_message.dart';
 import 'package:agenda_app/repositories/group_chat_repository.dart';
 
@@ -27,7 +27,7 @@ class _GroupChatPageState extends State<GroupChatPage> {
   bool _isMarkingRead = false;
 
   String? get currentUserId {
-    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;

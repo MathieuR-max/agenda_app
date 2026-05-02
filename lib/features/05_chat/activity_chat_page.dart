@@ -1,4 +1,4 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/activity_message.dart';
@@ -30,14 +30,14 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
   int lastMessageCount = 0;
 
   String? get currentUserId {
-    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+  final uid = AuthUser.uidOrNull?.trim();
 
-    if (uid == null || uid.isEmpty) {
-      return null;
-    }
-
-    return uid;
+  if (uid == null || uid.isEmpty) {
+    return null;
   }
+
+  return uid;
+}
 
   @override
   void initState() {

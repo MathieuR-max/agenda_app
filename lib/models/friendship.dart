@@ -29,10 +29,10 @@ class Friendship {
   factory Friendship.fromMap(String id, Map<String, dynamic> map) {
     return Friendship(
       id: id,
-      requesterId: (map['requesterId'] ?? '').toString(),
-      requesterPseudo: (map['requesterPseudo'] ?? '').toString(),
-      addresseeId: (map['addresseeId'] ?? '').toString(),
-      addresseePseudo: (map['addresseePseudo'] ?? '').toString(),
+      requesterId: (map['requesterId'] ?? '').toString().trim(),
+      requesterPseudo: (map['requesterPseudo'] ?? '').toString().trim(),
+      addresseeId: (map['addresseeId'] ?? '').toString().trim(),
+      addresseePseudo: (map['addresseePseudo'] ?? '').toString().trim(),
       status: (map['status'] ?? statusPending).toString(),
       createdAt: _toDateTime(map['createdAt']),
       respondedAt: _toDateTime(map['respondedAt']),
@@ -51,11 +51,12 @@ class Friendship {
       'addresseePseudo': addresseePseudo,
       'status': status,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
-      'respondedAt': respondedAt != null
-          ? Timestamp.fromDate(respondedAt!)
-          : null,
+      'respondedAt':
+          respondedAt != null ? Timestamp.fromDate(respondedAt!) : null,
     };
   }
+
+  /// ===== GETTERS =====
 
   bool get isPending => status == statusPending;
   bool get isAccepted => status == statusAccepted;
@@ -63,18 +64,44 @@ class Friendship {
   bool get isCancelled => status == statusCancelled;
 
   bool involvesUser(String userId) {
-    return requesterId == userId || addresseeId == userId;
+    final uid = userId.trim();
+    return requesterId == uid || addresseeId == uid;
   }
 
   String otherUserId(String currentUserId) {
-    return requesterId == currentUserId ? addresseeId : requesterId;
+    final uid = currentUserId.trim();
+    return requesterId == uid ? addresseeId : requesterId;
   }
 
   String otherUserPseudo(String currentUserId) {
-    return requesterId == currentUserId ? addresseePseudo : requesterPseudo;
+    final uid = currentUserId.trim();
+    final pseudo =
+        requesterId == uid ? addresseePseudo : requesterPseudo;
+
+    return pseudo.isNotEmpty ? pseudo : 'Utilisateur';
   }
 
   DateTime? get friendshipDate => respondedAt ?? createdAt;
+
+  /// ===== COPY WITH (super utile pour UI / state) =====
+
+  Friendship copyWith({
+    String? status,
+    DateTime? respondedAt,
+  }) {
+    return Friendship(
+      id: id,
+      requesterId: requesterId,
+      requesterPseudo: requesterPseudo,
+      addresseeId: addresseeId,
+      addresseePseudo: addresseePseudo,
+      status: status ?? this.status,
+      createdAt: createdAt,
+      respondedAt: respondedAt ?? this.respondedAt,
+    );
+  }
+
+  /// ===== UTILS =====
 
   static DateTime? _toDateTime(dynamic value) {
     if (value == null) return null;

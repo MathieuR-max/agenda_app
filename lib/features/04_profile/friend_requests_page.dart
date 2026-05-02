@@ -37,10 +37,7 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
     });
   }
 
-  Color _statusBackgroundColor(
-    Friendship friendship, {
-    required bool received,
-  }) {
+  Color _statusBackgroundColor(Friendship friendship, {required bool received}) {
     if (!received && friendship.status == Friendship.statusPending) {
       return Colors.blue.shade100;
     }
@@ -58,10 +55,7 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
     }
   }
 
-  Color _statusTextColor(
-    Friendship friendship, {
-    required bool received,
-  }) {
+  Color _statusTextColor(Friendship friendship, {required bool received}) {
     if (!received && friendship.status == Friendship.statusPending) {
       return Colors.blue.shade800;
     }
@@ -79,10 +73,7 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
     }
   }
 
-  String _statusLabel(
-    Friendship friendship, {
-    required bool received,
-  }) {
+  String _statusLabel(Friendship friendship, {required bool received}) {
     if (!received && friendship.status == Friendship.statusPending) {
       return 'Envoyée';
     }
@@ -288,10 +279,7 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
                     child: ElevatedButton(
                       onPressed: isBusy
                           ? null
-                          : () => _acceptRequest(
-                                context,
-                                friendship,
-                              ),
+                          : () => _acceptRequest(context, friendship),
                       child: const Text('Accepter'),
                     ),
                   ),
@@ -300,10 +288,7 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
                     child: OutlinedButton(
                       onPressed: isBusy
                           ? null
-                          : () => _refuseRequest(
-                                context,
-                                friendship,
-                              ),
+                          : () => _refuseRequest(context, friendship),
                       child: const Text('Refuser'),
                     ),
                   ),
@@ -343,12 +328,6 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
     final requests = snapshot.data ?? [];
 
-    debugPrint(
-      'FRIEND REQUESTS ${received ? "received" : "sent"} '
-      'currentUserId=${_friendshipService.currentUserId} '
-      'count=${requests.length}',
-    );
-
     final pendingCount = requests.where((r) => r.isPending).length;
     final acceptedCount = requests.where((r) => r.isAccepted).length;
     final refusedCount = requests.where((r) => r.isRefused).length;
@@ -356,9 +335,7 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
     if (requests.isEmpty) {
       return RefreshIndicator(
-        onRefresh: () async {
-          setState(() {});
-        },
+        onRefresh: () async => setState(() {}),
         child: ListView(
           children: [
             const SizedBox(height: 24),
@@ -369,27 +346,13 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
                 textAlign: TextAlign.center,
               ),
             ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Text(
-                'Utilisateur courant : ${_friendshipService.currentUserId}',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
           ],
         ),
       );
     }
 
     return RefreshIndicator(
-      onRefresh: () async {
-        setState(() {});
-      },
+      onRefresh: () async => setState(() {}),
       child: Column(
         children: [
           Container(
@@ -434,19 +397,6 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Utilisateur courant : ${_friendshipService.currentUserId}',
-                style: TextStyle(
-                  color: Colors.grey.shade700,
-                  fontSize: 12,
-                ),
-              ),
-            ),
-          ),
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.all(12),
@@ -468,10 +418,6 @@ class _FriendRequestsPageState extends State<FriendRequestsPage> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint(
-      'FRIEND REQUESTS PAGE currentUserId=${_friendshipService.currentUserId}',
-    );
-
     return Scaffold(
       appBar: AppBar(
         title: const Text('Demandes d’amis'),

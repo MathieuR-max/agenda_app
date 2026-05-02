@@ -1,11 +1,13 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/user_model.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/repositories/profile_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
+
 import 'activity_detail_page.dart';
 
 class AllActivitiesPage extends StatefulWidget {
@@ -186,14 +188,16 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     final Map<String, Activity> mergedById = {};
 
     for (final activity in createdActivities) {
-      if (activity.id.trim().isNotEmpty) {
-        mergedById[activity.id] = activity;
+      final activityId = activity.id.trim();
+      if (activityId.isNotEmpty) {
+        mergedById[activityId] = activity;
       }
     }
 
     for (final activity in joinedActivities) {
-      if (activity.id.trim().isNotEmpty) {
-        mergedById[activity.id] = activity;
+      final activityId = activity.id.trim();
+      if (activityId.isNotEmpty) {
+        mergedById[activityId] = activity;
       }
     }
 
@@ -206,8 +210,13 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     required List<String> joinedIds,
     required String currentUserId,
   }) {
+    final normalizedCurrentUserId = currentUserId.trim();
+    final normalizedJoinedIds = joinedIds.map((id) => id.trim()).toSet();
+
     final filtered = activities.where((activity) {
-      final bool validActivityId = activity.id.trim().isNotEmpty;
+      final activityId = activity.id.trim();
+
+      final bool validActivityId = activityId.isNotEmpty;
       final bool validTitle = activity.title.trim().isNotEmpty;
 
       final bool dayOk = _matchesSelectedDay(activity);
@@ -225,8 +234,8 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
       final bool favoriteOk =
           !onlyMyFavorites || favoriteCategories.contains(activity.category);
 
-      final bool isOwner = activity.ownerId == currentUserId;
-      final bool isParticipant = joinedIds.contains(activity.id);
+      final bool isOwner = activity.ownerId.trim() == normalizedCurrentUserId;
+      final bool isParticipant = normalizedJoinedIds.contains(activityId);
       final bool participationOk = isOwner || isParticipant;
 
       return validActivityId &&
@@ -480,7 +489,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
 
   @override
   Widget build(BuildContext context) {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid.trim();
+    final currentUserId = AuthUser.uidOrNull?.trim();
 
     if (currentUserId == null || currentUserId.isEmpty) {
       return const Scaffold(
@@ -725,24 +734,25 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                               itemBuilder: (context, index) {
                                 final activity = activities[index];
 
-                                final int participantCount =
+                                final participantCount =
                                     activity.participantCount;
-                                final int maxParticipants =
+                                final maxParticipants =
                                     activity.maxParticipants;
 
-                                final bool full = isFull(activity);
-                                final int? remainingPlaces =
+                                final full = isFull(activity);
+                                final remainingPlaces =
                                     activity.remainingPlaces;
 
-                                final String organizerName =
+                                final organizerName =
                                     activity.ownerPseudo.isNotEmpty
                                         ? activity.ownerPseudo
                                         : activity.ownerId;
 
-                                final bool isOwner =
-                                    activity.ownerId == currentUserId;
-                                final bool isParticipant =
-                                    joinedIds.contains(activity.id);
+                                final isOwner =
+                                    activity.ownerId.trim() == currentUserId;
+                                final isParticipant = joinedIds
+                                    .map((id) => id.trim())
+                                    .contains(activity.id.trim());
 
                                 final buttonLabel = _joinButtonLabel(
                                   activity: activity,
@@ -909,12 +919,12 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                                   ),
                                                 ],
                                               ),
-                                              if ((activity.lastMessageText ??
-                                                      '')
+                                              if ((activity.lastMessageText ?? '')
+                                                  .trim()
                                                   .isNotEmpty) ...[
                                                 const SizedBox(height: 10),
                                                 Text(
-                                                  'Dernier message : ${activity.lastMessageText!}',
+                                                  'Dernier message : ${activity.lastMessageText!.trim()}',
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,
@@ -930,14 +940,13 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                                     .canJoinActivity(activity),
                                                 builder:
                                                     (context, joinSnapshot) {
-                                                  final bool repositoryCanJoin =
+                                                  final repositoryCanJoin =
                                                       joinSnapshot.data ??
                                                           false;
 
-                                                  final bool canJoin =
-                                                      !isOwner &&
-                                                          !isParticipant &&
-                                                          repositoryCanJoin;
+                                                  final canJoin = !isOwner &&
+                                                      !isParticipant &&
+                                                      repositoryCanJoin;
 
                                                   return SizedBox(
                                                     width: double.infinity,

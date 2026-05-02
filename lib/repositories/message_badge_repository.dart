@@ -1,30 +1,27 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/repositories/group_chat_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class MessageBadgeRepository {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
   final ChatRepository _chatRepository;
   final GroupChatRepository _groupChatRepository;
 
   MessageBadgeRepository({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
     ChatRepository? chatRepository,
     GroupChatRepository? groupChatRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _chatRepository = chatRepository ?? ChatRepository(db: db, auth: auth),
+        _chatRepository = chatRepository ?? ChatRepository(db: db),
         _groupChatRepository =
-            groupChatRepository ?? GroupChatRepository(db: db, auth: auth);
+            groupChatRepository ?? GroupChatRepository(db: db);
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;

@@ -1,12 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:agenda_app/models/group_model.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class GroupsRepository {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
 
   static const String _groupsCollection = 'groups';
@@ -14,20 +13,24 @@ class GroupsRepository {
 
   GroupsRepository({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
     UserFirestoreService? userService,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _userService = userService ??
-            UserFirestoreService(
-              db: db,
-              auth: auth,
-            );
+        _userService = userService ?? UserFirestoreService(db: db);
 
-  String get currentUserId {
-    final uid = _auth.currentUser?.uid.trim();
+  String? get currentUserIdOrNull {
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
+      return null;
+    }
+
+    return uid;
+  }
+
+  String get currentUserId {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
       throw Exception('No authenticated Firebase user');
     }
 
@@ -97,7 +100,11 @@ class GroupsRepository {
   }
 
   Stream<List<GroupModel>> watchMyGroups() {
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<GroupModel>[]);
+    }
 
     _log('watchMyGroups currentUserId=$uid');
 
@@ -194,9 +201,9 @@ class GroupsRepository {
 
   Future<bool> isCurrentUserMember(String groupId) async {
     final trimmedGroupId = groupId.trim();
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
 
-    if (trimmedGroupId.isEmpty) {
+    if (uid == null || trimmedGroupId.isEmpty) {
       return false;
     }
 
@@ -379,9 +386,9 @@ class GroupsRepository {
     required String groupId,
   }) async {
     final trimmedGroupId = groupId.trim();
-    final uid = currentUserId;
+    final uid = currentUserIdOrNull;
 
-    if (trimmedGroupId.isEmpty) {
+    if (trimmedGroupId.isEmpty || uid == null) {
       return false;
     }
 

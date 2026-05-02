@@ -29,11 +29,12 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
   String? _loadingUserLabel;
   String? _errorMessage;
 
-  Future<void> _selectUser(BuildContext context, String userLabel) async {
+  Future<void> _selectUser(String userLabel) async {
     final trimmedUserLabel = userLabel.trim();
     if (trimmedUserLabel.isEmpty) return;
 
     final credentials = testUsers[trimmedUserLabel];
+
     if (credentials == null) {
       setState(() {
         _errorMessage = 'Utilisateur de test introuvable.';
@@ -47,9 +48,7 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
     });
 
     try {
-      final currentUser = _auth.currentUser;
-
-      if (currentUser != null) {
+      if (_auth.currentUser != null) {
         await _auth.signOut();
       }
 
@@ -60,7 +59,6 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
 
       if (!mounted) return;
 
-      // Rien à faire ici :
       // app.dart écoute authStateChanges() et navigue automatiquement.
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
@@ -125,12 +123,12 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
             child: ListView.builder(
               itemCount: testUsers.length,
               itemBuilder: (context, index) {
-                final String userLabel = testUsers.keys.elementAt(index).trim();
+                final userLabel = testUsers.keys.elementAt(index).trim();
                 final credentials = testUsers[userLabel];
                 final userEmail = credentials?.email.trim().toLowerCase() ?? '';
 
-                final bool isLoading = _loadingUserLabel == userLabel;
-                final bool isSelected =
+                final isLoading = _loadingUserLabel == userLabel;
+                final isSelected =
                     currentUserEmail != null && currentUserEmail == userEmail;
 
                 return ListTile(
@@ -150,7 +148,7 @@ class _TestUserSelectorPageState extends State<TestUserSelectorPage> {
                       ? const Text('Utilisateur actuellement connecté')
                       : null,
                   enabled: _loadingUserLabel == null,
-                  onTap: () => _selectUser(context, userLabel),
+                  onTap: () => _selectUser(userLabel),
                 );
               },
             ),

@@ -2,31 +2,21 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class ChatFirestoreService {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
 
   ChatFirestoreService({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
-  })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _db = db ?? FirebaseFirestore.instance;
 
-  String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
-
-    if (uid == null || uid.isEmpty) {
-      return null;
-    }
-
-    return uid;
-  }
+  String? get currentUserIdOrNull => AuthUser.uidOrNull?.trim();
 
   String get currentUserId {
     final uid = currentUserIdOrNull;
 
-    if (uid == null) {
+    if (uid == null || uid.isEmpty) {
       throw FirebaseAuthException(
         code: 'not-authenticated',
         message: 'Aucun utilisateur Firebase authentifié.',
@@ -74,35 +64,18 @@ class ChatFirestoreService {
 
   Future<void> sendMessage({
     required String activityId,
-    required String senderId,
     required String senderPseudo,
     required String text,
   }) async {
     final authUid = currentUserId;
     final trimmedActivityId = activityId.trim();
-    final trimmedSenderId = senderId.trim();
     final trimmedText = text.trim();
     final trimmedPseudo = senderPseudo.trim();
 
-    if (trimmedActivityId.isEmpty) {
+    if (trimmedActivityId.isEmpty ||
+        trimmedPseudo.isEmpty ||
+        trimmedText.isEmpty) {
       return;
-    }
-
-    if (trimmedPseudo.isEmpty) {
-      return;
-    }
-
-    if (trimmedText.isEmpty) {
-      return;
-    }
-
-    if (trimmedSenderId.isNotEmpty && trimmedSenderId != authUid) {
-      throw FirebaseException(
-        plugin: 'cloud_firestore',
-        code: 'invalid-sender-id',
-        message:
-            'senderId ne correspond pas à l’utilisateur Firebase authentifié.',
-      );
     }
 
     await _addTextMessage(

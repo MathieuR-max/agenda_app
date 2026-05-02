@@ -1,22 +1,19 @@
 import 'dart:io' show Platform;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class NotificationTokenService {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
 
   NotificationTokenService({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
-  })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _db = db ?? FirebaseFirestore.instance;
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;
@@ -33,7 +30,6 @@ class NotificationTokenService {
     }
 
     final messaging = FirebaseMessaging.instance;
-
     final token = await messaging.getToken();
 
     if (token != null && token.trim().isNotEmpty) {
@@ -91,11 +87,7 @@ class NotificationTokenService {
     for (final doc in snapshot.docs) {
       final ownerUserId = doc.reference.parent.parent?.id.trim() ?? '';
 
-      if (ownerUserId.isEmpty) {
-        continue;
-      }
-
-      if (ownerUserId == currentUserId) {
+      if (ownerUserId.isEmpty || ownerUserId == currentUserId) {
         continue;
       }
 

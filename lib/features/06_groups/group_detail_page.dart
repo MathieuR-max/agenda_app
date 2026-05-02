@@ -1,4 +1,4 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/group_model.dart';
@@ -19,8 +19,8 @@ class GroupDetailPage extends StatelessWidget {
   });
 
   String get _currentUserId {
-    return FirebaseAuth.instance.currentUser?.uid.trim() ?? '';
-  }
+  return AuthUser.uidOrNull?.trim() ?? '';
+}
 
   String _groupVisibilityLabel(String visibility) {
     switch (visibility) {

@@ -1,19 +1,16 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
+import 'package:agenda_app/services/current_user.dart';
 
 class SearchFirestoreService {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
 
   SearchFirestoreService({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
-  })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance;
+  }) : _db = db ?? FirebaseFirestore.instance;
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;

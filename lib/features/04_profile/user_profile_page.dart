@@ -4,6 +4,7 @@ import '../../models/friendship.dart';
 import '../../repositories/friendship_repository.dart';
 import '../../repositories/message_badge_repository.dart';
 import '../../repositories/profile_repository.dart';
+import '../../services/current_user.dart';
 import '../06_groups/groups_page.dart';
 import 'friend_requests_page.dart';
 import 'friends_list_page.dart';
@@ -32,7 +33,7 @@ class UserProfilePage extends StatelessWidget {
     UserModel user,
     ProfileRepository repository,
   ) async {
-    final List<String> selected = List<String>.from(user.favoriteCategories);
+    final selected = List<String>.from(user.favoriteCategories);
 
     final result = await showDialog<List<String>>(
       context: context,
@@ -69,15 +70,11 @@ class UserProfilePage extends StatelessWidget {
               ),
               actions: [
                 TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                  },
+                  onPressed: () => Navigator.pop(dialogContext),
                   child: const Text('Annuler'),
                 ),
                 ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext, selected);
-                  },
+                  onPressed: () => Navigator.pop(dialogContext, selected),
                   child: const Text('Enregistrer'),
                 ),
               ],
@@ -114,9 +111,7 @@ class UserProfilePage extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          sent
-              ? 'Demande d’ami envoyée'
-              : 'Impossible d’envoyer la demande',
+          sent ? 'Demande d’ami envoyée' : 'Impossible d’envoyer la demande',
         ),
       ),
     );
@@ -127,7 +122,9 @@ class UserProfilePage extends StatelessWidget {
     FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
-    if (friendship.id.trim().isEmpty) {
+    final friendshipId = friendship.id.trim();
+
+    if (friendshipId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Impossible d’accepter la demande'),
@@ -137,7 +134,7 @@ class UserProfilePage extends StatelessWidget {
     }
 
     final accepted = await friendshipRepository.acceptFriendRequest(
-      friendship.id,
+      friendshipId,
     );
 
     if (!context.mounted) return;
@@ -158,7 +155,9 @@ class UserProfilePage extends StatelessWidget {
     FriendshipRepository friendshipRepository,
     Friendship friendship,
   ) async {
-    if (friendship.id.trim().isEmpty) {
+    final friendshipId = friendship.id.trim();
+
+    if (friendshipId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Impossible de refuser la demande'),
@@ -168,7 +167,7 @@ class UserProfilePage extends StatelessWidget {
     }
 
     final refused = await friendshipRepository.refuseFriendRequest(
-      friendship.id,
+      friendshipId,
     );
 
     if (!context.mounted) return;
@@ -190,7 +189,9 @@ class UserProfilePage extends StatelessWidget {
     Friendship friendship,
     String displayName,
   ) async {
-    if (friendship.id.trim().isEmpty) {
+    final friendshipId = friendship.id.trim();
+
+    if (friendshipId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Impossible de supprimer cet ami'),
@@ -224,7 +225,7 @@ class UserProfilePage extends StatelessWidget {
 
     if (!confirmed) return;
 
-    final removed = await friendshipRepository.removeFriend(friendship.id);
+    final removed = await friendshipRepository.removeFriend(friendshipId);
 
     if (!context.mounted) return;
 
@@ -316,6 +317,7 @@ class UserProfilePage extends StatelessWidget {
     FriendshipRepository friendshipRepository,
     MessageBadgeRepository messageBadgeRepository,
     String profileUserId,
+    String currentUserId,
     bool isCurrentUser,
   ) {
     if (isCurrentUser) {
@@ -405,18 +407,16 @@ class UserProfilePage extends StatelessWidget {
               );
             }
 
-            final currentUserId = friendshipRepository.currentUserId.trim();
-
-            final bool requestReceived =
+            final requestReceived =
                 friendship.addresseeId.trim() == currentUserId;
 
             final displayName = requestReceived
                 ? (friendship.requesterPseudo.trim().isNotEmpty
                     ? friendship.requesterPseudo.trim()
-                    : friendship.requesterId)
+                    : friendship.requesterId.trim())
                 : (friendship.addresseePseudo.trim().isNotEmpty
                     ? friendship.addresseePseudo.trim()
-                    : friendship.addresseeId);
+                    : friendship.addresseeId.trim());
 
             if (friendship.isAccepted) {
               return Column(
@@ -443,7 +443,7 @@ class UserProfilePage extends StatelessWidget {
                       context,
                       friendshipRepository,
                       friendship,
-                      displayName,
+                      displayName.isNotEmpty ? displayName : 'cet utilisateur',
                     ),
                     icon: const Icon(Icons.person_remove),
                     label: const Text('Supprimer cet ami'),
@@ -463,8 +463,8 @@ class UserProfilePage extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
-                      friendship.requesterPseudo.isNotEmpty
-                          ? '${friendship.requesterPseudo} vous a envoyé une demande d’ami'
+                      friendship.requesterPseudo.trim().isNotEmpty
+                          ? '${friendship.requesterPseudo.trim()} vous a envoyé une demande d’ami'
                           : 'Vous avez reçu une demande d’ami',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
@@ -541,9 +541,32 @@ class UserProfilePage extends StatelessWidget {
     final friendshipRepository = FriendshipRepository();
     final messageBadgeRepository = MessageBadgeRepository();
 
-    final currentUserId = friendshipRepository.currentUserId.trim();
+    final currentUserId = AuthUser.uidOrNull?.trim();
     final profileUserId = userId.trim();
-    final bool isCurrentUser = profileUserId == currentUserId;
+
+    if (currentUserId == null || currentUserId.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Profil'),
+        ),
+        body: const Center(
+          child: Text('Utilisateur non connecté'),
+        ),
+      );
+    }
+
+    if (profileUserId.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Profil'),
+        ),
+        body: const Center(
+          child: Text('Profil introuvable'),
+        ),
+      );
+    }
+
+    final isCurrentUser = profileUserId == currentUserId;
 
     return Scaffold(
       appBar: AppBar(
@@ -574,12 +597,18 @@ class UserProfilePage extends StatelessWidget {
             );
           }
 
-          final fullName = '${user.prenom} ${user.nom}'.trim();
-          final avatarLetter = user.prenom.isNotEmpty
-              ? user.prenom[0].toUpperCase()
-              : user.nom.isNotEmpty
-                  ? user.nom[0].toUpperCase()
-                  : '?';
+          final firstName = user.prenom.trim();
+          final lastName = user.nom.trim();
+          final pseudo = user.pseudo.trim();
+
+          final fullName = '$firstName $lastName'.trim();
+          final avatarLetter = firstName.isNotEmpty
+              ? firstName[0].toUpperCase()
+              : lastName.isNotEmpty
+                  ? lastName[0].toUpperCase()
+                  : pseudo.isNotEmpty
+                      ? pseudo[0].toUpperCase()
+                      : '?';
 
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -604,9 +633,7 @@ class UserProfilePage extends StatelessWidget {
               const SizedBox(height: 8),
               Center(
                 child: Text(
-                  user.pseudo.isNotEmpty
-                      ? '@${user.pseudo}'
-                      : 'Pseudo non renseigné',
+                  pseudo.isNotEmpty ? '@$pseudo' : 'Pseudo non renseigné',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
@@ -616,28 +643,29 @@ class UserProfilePage extends StatelessWidget {
                 friendshipRepository,
                 messageBadgeRepository,
                 profileUserId,
+                currentUserId,
                 isCurrentUser,
               ),
               const SizedBox(height: 12),
               _buildInfoCard(
                 icon: Icons.location_city,
-                text: (user.lieu != null && user.lieu!.isNotEmpty)
-                    ? user.lieu!
+                text: (user.lieu != null && user.lieu!.trim().isNotEmpty)
+                    ? user.lieu!.trim()
                     : 'Lieu non renseigné',
               ),
               const SizedBox(height: 12),
               _buildInfoCard(
                 icon: Icons.person,
-                text: (user.genre != null && user.genre!.isNotEmpty)
-                    ? user.genre!
+                text: (user.genre != null && user.genre!.trim().isNotEmpty)
+                    ? user.genre!.trim()
                     : 'Genre non renseigné',
               ),
               const SizedBox(height: 12),
               _buildInfoCard(
                 icon: Icons.cake,
                 text: (user.dateNaissance != null &&
-                        user.dateNaissance!.isNotEmpty)
-                    ? user.dateNaissance!
+                        user.dateNaissance!.trim().isNotEmpty)
+                    ? user.dateNaissance!.trim()
                     : 'Date de naissance non renseignée',
               ),
               const SizedBox(height: 12),

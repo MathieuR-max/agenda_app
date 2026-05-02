@@ -1,47 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/parsers.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/activity_invitation.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
-import 'package:agenda_app/services/firestore/chat_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class ActivityInvitationRepository {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
-  final ChatFirestoreService _chatService;
   final ActivityFirestoreService _activityService;
 
   ActivityInvitationRepository({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
     UserFirestoreService? userService,
-    ChatFirestoreService? chatService,
     ActivityFirestoreService? activityService,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _userService = userService ??
-            UserFirestoreService(
-              db: db,
-              auth: auth,
-            ),
-        _chatService = chatService ??
-            ChatFirestoreService(
-              db: db,
-              auth: auth,
-            ),
-        _activityService = activityService ??
-            ActivityFirestoreService(
-              db: db,
-              auth: auth,
-            );
+        _userService = userService ?? UserFirestoreService(db: db),
+        _activityService = activityService ?? ActivityFirestoreService(db: db);
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;

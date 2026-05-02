@@ -1,4 +1,4 @@
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/models/activity.dart';
@@ -47,13 +47,14 @@ class _InviteToActivityPageState extends State<InviteToActivityPage>
   final Set<String> locallyInvitedUserIds = <String>{};
 
   String? get currentUserId {
-    final uid = FirebaseAuth.instance.currentUser?.uid.trim();
+  final uid = AuthUser.uidOrNull?.trim();
 
-    if (uid == null || uid.isEmpty) {
-      return null;
-    }
+  if (uid == null || uid.isEmpty) {
+    return null;
+  }
 
-    return uid;
+  return uid;
+  
   }
 
   final List<Map<String, String>> groupActivityAccessOptions = const [

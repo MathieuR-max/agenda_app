@@ -1,4 +1,3 @@
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
@@ -8,6 +7,7 @@ import 'package:agenda_app/repositories/activity_invitation_repository.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
@@ -122,6 +122,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
   List<String> generateTimeSlots() {
     final List<String> slots = [];
+
     for (int hour = 0; hour < 24; hour++) {
       for (int minute = 0; minute < 60; minute += 30) {
         final hourStr = hour.toString().padLeft(2, '0');
@@ -129,6 +130,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
         slots.add('$hourStr:$minuteStr');
       }
     }
+
     return slots;
   }
 
@@ -138,6 +140,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
     final hour = int.tryParse(parts[0]) ?? 0;
     final minute = int.tryParse(parts[1]) ?? 0;
+
     return hour * 60 + minute;
   }
 
@@ -184,8 +187,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
     final today = _normalizeDate(DateTime.now());
     final targetWeekday = _weekdayFromFrenchDay(widget.day);
-    final currentWeekday = today.weekday;
-    final diff = targetWeekday - currentWeekday;
+    final diff = targetWeekday - today.weekday;
 
     return today.add(Duration(days: diff));
   }
@@ -208,6 +210,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     final year = value.year.toString().padLeft(4, '0');
     final month = value.month.toString().padLeft(2, '0');
     final day = value.day.toString().padLeft(2, '0');
+
     return '$year-$month-$day';
   }
 
@@ -215,6 +218,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
     final year = value.year.toString();
+
     return '$day/$month/$year';
   }
 
@@ -246,6 +250,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     if (pseudo.isNotEmpty) return pseudo;
     if (prenom.isNotEmpty && nom.isNotEmpty) return '$prenom $nom';
     if (prenom.isNotEmpty) return prenom;
+
     return 'Utilisateur';
   }
 
@@ -255,6 +260,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     friendships.sort((a, b) {
       final aDate = a.respondedAt ?? a.createdAt ?? DateTime(2000);
       final bDate = b.respondedAt ?? b.createdAt ?? DateTime(2000);
+
       return bDate.compareTo(aDate);
     });
 
@@ -281,6 +287,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     users.sort((a, b) {
       final aName = _displayUserName(a).toLowerCase();
       final bName = _displayUserName(b).toLowerCase();
+
       return aName.compareTo(bName);
     });
 
@@ -331,7 +338,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                 itemBuilder: (context, index) {
                                   final friend = friends[index];
                                   final friendId =
-                                      (friend['id'] ?? '').toString();
+                                      (friend['id'] ?? '').toString().trim();
                                   final selected =
                                       tempSelected.contains(friendId);
 
@@ -348,7 +355,9 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                     },
                                     title: Text(_displayUserName(friend)),
                                     subtitle: Text(
-                                      ((friend['lieu'] ?? '')).toString().trim()
+                                      ((friend['lieu'] ?? ''))
+                                              .toString()
+                                              .trim()
                                               .isNotEmpty
                                           ? (friend['lieu'] ?? '').toString()
                                           : 'Lieu non renseigné',
@@ -397,7 +406,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     setState(() {
       selectedFriendIds
         ..clear()
-        ..addAll(result);
+        ..addAll(result.map((id) => id.trim()).where((id) => id.isNotEmpty));
     });
   }
 
@@ -405,7 +414,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     BuildContext context,
     List<GroupModel> groups,
   ) async {
-    final GroupModel? result = await showModalBottomSheet<GroupModel?>(
+    final result = await showModalBottomSheet<GroupModel?>(
       context: context,
       isScrollControlled: true,
       builder: (bottomSheetContext) {
@@ -473,8 +482,8 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     if (result == null) return;
 
     setState(() {
-      selectedGroupId = result.id;
-      selectedGroupName = result.name;
+      selectedGroupId = result.id.trim();
+      selectedGroupName = result.name.trim();
       visibility = ActivityVisibilityValues.private;
       groupType = 'Privé';
       groupActivityAccess = 'group_only';
@@ -485,7 +494,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     String activityId,
     List<String> friendIds,
   ) async {
-    final currentUserId = FirebaseAuth.instance.currentUser?.uid.trim();
+    final currentUserId = AuthUser.uidOrNull?.trim();
 
     if (currentUserId == null || currentUserId.isEmpty) {
       return;
@@ -503,9 +512,10 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
       }
     }
 
-    if (selectedGroupId != null && selectedGroupId!.trim().isNotEmpty) {
-      final memberIds =
-          await groupsRepository.getGroupMemberIds(selectedGroupId!);
+    final groupId = selectedGroupId?.trim();
+
+    if (groupId != null && groupId.isNotEmpty) {
+      final memberIds = await groupsRepository.getGroupMemberIds(groupId);
 
       for (final memberId in memberIds) {
         final trimmedId = memberId.trim();
@@ -528,6 +538,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
   @override
   void initState() {
     super.initState();
+
     selectedDate = _resolveSelectedDate();
     startTime = widget.hour;
     endTime = getNextSlot(widget.hour);
@@ -635,7 +646,10 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     });
 
     try {
-      final selectedFriendsSnapshot = selectedFriendIds.toList();
+      final selectedFriendsSnapshot = selectedFriendIds
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty)
+          .toList();
 
       final activityId = await activityRepository.createActivity(
         title: trimmedTitle,
@@ -662,7 +676,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
       if (!mounted) return;
 
-      final int inviteCount = selectedFriendsSnapshot.length;
+      final inviteCount = selectedFriendsSnapshot.length;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -705,7 +719,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
         final selectedFriends = friends
             .where(
               (friend) => selectedFriendIds.contains(
-                (friend['id'] ?? '').toString(),
+                (friend['id'] ?? '').toString().trim(),
               ),
             )
             .toList();
@@ -945,6 +959,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                             ? null
                             : (value) {
                                 if (value == null) return;
+
                                 setState(() {
                                   groupActivityAccess = value;
                                 });
@@ -971,6 +986,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                             ? null
                             : (value) {
                                 if (value == null) return;
+
                                 setState(() {
                                   visibility = value;
                                 });
@@ -1049,7 +1065,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                 runSpacing: 8,
                                 children: selectedFriends.map((friend) {
                                   final friendId =
-                                      (friend['id'] ?? '').toString();
+                                      (friend['id'] ?? '').toString().trim();
 
                                   return Chip(
                                     label: Text(_displayUserName(friend)),
@@ -1057,7 +1073,9 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                         ? null
                                         : () {
                                             setState(() {
-                                              selectedFriendIds.remove(friendId);
+                                              selectedFriendIds.remove(
+                                                friendId,
+                                              );
                                             });
                                           },
                                   );
@@ -1131,7 +1149,9 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                             setState(() {
                                               selectedGroupId = null;
                                               selectedGroupName = null;
-                                              groupActivityAccess = 'group_only';
+                                              groupActivityAccess =
+                                                  'group_only';
+
                                               if (visibility ==
                                                   ActivityVisibilityValues
                                                       .private) {

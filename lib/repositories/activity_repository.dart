@@ -1,46 +1,32 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/parsers.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class ActivityRepository {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
   final ActivityFirestoreService _activityService;
   final UserFirestoreService _userService;
   final GroupsRepository _groupsRepository;
 
   ActivityRepository({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
     ActivityFirestoreService? activityService,
     UserFirestoreService? userService,
     GroupsRepository? groupsRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _activityService = activityService ??
-            ActivityFirestoreService(
-              db: db,
-              auth: auth,
-            ),
-        _userService = userService ??
-            UserFirestoreService(
-              db: db,
-              auth: auth,
-            ),
-        _groupsRepository = groupsRepository ??
-            GroupsRepository(
-              db: db,
-              auth: auth,
-            );
+        _activityService = activityService ?? ActivityFirestoreService(db: db),
+        _userService = userService ?? UserFirestoreService(db: db),
+        _groupsRepository = groupsRepository ?? GroupsRepository(db: db);
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;
@@ -64,6 +50,34 @@ class ActivityRepository {
 
   CollectionReference<Map<String, dynamic>> get _usersRef =>
       _db.collection(FirestoreCollections.users);
+
+  CollectionReference<Map<String, dynamic>> _messagesRef(String activityId) {
+    return _activitiesRef
+        .doc(activityId.trim())
+        .collection(FirestoreCollections.messages);
+  }
+
+  Future<void> _addSystemMessageSafely({
+    required String activityId,
+    required String text,
+  }) async {
+    final trimmedActivityId = activityId.trim();
+    final trimmedText = text.trim();
+
+    if (trimmedActivityId.isEmpty || trimmedText.isEmpty) return;
+
+    try {
+      await _messagesRef(trimmedActivityId).add({
+        'senderId': 'system',
+        'senderPseudo': 'Système',
+        'text': trimmedText,
+        'type': MessageTypeValues.system,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('SYSTEM MESSAGE ignored: $e');
+    }
+  }
 
   String computeActivityStatus({
     required int participantCount,
@@ -230,7 +244,7 @@ class ActivityRepository {
       final data = activityDoc.data()!;
       final currentActivity = Activity.fromMap(activityDoc.id, data);
 
-      if (currentActivity.ownerId != uid) {
+      if (currentActivity.ownerId.trim() != uid) {
         throw Exception('Seul l’organisateur peut modifier cette activité.');
       }
 
@@ -379,7 +393,12 @@ class ActivityRepository {
       }
 
       if (currentActivity.isGroupActivity) {
-        final groupId = currentActivity.groupId!.trim();
+        final groupId = currentActivity.groupId?.trim() ?? '';
+
+        if (groupId.isEmpty) {
+          return false;
+        }
+
         final isGroupMember =
             await _groupsRepository.isCurrentUserMember(groupId);
 
@@ -466,7 +485,8 @@ class ActivityRepository {
       final currentStatus =
           (activityData['status'] ?? ActivityStatusValues.open).toString();
 
-      final newParticipantCount = participantCount > 0 ? participantCount - 1 : 0;
+      final newParticipantCount =
+          participantCount > 0 ? participantCount - 1 : 0;
 
       final newStatus = computeActivityStatus(
         participantCount: newParticipantCount,
@@ -500,6 +520,8 @@ class ActivityRepository {
         activityRef.collection(FirestoreCollections.participants).doc(uid);
 
     bool deletedActivity = false;
+    bool ownershipOffered = false;
+    String leavingOwnerPseudo = '';
 
     await _db.runTransaction((transaction) async {
       final activityDoc = await transaction.get(activityRef);
@@ -516,11 +538,14 @@ class ActivityRepository {
       }
 
       final ownerId = (data['ownerId'] ?? '').toString().trim();
+      final ownerPseudo = (data['ownerPseudo'] ?? '').toString().trim();
       final participantCount = parseInt(data['participantCount']);
       final maxParticipants = parseInt(data['maxParticipants']);
       final currentStatus =
           (data['status'] ?? ActivityStatusValues.open).toString();
       final isOwner = ownerId == uid;
+
+      leavingOwnerPseudo = ownerPseudo;
 
       if (!isOwner) {
         final newParticipantCount =
@@ -557,14 +582,20 @@ class ActivityRepository {
       );
 
       transaction.delete(participantRef);
+
       transaction.update(activityRef, {
         'participantCount': newParticipantCount,
         'ownerId': '',
         'ownerPseudo': '',
         'ownerPending': true,
         'status': newStatus,
+        'lastMessageText':
+            'Le rôle d’organisateur est maintenant proposé aux participants.',
+        'lastMessageAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
+
+      ownershipOffered = true;
     });
 
     await _activityService.removeJoinedActivityMirror(
@@ -574,6 +605,17 @@ class ActivityRepository {
 
     if (deletedActivity) {
       return;
+    }
+
+    if (ownershipOffered) {
+      final displayedOwner =
+          leavingOwnerPseudo.trim().isNotEmpty ? leavingOwnerPseudo.trim() : 'L’organisateur';
+
+      await _addSystemMessageSafely(
+        activityId: trimmedActivityId,
+        text:
+            '$displayedOwner a quitté l’activité. Le rôle d’organisateur est maintenant proposé aux autres participants.',
+      );
     }
   }
 
@@ -620,15 +662,28 @@ class ActivityRepository {
         pseudo = await _userService.getCurrentUserPseudo();
       }
 
+      final displayedPseudo = pseudo.isNotEmpty ? pseudo : 'Un participant';
+
       transaction.update(activityRef, {
         'ownerId': uid,
         'ownerPseudo': pseudo,
         'ownerPending': false,
+        'lastMessageText': '$displayedPseudo est devenu organisateur.',
+        'lastMessageAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
       return true;
     });
+
+    if (success) {
+      final displayedPseudo = pseudo.isNotEmpty ? pseudo : 'Un participant';
+
+      await _addSystemMessageSafely(
+        activityId: trimmedActivityId,
+        text: '$displayedPseudo est devenu organisateur de l’activité.',
+      );
+    }
 
     return success;
   }
@@ -645,7 +700,12 @@ class ActivityRepository {
     }
 
     if (freshActivity.isGroupActivity) {
-      final groupId = freshActivity.groupId!.trim();
+      final groupId = freshActivity.groupId?.trim() ?? '';
+
+      if (groupId.isEmpty) {
+        return false;
+      }
+
       final isGroupMember =
           await _groupsRepository.isCurrentUserMember(groupId);
 
@@ -736,12 +796,14 @@ class ActivityRepository {
     final year = value.year.toString().padLeft(4, '0');
     final month = value.month.toString().padLeft(2, '0');
     final day = value.day.toString().padLeft(2, '0');
+
     return '$year-$month-$day';
   }
 
   String _formatTimeOnly(DateTime value) {
     final hour = value.hour.toString().padLeft(2, '0');
     final minute = value.minute.toString().padLeft(2, '0');
+
     return '$hour:$minute';
   }
 }

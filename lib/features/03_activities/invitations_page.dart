@@ -3,8 +3,6 @@ import 'package:agenda_app/features/03_activities/activity_detail_page.dart';
 import 'package:agenda_app/features/06_groups/group_detail_page.dart';
 import 'package:agenda_app/models/activity_invitation.dart';
 import 'package:agenda_app/models/group_invitation.dart';
-import 'package:agenda_app/repositories/activity_invitation_repository.dart';
-import 'package:agenda_app/repositories/group_invitation_repository.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/activity_invitation_firestore_service.dart';
 import 'package:agenda_app/services/firestore/group_invitation_firestore_service.dart';
@@ -18,11 +16,8 @@ class InvitationsPage extends StatefulWidget {
 
 class _InvitationsPageState extends State<InvitationsPage> {
   late final ActivityInvitationFirestoreService _activityInvitationService;
-  late final ActivityInvitationRepository _activityInvitationRepository;
   late final ActivityFirestoreService _activityService;
-
   late final GroupInvitationFirestoreService _groupInvitationService;
-  late final GroupInvitationRepository _groupInvitationRepository;
 
   final Set<String> _busyActivityInvitationIds = <String>{};
   final Set<String> _busyGroupInvitationIds = <String>{};
@@ -31,11 +26,8 @@ class _InvitationsPageState extends State<InvitationsPage> {
   void initState() {
     super.initState();
     _activityInvitationService = ActivityInvitationFirestoreService();
-    _activityInvitationRepository = ActivityInvitationRepository();
     _activityService = ActivityFirestoreService();
-
     _groupInvitationService = GroupInvitationFirestoreService();
-    _groupInvitationRepository = GroupInvitationRepository();
   }
 
   Color _activityStatusTextColor(ActivityInvitation invitation) {
@@ -94,43 +86,23 @@ class _InvitationsPageState extends State<InvitationsPage> {
     }
   }
 
-  String _activityStatusLabel(ActivityInvitation invitation) {
-    return invitation.statusLabel;
-  }
-
-  String _groupStatusLabel(GroupInvitation invitation) {
-    return invitation.statusLabel;
-  }
-
   String _scheduleLabel(ActivityInvitation invitation) {
     final day = invitation.activityDay.trim();
     final startTime = invitation.activityStartTime.trim();
 
-    if (day.isNotEmpty && startTime.isNotEmpty) {
-      return '$day • $startTime';
-    }
-
-    if (day.isNotEmpty) {
-      return day;
-    }
-
+    if (day.isNotEmpty && startTime.isNotEmpty) return '$day • $startTime';
+    if (day.isNotEmpty) return day;
     return startTime;
   }
 
   String _activitySenderLabel(ActivityInvitation invitation) {
     final pseudo = invitation.fromUserPseudo.trim();
-    if (pseudo.isNotEmpty) {
-      return pseudo;
-    }
-    return 'Utilisateur';
+    return pseudo.isNotEmpty ? pseudo : 'Utilisateur';
   }
 
   String _groupSenderLabel(GroupInvitation invitation) {
     final pseudo = invitation.fromUserPseudo.trim();
-    if (pseudo.isNotEmpty) {
-      return pseudo;
-    }
-    return 'Utilisateur';
+    return pseudo.isNotEmpty ? pseudo : 'Utilisateur';
   }
 
   bool _isActivityBusy(String invitationId) =>
@@ -176,9 +148,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
 
     if (activity == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Cette activité n’existe plus'),
-        ),
+        const SnackBar(content: Text('Cette activité n’existe plus')),
       );
       return;
     }
@@ -269,9 +239,9 @@ class _InvitationsPageState extends State<InvitationsPage> {
         ),
       );
 
-      if (!accepted) return;
-
-      await _openAcceptedActivityIfAvailable(context, invitation);
+      if (accepted) {
+        await _openAcceptedActivityIfAvailable(context, invitation);
+      }
     } finally {
       _setActivityBusy(invitation.id, false);
     }
@@ -329,9 +299,9 @@ class _InvitationsPageState extends State<InvitationsPage> {
         ),
       );
 
-      if (!accepted) return;
-
-      await _openAcceptedGroup(context, invitation);
+      if (accepted) {
+        await _openAcceptedGroup(context, invitation);
+      }
     } finally {
       _setGroupBusy(invitation.id, false);
     }
@@ -367,16 +337,13 @@ class _InvitationsPageState extends State<InvitationsPage> {
 
   Widget _buildActivityStatusChip(ActivityInvitation invitation) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: _activityStatusBackgroundColor(invitation),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        _activityStatusLabel(invitation),
+        invitation.statusLabel,
         style: TextStyle(
           color: _activityStatusTextColor(invitation),
           fontWeight: FontWeight.bold,
@@ -387,16 +354,13 @@ class _InvitationsPageState extends State<InvitationsPage> {
 
   Widget _buildGroupStatusChip(GroupInvitation invitation) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 6,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: _groupStatusBackgroundColor(invitation),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
-        _groupStatusLabel(invitation),
+        invitation.statusLabel,
         style: TextStyle(
           color: _groupStatusTextColor(invitation),
           fontWeight: FontWeight.bold,
@@ -415,9 +379,8 @@ class _InvitationsPageState extends State<InvitationsPage> {
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: isBusy
-            ? null
-            : () => _openActivityFromInvitation(context, invitation),
+        onTap:
+            isBusy ? null : () => _openActivityFromInvitation(context, invitation),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
@@ -448,10 +411,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   else
-                    const Icon(
-                      Icons.chevron_right,
-                      size: 20,
-                    ),
+                    const Icon(Icons.chevron_right, size: 20),
                 ],
               ),
               if (invitation.isPending) ...[
@@ -528,10 +488,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   else
-                    const Icon(
-                      Icons.chevron_right,
-                      size: 20,
-                    ),
+                    const Icon(Icons.chevron_right, size: 20),
                 ],
               ),
               if (invitation.isPending) ...[
@@ -572,9 +529,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
   }
 
   Widget _buildEmptyState(String label) {
-    return Center(
-      child: Text(label),
-    );
+    return Center(child: Text(label));
   }
 
   Widget _buildActivitiesTab() {
@@ -588,9 +543,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         }
 
         if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
 
         final invitations = snapshot.data ?? [];
@@ -603,8 +556,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
           padding: const EdgeInsets.all(12),
           itemCount: invitations.length,
           itemBuilder: (context, index) {
-            final invitation = invitations[index];
-            return _buildActivityInvitationCard(context, invitation);
+            return _buildActivityInvitationCard(context, invitations[index]);
           },
         );
       },
@@ -622,9 +574,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         }
 
         if (!snapshot.hasData) {
-          return const Center(
-            child: CircularProgressIndicator(),
-          );
+          return const Center(child: CircularProgressIndicator());
         }
 
         final invitations = snapshot.data ?? [];
@@ -637,8 +587,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
           padding: const EdgeInsets.all(12),
           itemCount: invitations.length,
           itemBuilder: (context, index) {
-            final invitation = invitations[index];
-            return _buildGroupInvitationCard(context, invitation);
+            return _buildGroupInvitationCard(context, invitations[index]);
           },
         );
       },
@@ -647,10 +596,6 @@ class _InvitationsPageState extends State<InvitationsPage> {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint(
-      'INVITATIONS PAGE activityCurrentUserId=${_activityInvitationService.currentUserId}',
-    );
-
     return DefaultTabController(
       length: 2,
       child: Scaffold(

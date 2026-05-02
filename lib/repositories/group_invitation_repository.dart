@@ -1,13 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/group_invitation.dart';
-import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 import 'package:agenda_app/repositories/groups_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
+import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 
 class GroupInvitationRepository {
   final FirebaseFirestore _db;
-  final FirebaseAuth _auth;
   final UserFirestoreService _userService;
   final GroupsRepository _groupsRepository;
 
@@ -15,24 +14,14 @@ class GroupInvitationRepository {
 
   GroupInvitationRepository({
     FirebaseFirestore? db,
-    FirebaseAuth? auth,
     UserFirestoreService? userService,
     GroupsRepository? groupsRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
-        _auth = auth ?? FirebaseAuth.instance,
-        _userService = userService ??
-            UserFirestoreService(
-              db: db,
-              auth: auth,
-            ),
-        _groupsRepository = groupsRepository ??
-            GroupsRepository(
-              db: db,
-              auth: auth,
-            );
+        _userService = userService ?? UserFirestoreService(db: db),
+        _groupsRepository = groupsRepository ?? GroupsRepository(db: db);
 
   String? get currentUserIdOrNull {
-    final uid = _auth.currentUser?.uid.trim();
+    final uid = AuthUser.uidOrNull?.trim();
 
     if (uid == null || uid.isEmpty) {
       return null;
