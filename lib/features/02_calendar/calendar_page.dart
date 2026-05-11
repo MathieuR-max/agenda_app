@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../models/activity.dart';
 import '../../models/availability.dart';
+import '../../services/activity_clipboard_service.dart';
 import '../../services/firestore/activity_firestore_service.dart';
 import '../../services/firestore/availability_firestore_service.dart';
 import '../../services/firestore/search_firestore_service.dart';
@@ -930,15 +931,11 @@ class _CalendarPageState extends State<CalendarPage> {
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
               icon: Icon(
-                _showAdvancedFilters
-                    ? Icons.expand_less
-                    : Icons.expand_more,
+                _showAdvancedFilters ? Icons.expand_less : Icons.expand_more,
                 size: 18,
               ),
               label: Text(
-                _showAdvancedFilters
-                    ? 'Moins de filtres'
-                    : 'Plus de filtres',
+                _showAdvancedFilters ? 'Moins de filtres' : 'Plus de filtres',
               ),
             ),
           ),
@@ -1314,9 +1311,9 @@ class _CalendarPageState extends State<CalendarPage> {
 
                     final hasMatchedElement =
                         matchedCreatedActivity != null ||
-                        matchedJoinedActivity != null ||
-                        matchedAvailability != null ||
-                        matchedSearch != null;
+                            matchedJoinedActivity != null ||
+                            matchedAvailability != null ||
+                            matchedSearch != null;
 
                     final shouldDimNonMatching =
                         _hasActiveFilter && !hasMatchedElement;
@@ -1529,13 +1526,16 @@ class _CalendarPageState extends State<CalendarPage> {
   }
 
   void showSlotActions(BuildContext context, String day, String hour) {
+    final copiedActivity = ActivityClipboardService.copiedActivity;
+    final hasCopiedActivity = copiedActivity != null;
+
     showModalBottomSheet(
       context: context,
       builder: (bottomSheetContext) {
         return Padding(
           padding: const EdgeInsets.all(16),
           child: SizedBox(
-            height: 260,
+            height: hasCopiedActivity ? 360 : 260,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -1547,6 +1547,63 @@ class _CalendarPageState extends State<CalendarPage> {
                     fontWeight: FontWeight.bold,
                   ),
                 ),
+                if (hasCopiedActivity) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Text(
+                      'Activité copiée : ${copiedActivity.title}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.green.shade900,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(bottomSheetContext);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => CreateActivityPage(
+                            day: day,
+                            hour: hour,
+                            selectedDate: _getDateForDay(day),
+                            groupId: copiedActivity.groupId,
+                            groupName: copiedActivity.groupName,
+                            duplicatedFromActivity: copiedActivity,
+                          ),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.content_paste),
+                    label: const Text('Coller l’activité copiée ici'),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      ActivityClipboardService.clear();
+                      Navigator.pop(bottomSheetContext);
+                      setState(() {});
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Activité copiée supprimée'),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.close),
+                    label: const Text('Vider l’activité copiée'),
+                  ),
+                ],
                 const SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: () {

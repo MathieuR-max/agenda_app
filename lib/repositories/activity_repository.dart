@@ -193,6 +193,11 @@ class ActivityRepository {
       groupName: trimmedGroupName,
     );
 
+    await _activitiesRef.doc(activityId).set({
+      'createdById': uid,
+      'createdByPseudo': ownerPseudo,
+    }, SetOptions(merge: true));
+
     await _activityService.addParticipant(
       activityId: activityId,
       userId: uid,
@@ -539,6 +544,10 @@ class ActivityRepository {
 
       final ownerId = (data['ownerId'] ?? '').toString().trim();
       final ownerPseudo = (data['ownerPseudo'] ?? '').toString().trim();
+      final createdById = (data['createdById'] ?? '').toString().trim();
+      final createdByPseudo =
+          (data['createdByPseudo'] ?? '').toString().trim();
+
       final participantCount = parseInt(data['participantCount']);
       final maxParticipants = parseInt(data['maxParticipants']);
       final currentStatus =
@@ -581,6 +590,11 @@ class ActivityRepository {
         currentStatus: currentStatus,
       );
 
+      final preservedCreatedById =
+          createdById.isNotEmpty ? createdById : ownerId;
+      final preservedCreatedByPseudo =
+          createdByPseudo.isNotEmpty ? createdByPseudo : ownerPseudo;
+
       transaction.delete(participantRef);
 
       transaction.update(activityRef, {
@@ -588,6 +602,8 @@ class ActivityRepository {
         'ownerId': '',
         'ownerPseudo': '',
         'ownerPending': true,
+        'createdById': preservedCreatedById,
+        'createdByPseudo': preservedCreatedByPseudo,
         'status': newStatus,
         'lastMessageText':
             'Le rôle d’organisateur est maintenant proposé aux participants.',
@@ -608,8 +624,9 @@ class ActivityRepository {
     }
 
     if (ownershipOffered) {
-      final displayedOwner =
-          leavingOwnerPseudo.trim().isNotEmpty ? leavingOwnerPseudo.trim() : 'L’organisateur';
+      final displayedOwner = leavingOwnerPseudo.trim().isNotEmpty
+          ? leavingOwnerPseudo.trim()
+          : 'L’organisateur';
 
       await _addSystemMessageSafely(
         activityId: trimmedActivityId,
@@ -668,6 +685,9 @@ class ActivityRepository {
         'ownerId': uid,
         'ownerPseudo': pseudo,
         'ownerPending': false,
+        'reclaimedById': uid,
+        'reclaimedByPseudo': pseudo,
+        'reclaimedAt': FieldValue.serverTimestamp(),
         'lastMessageText': '$displayedPseudo est devenu organisateur.',
         'lastMessageAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),

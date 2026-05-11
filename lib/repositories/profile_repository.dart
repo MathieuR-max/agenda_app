@@ -70,4 +70,21 @@ class ProfileRepository {
       'favoriteCategories': categories,
     });
   }
+  Future<void> updateExplorerFilters(
+  String userId,
+  Map<String, dynamic> filters,
+) async {
+  final trimmedUserId = userId.trim();
+
+  if (trimmedUserId.isEmpty) {
+    throw ArgumentError('userId ne peut pas être vide');
+  }
+
+  await _usersCollection.doc(trimmedUserId).set(
+    {
+      'explorerFilters': filters,
+    },
+    SetOptions(merge: true),
+  );
+}
 }

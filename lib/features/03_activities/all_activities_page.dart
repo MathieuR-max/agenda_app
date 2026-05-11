@@ -27,10 +27,13 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
   String selectedCategory = 'Toutes';
   String selectedSort = 'Jour / heure';
 
+  bool onlyUpcomingActivities = true;
   bool onlyAvailable = false;
   bool onlyOwnerNeeded = false;
   bool onlyMyFavorites = false;
   bool prioritizeUnreadMessages = true;
+
+  bool _filtersLoadedFromFirestore = false;
 
   final Map<String, int> _unreadCountsByActivityId = <String, int>{};
 
@@ -64,6 +67,96 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     'Titre A → Z',
   ];
 
+  void _loadFiltersFromFirestore(UserModel? user) {
+    if (_filtersLoadedFromFirestore || user == null) return;
+
+    final filters = user.explorerFilters;
+
+    if (filters == null) {
+      _filtersLoadedFromFirestore = true;
+      return;
+    }
+
+    final savedDay = filters['selectedDay'];
+    final savedCategory = filters['selectedCategory'];
+    final savedSort = filters['selectedSort'];
+
+    setState(() {
+      if (savedDay is String && days.contains(savedDay)) {
+        selectedDay = savedDay;
+      }
+
+      if (savedCategory is String && categories.contains(savedCategory)) {
+        selectedCategory = savedCategory;
+      }
+
+      if (savedSort is String && sortOptions.contains(savedSort)) {
+        selectedSort = savedSort;
+      }
+
+      final savedOnlyUpcoming = filters['onlyUpcomingActivities'];
+      if (savedOnlyUpcoming is bool) {
+        onlyUpcomingActivities = savedOnlyUpcoming;
+      }
+
+      final savedOnlyAvailable = filters['onlyAvailable'];
+      if (savedOnlyAvailable is bool) {
+        onlyAvailable = savedOnlyAvailable;
+      }
+
+      final savedOnlyOwnerNeeded = filters['onlyOwnerNeeded'];
+      if (savedOnlyOwnerNeeded is bool) {
+        onlyOwnerNeeded = savedOnlyOwnerNeeded;
+      }
+
+      final savedOnlyMyFavorites = filters['onlyMyFavorites'];
+      if (savedOnlyMyFavorites is bool) {
+        onlyMyFavorites = savedOnlyMyFavorites;
+      }
+
+      final savedPrioritizeUnread = filters['prioritizeUnreadMessages'];
+      if (savedPrioritizeUnread is bool) {
+        prioritizeUnreadMessages = savedPrioritizeUnread;
+      }
+
+      _filtersLoadedFromFirestore = true;
+    });
+  }
+
+  Future<void> _saveFiltersToFirestore(String userId) async {
+    await profileRepository.updateExplorerFilters(
+      userId,
+      {
+        'selectedDay': selectedDay,
+        'selectedCategory': selectedCategory,
+        'selectedSort': selectedSort,
+        'onlyUpcomingActivities': onlyUpcomingActivities,
+        'onlyAvailable': onlyAvailable,
+        'onlyOwnerNeeded': onlyOwnerNeeded,
+        'onlyMyFavorites': onlyMyFavorites,
+        'prioritizeUnreadMessages': prioritizeUnreadMessages,
+      },
+    );
+  }
+
+  void _updateFilters(String userId, VoidCallback update) {
+    setState(update);
+    _saveFiltersToFirestore(userId);
+  }
+
+  void _resetFilters(String userId) {
+    _updateFilters(userId, () {
+      selectedDay = 'Tous';
+      selectedCategory = 'Toutes';
+      selectedSort = 'Jour / heure';
+      onlyUpcomingActivities = true;
+      onlyAvailable = false;
+      onlyOwnerNeeded = false;
+      onlyMyFavorites = false;
+      prioritizeUnreadMessages = true;
+    });
+  }
+
   void _rememberUnreadCount(String activityId, int count) {
     final trimmedActivityId = activityId.trim();
     if (trimmedActivityId.isEmpty) return;
@@ -84,22 +177,26 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     return _unreadCountsByActivityId[activity.id.trim()] ?? 0;
   }
 
-  void _sortUnreadFirst(List<Activity> activities) {
-    if (!prioritizeUnreadMessages) return;
-
+  void _sortUnreadAndOwnerNeededFirst(List<Activity> activities) {
     activities.sort((a, b) {
-      final aUnread = _unreadCountFor(a);
-      final bUnread = _unreadCountFor(b);
+      if (prioritizeUnreadMessages) {
+        final aUnread = _unreadCountFor(a);
+        final bUnread = _unreadCountFor(b);
 
-      final aHasUnread = aUnread > 0;
-      final bHasUnread = bUnread > 0;
+        final aHasUnread = aUnread > 0;
+        final bHasUnread = bUnread > 0;
 
-      if (aHasUnread != bHasUnread) {
-        return bHasUnread ? 1 : -1;
+        if (aHasUnread != bHasUnread) {
+          return bHasUnread ? 1 : -1;
+        }
+
+        if (aUnread != bUnread) {
+          return bUnread.compareTo(aUnread);
+        }
       }
 
-      if (aUnread != bUnread) {
-        return bUnread.compareTo(aUnread);
+      if (a.ownerPending != b.ownerPending) {
+        return b.ownerPending ? 1 : -1;
       }
 
       final aTime = a.lastMessageAt ?? a.updatedAt ?? a.createdAt;
@@ -181,6 +278,10 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     return activity.effectiveDay == selectedDay;
   }
 
+  bool _isUpcomingActivity(Activity activity) {
+    return !activity.isCancelled && !activity.isDone && !activity.hasEnded;
+  }
+
   List<Activity> _mergeActivities({
     required List<Activity> createdActivities,
     required List<Activity> joinedActivities,
@@ -223,6 +324,9 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
       final bool categoryOk =
           selectedCategory == 'Toutes' || activity.category == selectedCategory;
 
+      final bool upcomingOk =
+          !onlyUpcomingActivities || _isUpcomingActivity(activity);
+
       final bool availableOk =
           !onlyAvailable ||
           (!isFull(activity) &&
@@ -242,6 +346,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
           validTitle &&
           dayOk &&
           categoryOk &&
+          upcomingOk &&
           availableOk &&
           ownerNeededOk &&
           favoriteOk &&
@@ -307,7 +412,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
         break;
     }
 
-    _sortUnreadFirst(filtered);
+    _sortUnreadAndOwnerNeededFirst(filtered);
 
     return filtered;
   }
@@ -419,6 +524,62 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     );
   }
 
+  Widget _buildOwnerNeededTitleBadge(Activity activity) {
+    if (!activity.ownerPending) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(left: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.orange,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: const Text(
+        'Organisateur',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOwnerNeededInfo(Activity activity) {
+    if (!activity.ownerPending) return const SizedBox.shrink();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.shade100),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.volunteer_activism_outlined,
+            size: 18,
+            color: Colors.orange.shade800,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Cette activité n’a plus d’organisateur. Un participant peut reprendre le rôle.',
+              style: TextStyle(
+                color: Colors.orange.shade900,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildUnreadInfo({
     required Activity activity,
     required int unreadCount,
@@ -519,6 +680,8 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
           }
 
           final currentUser = userSnapshot.data;
+          _loadFiltersFromFirestore(currentUser);
+
           final favoriteCategories = currentUser?.favoriteCategories ?? [];
 
           return Column(
@@ -546,7 +709,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                 .toList(),
                             onChanged: (value) {
                               if (value == null) return;
-                              setState(() {
+                              _updateFilters(currentUserId, () {
                                 selectedDay = value;
                               });
                             },
@@ -570,7 +733,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                 .toList(),
                             onChanged: (value) {
                               if (value == null) return;
-                              setState(() {
+                              _updateFilters(currentUserId, () {
                                 selectedCategory = value;
                               });
                             },
@@ -595,7 +758,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                           .toList(),
                       onChanged: (value) {
                         if (value == null) return;
-                        setState(() {
+                        _updateFilters(currentUserId, () {
                           selectedSort = value;
                         });
                       },
@@ -606,8 +769,21 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                       title: const Text('Prioriser les messages non lus'),
                       value: prioritizeUnreadMessages,
                       onChanged: (value) {
-                        setState(() {
+                        _updateFilters(currentUserId, () {
                           prioritizeUnreadMessages = value;
+                        });
+                      },
+                    ),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Seulement les activités à venir'),
+                      subtitle: const Text(
+                        'Masque les activités terminées, passées ou annulées',
+                      ),
+                      value: onlyUpcomingActivities,
+                      onChanged: (value) {
+                        _updateFilters(currentUserId, () {
+                          onlyUpcomingActivities = value;
                         });
                       },
                     ),
@@ -616,7 +792,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                       title: const Text('Seulement avec places disponibles'),
                       value: onlyAvailable,
                       onChanged: (value) {
-                        setState(() {
+                        _updateFilters(currentUserId, () {
                           onlyAvailable = value;
                         });
                       },
@@ -626,7 +802,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                       title: const Text('Seulement organisateur recherché'),
                       value: onlyOwnerNeeded,
                       onChanged: (value) {
-                        setState(() {
+                        _updateFilters(currentUserId, () {
                           onlyOwnerNeeded = value;
                         });
                       },
@@ -644,10 +820,19 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                       onChanged: favoriteCategories.isEmpty
                           ? null
                           : (value) {
-                              setState(() {
+                              _updateFilters(currentUserId, () {
                                 onlyMyFavorites = value;
                               });
                             },
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => _resetFilters(currentUserId),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Réinitialiser les filtres'),
+                      ),
                     ),
                   ],
                 ),
@@ -809,11 +994,15 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                                       ),
                                                     ),
                                                   ),
+                                                  _buildOwnerNeededTitleBadge(
+                                                    activity,
+                                                  ),
                                                   _buildUnreadBadge(
                                                     unreadCount,
                                                   ),
                                                 ],
                                               ),
+                                              _buildOwnerNeededInfo(activity),
                                               _buildUnreadInfo(
                                                 activity: activity,
                                                 unreadCount: unreadCount,
@@ -837,10 +1026,11 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                                               ],
                                               const SizedBox(height: 4),
                                               if (activity.ownerPending)
-                                                const Text(
-                                                  'Organisateur recherché',
+                                                Text(
+                                                  'Organisateur : à reprendre',
                                                   style: TextStyle(
-                                                    color: Colors.orange,
+                                                    color:
+                                                        Colors.orange.shade900,
                                                     fontWeight: FontWeight.bold,
                                                   ),
                                                 )

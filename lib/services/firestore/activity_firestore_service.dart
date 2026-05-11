@@ -198,6 +198,11 @@ class ActivityFirestoreService {
       'ownerId': trimmedOwnerId,
       'ownerPseudo': trimmedOwnerPseudo,
       'ownerPending': false,
+      'createdById': trimmedOwnerId,
+      'createdByPseudo': trimmedOwnerPseudo,
+      'reclaimedById': null,
+      'reclaimedByPseudo': null,
+      'reclaimedAt': null,
       'participantCount': 1,
       'participantVisibility': 'participants_only',
       'lastMessageText': null,
@@ -325,10 +330,9 @@ class ActivityFirestoreService {
 
     _log('getCreatedActivities uid=$uid');
 
-    return _activities
-        .where('ownerId', isEqualTo: uid)
-        .snapshots()
-        .map((snapshot) {
+    return _activities.where('ownerId', isEqualTo: uid).snapshots().map((
+      snapshot,
+    ) {
       final activities =
           snapshot.docs.map((doc) => Activity.fromDocument(doc)).toList();
 
@@ -476,7 +480,10 @@ class ActivityFirestoreService {
 
         participantIds.add(uid);
 
-        final usersSnapshot = await _users.get();
+        final usersSnapshot = await _users
+    .orderBy('pseudo')
+    .limit(50)
+    .get();
 
         final List<Map<String, dynamic>> users = [];
 
@@ -513,42 +520,56 @@ class ActivityFirestoreService {
   }
 
   Stream<List<Activity>> getJoinedActivities() {
-    return getJoinedActivityIds().asyncMap((ids) async {
-      if (ids.isEmpty) {
-        _log('getJoinedActivities -> no ids');
-        return <Activity>[];
-      }
+  return getJoinedActivityIds().asyncMap((ids) async {
+    if (ids.isEmpty) {
+      _log('getJoinedActivities -> no ids');
+      return <Activity>[];
+    }
 
-      final List<Activity> activities = [];
+    final List<Activity> activities = [];
 
-      for (final chunk in _chunkList(ids, 10)) {
-        _log('getJoinedActivities chunk=$chunk');
+    for (final activityId in ids) {
+      try {
+        final doc = await _activityDoc(activityId).get();
 
-        final snapshot = await _activities
-            .where(FieldPath.documentId, whereIn: chunk)
-            .get();
+        if (!doc.exists || doc.data() == null) {
+          continue;
+        }
 
-        _log('getJoinedActivities fetchedDocs=${snapshot.docs.length}');
-
-        activities.addAll(
-          snapshot.docs.map((doc) => Activity.fromDocument(doc)),
+        activities.add(Activity.fromDocument(doc));
+      } catch (e) {
+        _log(
+          'getJoinedActivities skipped activity=$activityId error=$e',
         );
       }
+    }
 
-      _sortActivitiesByRecency(activities);
-      _log('getJoinedActivities resultCount=${activities.length}');
-      return activities;
-    }).handleError((error, stackTrace) {
-      _log('getJoinedActivities ERROR: $error');
-    });
-  }
+    _sortActivitiesByRecency(activities);
+
+    _log('getJoinedActivities resultCount=${activities.length}');
+
+    return activities;
+  }).handleError((error, stackTrace) {
+    _log('getJoinedActivities ERROR: $error');
+  });
+}
 
   Future<bool> deleteActivityIfNoParticipants(String activityId) async {
+    try {
+      await deleteActivityWithDependencies(activityId);
+      return true;
+    } catch (e) {
+      _log('deleteActivityIfNoParticipants refused: $e');
+      return false;
+    }
+  }
+
+  Future<void> deleteActivityWithDependencies(String activityId) async {
     final trimmedActivityId = activityId.trim();
     final uid = currentUserIdOrNull;
 
     if (trimmedActivityId.isEmpty || uid == null) {
-      return false;
+      throw Exception('Utilisateur non connecté ou activité invalide.');
     }
 
     final activityRef = _activityDoc(trimmedActivityId);
@@ -564,35 +585,14 @@ class ActivityFirestoreService {
       final ownerId = (data['ownerId'] ?? '').toString().trim();
       final participantCount = _parseInt(data['participantCount']);
 
-      final isOwner = ownerId == uid;
-
-      if (!isOwner) {
-        return false;
-      }
-
-      if (participantCount > 1) {
-        return false;
-      }
-
-      return true;
+      return ownerId == uid && participantCount <= 1;
     });
 
     if (!canDelete) {
-      return false;
+      throw Exception(
+        'Suppression impossible : vous devez être organisateur et seul participant.',
+      );
     }
-
-    await deleteActivityWithDependencies(trimmedActivityId);
-    return true;
-  }
-
-  Future<void> deleteActivityWithDependencies(String activityId) async {
-    final trimmedActivityId = activityId.trim();
-
-    if (trimmedActivityId.isEmpty) {
-      return;
-    }
-
-    final activityRef = _activityDoc(trimmedActivityId);
 
     await _deleteSubcollection(_participantsRef(trimmedActivityId));
     await _deleteSubcollection(_messagesRef(trimmedActivityId));
@@ -613,9 +613,11 @@ class ActivityFirestoreService {
       }
 
       final batch = _db.batch();
+
       for (final doc in snapshot.docs) {
         batch.delete(doc.reference);
       }
+
       await batch.commit();
     }
   }
@@ -644,9 +646,7 @@ class ActivityFirestoreService {
     final List<List<String>> chunks = [];
 
     for (int i = 0; i < items.length; i += chunkSize) {
-      final end = (i + chunkSize < items.length)
-          ? i + chunkSize
-          : items.length;
+      final end = (i + chunkSize < items.length) ? i + chunkSize : items.length;
 
       chunks.add(items.sublist(i, end));
     }
@@ -667,6 +667,7 @@ class ActivityFirestoreService {
           a.updatedAt ??
           a.createdAt ??
           DateTime(2000);
+
       final bDate = b.resolvedStartDateTime ??
           b.updatedAt ??
           b.createdAt ??

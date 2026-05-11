@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
 import '../models/activity_invitation.dart';
+import '../models/group_invitation.dart';
 import '../repositories/message_badge_repository.dart';
 import '../services/current_user.dart';
 import '../services/firestore/activity_firestore_service.dart';
 import '../services/firestore/activity_invitation_firestore_service.dart';
+import '../services/firestore/group_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
 import '03_activities/all_activities_page.dart';
 import '03_activities/invitations_page.dart';
@@ -22,6 +24,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   int _currentIndex = 0;
 
   late final ActivityInvitationFirestoreService _invitationService;
+  late final GroupInvitationFirestoreService _groupInvitationService;
   late final MessageBadgeRepository _messageBadgeRepository;
   late final ActivityFirestoreService _activityService;
 
@@ -29,6 +32,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   void initState() {
     super.initState();
     _invitationService = ActivityInvitationFirestoreService();
+    _groupInvitationService = GroupInvitationFirestoreService();
     _messageBadgeRepository = MessageBadgeRepository();
     _activityService = ActivityFirestoreService();
   }
@@ -113,11 +117,13 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 selected: false,
                 isCurrentTab: _currentIndex == 2,
                 invitationService: _invitationService,
+                groupInvitationService: _groupInvitationService,
               ),
               selectedIcon: _InvitationsNavIcon(
                 selected: true,
                 isCurrentTab: _currentIndex == 2,
                 invitationService: _invitationService,
+                groupInvitationService: _groupInvitationService,
               ),
               label: 'Invitations',
             ),
@@ -188,24 +194,38 @@ class _InvitationsNavIcon extends StatelessWidget {
   final bool selected;
   final bool isCurrentTab;
   final ActivityInvitationFirestoreService invitationService;
+  final GroupInvitationFirestoreService groupInvitationService;
 
   const _InvitationsNavIcon({
     required this.selected,
     required this.isCurrentTab,
     required this.invitationService,
+    required this.groupInvitationService,
   });
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<ActivityInvitation>>(
       stream: invitationService.getPendingReceivedInvitations(),
-      builder: (context, snapshot) {
-        final pendingInvitationCount = snapshot.data?.length ?? 0;
+      builder: (context, activitySnapshot) {
+        final pendingActivityInvitationCount =
+            activitySnapshot.data?.length ?? 0;
 
-        return _NavBadgeIcon(
-          icon: Icon(selected ? Icons.mail : Icons.mail_outline),
-          count: pendingInvitationCount,
-          hideBadge: isCurrentTab,
+        return StreamBuilder<List<GroupInvitation>>(
+          stream: groupInvitationService.getPendingReceivedInvitations(),
+          builder: (context, groupSnapshot) {
+            final pendingGroupInvitationCount =
+                groupSnapshot.data?.length ?? 0;
+
+            final totalPendingInvitationCount =
+                pendingActivityInvitationCount + pendingGroupInvitationCount;
+
+            return _NavBadgeIcon(
+              icon: Icon(selected ? Icons.mail : Icons.mail_outline),
+              count: totalPendingInvitationCount,
+              hideBadge: isCurrentTab,
+            );
+          },
         );
       },
     );

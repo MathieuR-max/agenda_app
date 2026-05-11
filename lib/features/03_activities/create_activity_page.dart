@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
+import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/models/group_model.dart';
 import 'package:agenda_app/repositories/activity_invitation_repository.dart';
@@ -17,6 +20,7 @@ class CreateActivityPage extends StatefulWidget {
   final DateTime? selectedDate;
   final String? groupId;
   final String? groupName;
+  final Activity? duplicatedFromActivity;
 
   const CreateActivityPage({
     super.key,
@@ -25,6 +29,7 @@ class CreateActivityPage extends StatefulWidget {
     this.selectedDate,
     this.groupId,
     this.groupName,
+    this.duplicatedFromActivity,
   });
 
   @override
@@ -117,6 +122,8 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     },
   ];
 
+  bool get isDuplicateMode => widget.duplicatedFromActivity != null;
+
   bool get isGroupActivity =>
       selectedGroupId != null && selectedGroupId!.trim().isNotEmpty;
 
@@ -181,8 +188,14 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
   }
 
   DateTime _resolveSelectedDate() {
+    final duplicatedStart = widget.duplicatedFromActivity?.resolvedStartDateTime;
+
     if (widget.selectedDate != null) {
       return _normalizeDate(widget.selectedDate!);
+    }
+
+    if (duplicatedStart != null) {
+      return _normalizeDate(duplicatedStart);
     }
 
     final today = _normalizeDate(DateTime.now());
@@ -220,6 +233,51 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     final year = value.year.toString();
 
     return '$day/$month/$year';
+  }
+
+  String _formatTimeOnly(DateTime value) {
+    final hour = value.hour.toString().padLeft(2, '0');
+    final minute = value.minute.toString().padLeft(2, '0');
+
+    return '$hour:$minute';
+  }
+
+  String _safeTimeSlot(String value, {required String fallback}) {
+    final slots = generateTimeSlots();
+    final trimmed = value.trim();
+
+    if (slots.contains(trimmed)) {
+      return trimmed;
+    }
+
+    return fallback;
+  }
+
+  String _safeDropdownValue({
+    required String value,
+    required List<String> allowedValues,
+    required String fallback,
+  }) {
+    final trimmed = value.trim();
+
+    if (allowedValues.contains(trimmed)) {
+      return trimmed;
+    }
+
+    return fallback;
+  }
+
+  String _safeVisibility(String value) {
+    final allowedValues = visibilityOptions
+        .map((option) => option['value'] ?? '')
+        .where((value) => value.isNotEmpty)
+        .toList();
+
+    return _safeDropdownValue(
+      value: value,
+      allowedValues: allowedValues,
+      fallback: ActivityVisibilityValues.public,
+    );
   }
 
   String _schedulePreview() {
@@ -298,6 +356,52 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     setState(() {
       _friendsFuture = _loadFriendsFromFriendships();
     });
+  }
+
+  void _prefillFromDuplicatedActivity(Activity activity) {
+    titleController.text = activity.title;
+    descriptionController.text = activity.description;
+    locationController.text = activity.location;
+
+    maxParticipantsController.text =
+        activity.maxParticipants > 0 ? activity.maxParticipants.toString() : '';
+
+    category = _safeDropdownValue(
+      value: activity.category,
+      allowedValues: categories,
+      fallback: category,
+    );
+
+    level = _safeDropdownValue(
+      value: activity.level,
+      allowedValues: levels,
+      fallback: level,
+    );
+
+    groupType = _safeDropdownValue(
+      value: activity.groupType,
+      allowedValues: groupTypes,
+      fallback: groupType,
+    );
+
+    visibility = _safeVisibility(activity.visibility);
+
+    selectedGroupId = activity.groupId?.trim().isNotEmpty == true
+        ? activity.groupId!.trim()
+        : selectedGroupId;
+
+    selectedGroupName = activity.groupName?.trim().isNotEmpty == true
+        ? activity.groupName!.trim()
+        : selectedGroupName;
+
+    if (activity.isMixedGroupActivity) {
+      groupActivityAccess = 'group_and_public';
+      visibility = ActivityVisibilityValues.public;
+    } else if (activity.isGroupPrivateActivity) {
+      groupActivityAccess = 'group_only';
+      visibility = ActivityVisibilityValues.private;
+      groupType = 'Privé';
+    }
   }
 
   Future<void> _openFriendSelection(
@@ -490,18 +594,18 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     });
   }
 
-  Future<void> _sendInvitationsAfterCreate(
+  Future<int> _sendInvitationsAfterCreate(
     String activityId,
     List<String> friendIds,
   ) async {
     final currentUserId = AuthUser.uidOrNull?.trim();
 
     if (currentUserId == null || currentUserId.isEmpty) {
-      return;
+      return 0;
     }
 
     final createdActivity = await activityService.getActivityById(activityId);
-    if (createdActivity == null) return;
+    if (createdActivity == null) return 0;
 
     final Set<String> recipients = <String>{};
 
@@ -515,24 +619,61 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     final groupId = selectedGroupId?.trim();
 
     if (groupId != null && groupId.isNotEmpty) {
-      final memberIds = await groupsRepository.getGroupMemberIds(groupId);
+      try {
+        final memberIds = await groupsRepository
+            .getGroupMemberIds(groupId)
+            .timeout(const Duration(seconds: 8));
 
-      for (final memberId in memberIds) {
-        final trimmedId = memberId.trim();
-        if (trimmedId.isNotEmpty) {
-          recipients.add(trimmedId);
+        for (final memberId in memberIds) {
+          final trimmedId = memberId.trim();
+          if (trimmedId.isNotEmpty) {
+            recipients.add(trimmedId);
+          }
         }
+      } catch (e) {
+        debugPrint('CREATE_ACTIVITY invitations group members ignored: $e');
       }
     }
 
     recipients.remove(currentUserId);
 
+    int sentCount = 0;
+
     for (final userId in recipients) {
-      await invitationRepository.sendActivityInvitation(
-        activity: createdActivity,
-        toUserId: userId,
-      );
+      try {
+        await invitationRepository
+            .sendActivityInvitation(
+              activity: createdActivity,
+              toUserId: userId,
+            )
+            .timeout(const Duration(seconds: 8));
+
+        sentCount++;
+      } catch (e) {
+        debugPrint('CREATE_ACTIVITY invitation ignored for $userId: $e');
+      }
     }
+
+    return sentCount;
+  }
+
+  void _sendInvitationsInBackground({
+    required String activityId,
+    required List<String> friendIds,
+  }) {
+    if (friendIds.isEmpty && (selectedGroupId ?? '').trim().isEmpty) {
+      return;
+    }
+
+    unawaited(
+      _sendInvitationsAfterCreate(activityId, friendIds).then((sentCount) {
+        debugPrint(
+          'CREATE_ACTIVITY background invitations sentCount=$sentCount',
+        );
+      }).catchError((error) {
+        debugPrint('CREATE_ACTIVITY background invitations ERROR: $error');
+      }),
+    );
   }
 
   @override
@@ -543,6 +684,41 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     startTime = widget.hour;
     endTime = getNextSlot(widget.hour);
     _friendsFuture = _loadFriendsFromFriendships();
+
+    final duplicatedActivity = widget.duplicatedFromActivity;
+
+    if (duplicatedActivity != null) {
+  startTime = _safeTimeSlot(widget.hour, fallback: widget.hour);
+
+  final duplicatedStart = duplicatedActivity.resolvedStartDateTime;
+  final duplicatedEnd = duplicatedActivity.resolvedEndDateTime;
+
+  int durationMinutes = 60;
+
+  if (duplicatedStart != null && duplicatedEnd != null) {
+    durationMinutes = duplicatedEnd.difference(duplicatedStart).inMinutes;
+  } else {
+    final originalStartMinutes =
+        timeToMinutes(duplicatedActivity.effectiveStartTime);
+    final originalEndMinutes =
+        timeToMinutes(duplicatedActivity.effectiveEndTime);
+
+    if (originalEndMinutes > originalStartMinutes) {
+      durationMinutes = originalEndMinutes - originalStartMinutes;
+    }
+  }
+
+  final startMinutes = timeToMinutes(startTime);
+  final endMinutes = startMinutes + durationMinutes;
+
+  final computedEndTime =
+      '${(endMinutes ~/ 60).clamp(0, 23).toString().padLeft(2, '0')}:${(endMinutes % 60).toString().padLeft(2, '0')}';
+
+  endTime = _safeTimeSlot(
+    computedEndTime,
+    fallback: getNextSlot(startTime),
+  );
+}
 
     if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
       endTime = getNextSlot(startTime);
@@ -555,10 +731,15 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
         ? widget.groupName!.trim()
         : null;
 
+    if (duplicatedActivity != null) {
+      _prefillFromDuplicatedActivity(duplicatedActivity);
+    }
+
     if (isGroupActivity) {
-      visibility = ActivityVisibilityValues.private;
+      visibility = groupActivityAccess == 'group_and_public'
+          ? ActivityVisibilityValues.public
+          : ActivityVisibilityValues.private;
       groupType = 'Privé';
-      groupActivityAccess = 'group_only';
     }
   }
 
@@ -651,6 +832,8 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
           .where((id) => id.isNotEmpty)
           .toList();
 
+      debugPrint('CREATE_ACTIVITY start');
+
       final activityId = await activityRepository.createActivity(
         title: trimmedTitle,
         description: trimmedDescription,
@@ -669,24 +852,22 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
         groupName: selectedGroupName,
       );
 
-      await _sendInvitationsAfterCreate(
-        activityId,
-        selectedFriendsSnapshot,
+      debugPrint('CREATE_ACTIVITY created activityId=$activityId');
+
+      _sendInvitationsInBackground(
+        activityId: activityId,
+        friendIds: selectedFriendsSnapshot,
       );
 
       if (!mounted) return;
 
-      final inviteCount = selectedFriendsSnapshot.length;
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            isGroupActivity
-                ? inviteCount > 0
-                    ? 'Activité de groupe créée et invitations envoyées'
-                    : 'Activité de groupe enregistrée'
-                : inviteCount > 0
-                    ? 'Activité créée et $inviteCount invitation(s) envoyée(s)'
+            isDuplicateMode
+                ? 'Copie de l’activité créée'
+                : isGroupActivity
+                    ? 'Activité de groupe enregistrée'
                     : 'Activité enregistrée',
           ),
         ),
@@ -694,6 +875,8 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
       Navigator.pop(context, trimmedTitle);
     } catch (e) {
+      debugPrint('CREATE_ACTIVITY ERROR: $e');
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -732,15 +915,35 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
             return Scaffold(
               appBar: AppBar(
                 title: Text(
-                  isGroupActivity
-                      ? 'Créer une activité de groupe'
-                      : 'Créer une activité',
+                  isDuplicateMode
+                      ? 'Dupliquer l’activité'
+                      : isGroupActivity
+                          ? 'Créer une activité de groupe'
+                          : 'Créer une activité',
                 ),
               ),
               body: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
+                    if (isDuplicateMode) ...[
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: Colors.green.shade200,
+                          ),
+                        ),
+                        child: const Text(
+                          'Vous créez une nouvelle activité à partir d’une activité existante. '
+                          'Les participants, messages et invitations ne sont pas copiés.',
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                     Text(
                       'Jour sélectionné : ${_formatDisplayDate(selectedDate)}',
                     ),
@@ -1196,9 +1399,11 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                 ),
                               )
                             : Text(
-                                isGroupActivity
-                                    ? 'Créer l’activité du groupe'
-                                    : 'Créer l’activité',
+                                isDuplicateMode
+                                    ? 'Créer la copie'
+                                    : isGroupActivity
+                                        ? 'Créer l’activité du groupe'
+                                        : 'Créer l’activité',
                               ),
                       ),
                     ),

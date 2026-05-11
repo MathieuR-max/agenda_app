@@ -7,6 +7,7 @@ import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
+import 'package:agenda_app/services/activity_clipboard_service.dart';
 import 'package:agenda_app/features/04_profile/user_profile_page.dart';
 import 'package:agenda_app/features/05_chat/activity_chat_page.dart';
 import 'package:agenda_app/features/03_activities/sent_invitations_page.dart';
@@ -20,6 +21,51 @@ class ActivityDetailPage extends StatelessWidget {
     super.key,
     required this.activity,
   });
+
+  bool _isPermissionDenied(Object? error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('permission-denied') ||
+        message.contains('missing or insufficient permissions');
+  }
+
+  Widget _buildAccessLostView(
+    BuildContext context, {
+    required String message,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 48,
+              color: Colors.orange.shade700,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back),
+                label: const Text('Retour'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Color _statusChipBackground(String status) {
     switch (status) {
@@ -346,21 +392,32 @@ class ActivityDetailPage extends StatelessWidget {
 
     if (!confirmed) return;
 
-    await activityRepository.leaveActivityWithOwnerHandling(activityId);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
 
-    if (!context.mounted) return;
+    try {
+      await activityRepository.leaveActivityWithOwnerHandling(activityId);
 
-    Navigator.pop(context);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          isOwner
-              ? 'Vous avez quitté l’activité. Un autre participant pourra devenir organisateur.'
-              : 'Vous avez quitté l’activité',
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            isOwner
+                ? 'Vous avez quitté l’activité. Un autre participant pourra devenir organisateur.'
+                : 'Vous avez quitté l’activité.',
+          ),
         ),
-      ),
-    );
+      );
+
+      navigator.pop();
+    } catch (e) {
+      if (!context.mounted) return;
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Erreur lors de la sortie de l’activité : $e'),
+        ),
+      );
+    }
   }
 
   Future<void> _confirmDeleteActivity(
@@ -389,22 +446,23 @@ class ActivityDetailPage extends StatelessWidget {
 
     if (!confirmed) return;
 
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     try {
       await activityService.deleteActivityWithDependencies(activityId);
 
-      if (!context.mounted) return;
-
-      Navigator.pop(context);
-
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(
           content: Text('Activité supprimée'),
         ),
       );
+
+      navigator.pop();
     } catch (e) {
       if (!context.mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         SnackBar(
           content: Text('Erreur lors de la suppression : $e'),
         ),
@@ -438,6 +496,21 @@ class ActivityDetailPage extends StatelessWidget {
     }
   }
 
+  void _copyActivity(
+    BuildContext context, {
+    required Activity activity,
+  }) {
+    ActivityClipboardService.copy(activity);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Activité copiée. Choisis un créneau dans l’agenda pour la coller.',
+        ),
+      ),
+    );
+  }
+
   void _openChat(
     BuildContext context, {
     required Activity activity,
@@ -467,6 +540,14 @@ class ActivityDetailPage extends StatelessWidget {
         stream: activityService.watchActivity(activity.id),
         builder: (context, activitySnapshot) {
           if (activitySnapshot.hasError) {
+            if (_isPermissionDenied(activitySnapshot.error)) {
+              return _buildAccessLostView(
+                context,
+                message:
+                    'Vous n’avez plus accès à cette activité. Elle a peut-être été supprimée, rendue privée, ou vous l’avez quittée.',
+              );
+            }
+
             return Center(
               child: Text('Erreur activité : ${activitySnapshot.error}'),
             );
@@ -481,8 +562,10 @@ class ActivityDetailPage extends StatelessWidget {
           final currentActivity = activitySnapshot.data;
 
           if (currentActivity == null) {
-            return const Center(
-              child: Text('Activité introuvable'),
+            return _buildAccessLostView(
+              context,
+              message:
+                  'Cette activité est introuvable. Elle a peut-être été supprimée.',
             );
           }
 
@@ -517,6 +600,14 @@ class ActivityDetailPage extends StatelessWidget {
               ),
               builder: (context, countSnapshot) {
                 if (countSnapshot.hasError) {
+                  if (_isPermissionDenied(countSnapshot.error)) {
+                    return _buildAccessLostView(
+                      context,
+                      message:
+                          'Vous n’avez plus accès à cette activité. Elle a peut-être été supprimée, rendue privée, ou vous l’avez quittée.',
+                    );
+                  }
+
                   return Center(
                     child: Text('Erreur compteur : ${countSnapshot.error}'),
                   );
@@ -552,6 +643,14 @@ class ActivityDetailPage extends StatelessWidget {
                   stream: activityService.getParticipants(currentActivity.id),
                   builder: (context, participantIdsSnapshot) {
                     if (participantIdsSnapshot.hasError) {
+                      if (_isPermissionDenied(participantIdsSnapshot.error)) {
+                        return _buildAccessLostView(
+                          context,
+                          message:
+                              'Vous n’avez plus accès aux participants de cette activité. Si vous venez de quitter l’activité, vous pouvez revenir à l’écran précédent.',
+                        );
+                      }
+
                       return Center(
                         child: Text(
                           'Erreur participants : ${participantIdsSnapshot.error}',
@@ -607,6 +706,15 @@ class ActivityDetailPage extends StatelessWidget {
                           .doc(currentActivity.id)
                           .snapshots(),
                       builder: (context, privacySnapshot) {
+                        if (privacySnapshot.hasError &&
+                            _isPermissionDenied(privacySnapshot.error)) {
+                          return _buildAccessLostView(
+                            context,
+                            message:
+                                'Vous n’avez plus accès à cette activité. Elle a peut-être été supprimée, rendue privée, ou vous l’avez quittée.',
+                          );
+                        }
+
                         final rawData = privacySnapshot.data?.data();
 
                         final participantVisibility =
@@ -781,28 +889,46 @@ class ActivityDetailPage extends StatelessWidget {
                                       ownerName = 'Utilisateur inconnu';
                                     }
 
+                                    final organizerHistoryLabel =
+                                        currentActivity.organizerDisplayLabel;
+
                                     return Padding(
                                       padding:
                                           const EdgeInsets.only(bottom: 10),
-                                      child: InkWell(
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => UserProfilePage(
-                                                userId: currentOwnerId,
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          InkWell(
+                                            onTap: () {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) =>
+                                                      UserProfilePage(
+                                                    userId: currentOwnerId,
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                            child: Text(
+                                              'Organisateur actuel : $ownerName',
+                                              style: const TextStyle(
+                                                color: Colors.blue,
+                                                decoration:
+                                                    TextDecoration.underline,
                                               ),
                                             ),
-                                          );
-                                        },
-                                        child: Text(
-                                          'Organisé par : $ownerName',
-                                          style: const TextStyle(
-                                            color: Colors.blue,
-                                            decoration:
-                                                TextDecoration.underline,
                                           ),
-                                        ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            organizerHistoryLabel,
+                                            style: TextStyle(
+                                              color: Colors.grey.shade700,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     );
                                   },
@@ -909,6 +1035,18 @@ class ActivityDetailPage extends StatelessWidget {
                                   ),
                                 ),
                               ],
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: OutlinedButton.icon(
+                                  onPressed: () => _copyActivity(
+                                    context,
+                                    activity: currentActivity,
+                                  ),
+                                  icon: const Icon(Icons.copy_outlined),
+                                  label: const Text('Copier l’activité'),
+                                ),
+                              ),
                               if (canShowEditButton) ...[
                                 const SizedBox(height: 12),
                                 SizedBox(
@@ -979,48 +1117,58 @@ class ActivityDetailPage extends StatelessWidget {
                                 ),
                               ],
                               if (canClaimOwnership) ...[
-  const SizedBox(height: 12),
-  SizedBox(
-    width: double.infinity,
-    child: ElevatedButton(
-      onPressed: () async {
-        try {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Reprise du rôle d’organisateur en cours...'),
-              duration: Duration(seconds: 1),
-            ),
-          );
+                                const SizedBox(height: 12),
+                                SizedBox(
+                                  width: double.infinity,
+                                  child: ElevatedButton(
+                                    onPressed: () async {
+                                      try {
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          const SnackBar(
+                                            content: Text(
+                                              'Reprise du rôle d’organisateur en cours...',
+                                            ),
+                                            duration: Duration(seconds: 1),
+                                          ),
+                                        );
 
-          final accepted = await activityRepository.claimOwnership(
-            currentActivity.id,
-          );
+                                        final accepted =
+                                            await activityRepository
+                                                .claimOwnership(
+                                          currentActivity.id,
+                                        );
 
-          if (!context.mounted) return;
+                                        if (!context.mounted) return;
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                accepted
-                    ? 'Vous êtes devenu organisateur'
-                    : 'Impossible de devenir organisateur. Un autre participant a peut-être déjà repris le rôle.',
-              ),
-            ),
-          );
-        } catch (e) {
-          if (!context.mounted) return;
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              accepted
+                                                  ? 'Vous êtes devenu organisateur'
+                                                  : 'Impossible de devenir organisateur. Un autre participant a peut-être déjà repris le rôle.',
+                                            ),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        if (!context.mounted) return;
 
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur reprise organisateur : $e'),
-            ),
-          );
-        }
-      },
-      child: const Text('Je deviens organisateur'),
-    ),
-  ),
-],
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Erreur reprise organisateur : $e',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                    child:
+                                        const Text('Je deviens organisateur'),
+                                  ),
+                                ),
+                              ],
                               if (canAttemptJoin) ...[
                                 const SizedBox(height: 12),
                                 FutureBuilder<bool>(
@@ -1114,6 +1262,14 @@ class ActivityDetailPage extends StatelessWidget {
                                     builder:
                                         (context, participantsSnapshot) {
                                       if (participantsSnapshot.hasError) {
+                                        if (_isPermissionDenied(
+                                          participantsSnapshot.error,
+                                        )) {
+                                          return const Text(
+                                            'La liste des participants n’est plus accessible.',
+                                          );
+                                        }
+
                                         return Text(
                                           'Erreur participants : ${participantsSnapshot.error}',
                                         );

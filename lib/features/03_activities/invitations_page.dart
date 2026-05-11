@@ -369,6 +369,47 @@ class _InvitationsPageState extends State<InvitationsPage> {
     );
   }
 
+  Widget _buildTabLabel(String label, int count) {
+    if (count <= 0) {
+      return Text(label);
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label),
+        const SizedBox(width: 8),
+        Badge(
+          label: Text(count > 99 ? '99+' : '$count'),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInvitationTitleWithBadge({
+    required String title,
+    required bool showBadge,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        if (showBadge)
+          const Badge(
+            label: Text('1'),
+            child: SizedBox(width: 1, height: 1),
+          ),
+      ],
+    );
+  }
+
   Widget _buildActivityInvitationCard(
     BuildContext context,
     ActivityInvitation invitation,
@@ -386,12 +427,9 @@ class _InvitationsPageState extends State<InvitationsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                invitation.activityTitle,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+              _buildInvitationTitleWithBadge(
+                title: invitation.activityTitle,
+                showBadge: invitation.isPending,
               ),
               const SizedBox(height: 6),
               Text(_scheduleLabel(invitation)),
@@ -467,12 +505,9 @@ class _InvitationsPageState extends State<InvitationsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                invitation.groupName,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+              _buildInvitationTitleWithBadge(
+                title: invitation.groupName,
+                showBadge: invitation.isPending,
               ),
               const SizedBox(height: 8),
               Text('Invité par : ${_groupSenderLabel(invitation)}'),
@@ -594,6 +629,29 @@ class _InvitationsPageState extends State<InvitationsPage> {
     );
   }
 
+  Widget _buildTabBar() {
+    return StreamBuilder<List<ActivityInvitation>>(
+      stream: _activityInvitationService.getPendingReceivedInvitations(),
+      builder: (context, activitySnapshot) {
+        final pendingActivityCount = activitySnapshot.data?.length ?? 0;
+
+        return StreamBuilder<List<GroupInvitation>>(
+          stream: _groupInvitationService.getPendingReceivedInvitations(),
+          builder: (context, groupSnapshot) {
+            final pendingGroupCount = groupSnapshot.data?.length ?? 0;
+
+            return TabBar(
+              tabs: [
+                Tab(child: _buildTabLabel('Activités', pendingActivityCount)),
+                Tab(child: _buildTabLabel('Groupes', pendingGroupCount)),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
@@ -601,11 +659,9 @@ class _InvitationsPageState extends State<InvitationsPage> {
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Invitations'),
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Activités'),
-              Tab(text: 'Groupes'),
-            ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(kTextTabBarHeight),
+            child: _buildTabBar(),
           ),
         ),
         body: TabBarView(

@@ -9,6 +9,8 @@ class UserModel {
   final List<String> centresInteret;
   final List<String> favoriteCategories;
 
+  final Map<String, dynamic>? explorerFilters; // ✅ NEW
+
   UserModel({
     required this.id,
     required this.prenom,
@@ -19,6 +21,7 @@ class UserModel {
     this.dateNaissance,
     this.centresInteret = const [],
     this.favoriteCategories = const [],
+    this.explorerFilters,
   });
 
   factory UserModel.fromMap(String id, Map<String, dynamic> map) {
@@ -32,6 +35,7 @@ class UserModel {
       dateNaissance: map['dateNaissance'],
       centresInteret: List<String>.from(map['centresInteret'] ?? []),
       favoriteCategories: List<String>.from(map['favoriteCategories'] ?? []),
+      explorerFilters: map['explorerFilters'], // ✅ NEW
     );
   }
 
@@ -45,6 +49,7 @@ class UserModel {
       'dateNaissance': dateNaissance,
       'centresInteret': centresInteret,
       'favoriteCategories': favoriteCategories,
+      'explorerFilters': explorerFilters, // ✅ NEW
     };
   }
 
@@ -58,6 +63,7 @@ class UserModel {
     String? dateNaissance,
     List<String>? centresInteret,
     List<String>? favoriteCategories,
+    Map<String, dynamic>? explorerFilters, // ✅ NEW
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -69,6 +75,7 @@ class UserModel {
       dateNaissance: dateNaissance ?? this.dateNaissance,
       centresInteret: centresInteret ?? this.centresInteret,
       favoriteCategories: favoriteCategories ?? this.favoriteCategories,
+      explorerFilters: explorerFilters ?? this.explorerFilters, // ✅ NEW
     );
   }
 }
