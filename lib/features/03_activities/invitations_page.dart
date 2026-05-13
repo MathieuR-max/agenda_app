@@ -563,8 +563,56 @@ class _InvitationsPageState extends State<InvitationsPage> {
     );
   }
 
-  Widget _buildEmptyState(String label) {
-    return Center(child: Text(label));
+  Widget _buildActivityInvitationsEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.mail_outline, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 20),
+            const Text(
+              'Aucune invitation d\'activité',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Quand quelqu\'un vous invite à une activité, elle apparaîtra ici.',
+              style: TextStyle(color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGroupInvitationsEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.group_outlined, size: 64, color: Colors.grey.shade400),
+            const SizedBox(height: 20),
+            const Text(
+              'Aucune invitation de groupe',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Quand quelqu\'un vous invite dans un groupe, il apparaîtra ici.',
+              style: TextStyle(color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _buildActivitiesTab() {
@@ -584,7 +632,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         final invitations = snapshot.data ?? [];
 
         if (invitations.isEmpty) {
-          return _buildEmptyState('Aucune invitation d’activité');
+          return _buildActivityInvitationsEmptyState();
         }
 
         return ListView.builder(
@@ -615,7 +663,7 @@ class _InvitationsPageState extends State<InvitationsPage> {
         final invitations = snapshot.data ?? [];
 
         if (invitations.isEmpty) {
-          return _buildEmptyState('Aucune invitation de groupe');
+          return _buildGroupInvitationsEmptyState();
         }
 
         return ListView.builder(

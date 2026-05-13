@@ -966,8 +966,54 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
                             );
 
                             if (activities.isEmpty) {
-                              return const Center(
-                                child: Text('Aucune activité trouvée'),
+                              return Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(32),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        _activeFilterCount > 0
+                                            ? Icons.filter_list_off
+                                            : Icons.event_busy_outlined,
+                                        size: 64,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        _activeFilterCount > 0
+                                            ? 'Aucune activité ne correspond à vos filtres'
+                                            : 'Vous n\'avez pas encore d\'activité',
+                                        style: const TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        _activeFilterCount > 0
+                                            ? 'Essayez de modifier ou réinitialiser vos filtres.'
+                                            : 'Créez une activité ou rejoignez-en une pour qu\'elle apparaisse ici.',
+                                        style: TextStyle(
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      if (_activeFilterCount > 0) ...[
+                                        const SizedBox(height: 20),
+                                        OutlinedButton.icon(
+                                          onPressed: () =>
+                                              _resetFilters(currentUserId),
+                                          icon: const Icon(Icons.refresh),
+                                          label: const Text(
+                                            'Réinitialiser les filtres',
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
                               );
                             }
 
