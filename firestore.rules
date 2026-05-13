@@ -492,6 +492,7 @@ service cloud.firestore {
           'photoUrl',
           'bio',
           'favoriteCategories',
+          'dateNaissance',
           'updatedAt'
         ]);
 

@@ -7,7 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/app_navigator.dart';
-import 'package:agenda_app/features/01_auth/test_user_selector_page.dart';
+import 'package:agenda_app/features/01_auth/login_page.dart';
 import 'package:agenda_app/features/main_navigation_page.dart';
 import 'package:agenda_app/services/firestore/notification_token_service.dart';
 import 'package:agenda_app/services/notification_navigation_service.dart';
@@ -227,7 +227,7 @@ class _AgendaAppState extends State<AgendaApp> {
 
           if (firebaseUser == null) {
             _resetBootstrap();
-            return const TestUserSelectorPage();
+            return const LoginPage();
           }
 
           return FutureBuilder<void>(
