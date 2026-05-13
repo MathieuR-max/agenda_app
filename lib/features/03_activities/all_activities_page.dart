@@ -34,6 +34,7 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
   bool prioritizeUnreadMessages = true;
 
   bool _filtersLoadedFromFirestore = false;
+  bool _filtersExpanded = false;
 
   final Map<String, int> _unreadCountsByActivityId = <String, int>{};
 
@@ -155,6 +156,19 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
       onlyMyFavorites = false;
       prioritizeUnreadMessages = true;
     });
+  }
+
+  int get _activeFilterCount {
+    int count = 0;
+    if (selectedDay != 'Tous') count++;
+    if (selectedCategory != 'Toutes') count++;
+    if (selectedSort != 'Jour / heure') count++;
+    if (!onlyUpcomingActivities) count++;
+    if (onlyAvailable) count++;
+    if (onlyOwnerNeeded) count++;
+    if (onlyMyFavorites) count++;
+    if (!prioritizeUnreadMessages) count++;
+    return count;
   }
 
   void _rememberUnreadCount(String activityId, int count) {
@@ -687,155 +701,199 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
           return Column(
             children: [
               Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Row(
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: selectedDay,
-                            decoration: const InputDecoration(
-                              labelText: 'Jour',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: days
-                                .map(
-                                  (day) => DropdownMenuItem(
-                                    value: day,
-                                    child: Text(day),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) {
-                              if (value == null) return;
-                              _updateFilters(currentUserId, () {
-                                selectedDay = value;
-                              });
-                            },
+                    TextButton.icon(
+                      onPressed: () => setState(
+                        () => _filtersExpanded = !_filtersExpanded,
+                      ),
+                      icon: const Icon(Icons.tune),
+                      label: const Text('Filtres'),
+                    ),
+                    if (_activeFilterCount > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '$_activeFilterCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: DropdownButtonFormField<String>(
-                            value: selectedCategory,
-                            decoration: const InputDecoration(
-                              labelText: 'Catégorie',
-                              border: OutlineInputBorder(),
-                            ),
-                            items: categories
-                                .map(
-                                  (category) => DropdownMenuItem(
-                                    value: category,
-                                    child: Text(category),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (value) {
-                              if (value == null) return;
-                              _updateFilters(currentUserId, () {
-                                selectedCategory = value;
-                              });
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: selectedSort,
-                      decoration: const InputDecoration(
-                        labelText: 'Trier par',
-                        border: OutlineInputBorder(),
                       ),
-                      items: sortOptions
-                          .map(
-                            (sort) => DropdownMenuItem(
-                              value: sort,
-                              child: Text(sort),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        if (value == null) return;
-                        _updateFilters(currentUserId, () {
-                          selectedSort = value;
-                        });
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Prioriser les messages non lus'),
-                      value: prioritizeUnreadMessages,
-                      onChanged: (value) {
-                        _updateFilters(currentUserId, () {
-                          prioritizeUnreadMessages = value;
-                        });
-                      },
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Seulement les activités à venir'),
-                      subtitle: const Text(
-                        'Masque les activités terminées, passées ou annulées',
-                      ),
-                      value: onlyUpcomingActivities,
-                      onChanged: (value) {
-                        _updateFilters(currentUserId, () {
-                          onlyUpcomingActivities = value;
-                        });
-                      },
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Seulement avec places disponibles'),
-                      value: onlyAvailable,
-                      onChanged: (value) {
-                        _updateFilters(currentUserId, () {
-                          onlyAvailable = value;
-                        });
-                      },
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Seulement organisateur recherché'),
-                      value: onlyOwnerNeeded,
-                      onChanged: (value) {
-                        _updateFilters(currentUserId, () {
-                          onlyOwnerNeeded = value;
-                        });
-                      },
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      title: const Text('Seulement mes catégories favorites'),
-                      subtitle: favoriteCategories.isEmpty
-                          ? const Text(
-                              'Ajoutez des catégories favorites dans votre profil',
-                            )
-                          : Text(favoriteCategories.join(', ')),
-                      value:
-                          favoriteCategories.isEmpty ? false : onlyMyFavorites,
-                      onChanged: favoriteCategories.isEmpty
-                          ? null
-                          : (value) {
-                              _updateFilters(currentUserId, () {
-                                onlyMyFavorites = value;
-                              });
-                            },
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton.icon(
-                        onPressed: () => _resetFilters(currentUserId),
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Réinitialiser les filtres'),
-                      ),
-                    ),
                   ],
                 ),
+              ),
+              AnimatedCrossFade(
+                firstChild: const SizedBox.shrink(),
+                secondChild: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedDay,
+                              decoration: const InputDecoration(
+                                labelText: 'Jour',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: days
+                                  .map(
+                                    (day) => DropdownMenuItem(
+                                      value: day,
+                                      child: Text(day),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value == null) return;
+                                _updateFilters(currentUserId, () {
+                                  selectedDay = value;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              value: selectedCategory,
+                              decoration: const InputDecoration(
+                                labelText: 'Catégorie',
+                                border: OutlineInputBorder(),
+                              ),
+                              items: categories
+                                  .map(
+                                    (category) => DropdownMenuItem(
+                                      value: category,
+                                      child: Text(category),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                if (value == null) return;
+                                _updateFilters(currentUserId, () {
+                                  selectedCategory = value;
+                                });
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        value: selectedSort,
+                        decoration: const InputDecoration(
+                          labelText: 'Trier par',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: sortOptions
+                            .map(
+                              (sort) => DropdownMenuItem(
+                                value: sort,
+                                child: Text(sort),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          if (value == null) return;
+                          _updateFilters(currentUserId, () {
+                            selectedSort = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Prioriser les messages non lus'),
+                        value: prioritizeUnreadMessages,
+                        onChanged: (value) {
+                          _updateFilters(currentUserId, () {
+                            prioritizeUnreadMessages = value;
+                          });
+                        },
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Seulement les activités à venir'),
+                        subtitle: const Text(
+                          'Masque les activités terminées, passées ou annulées',
+                        ),
+                        value: onlyUpcomingActivities,
+                        onChanged: (value) {
+                          _updateFilters(currentUserId, () {
+                            onlyUpcomingActivities = value;
+                          });
+                        },
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Seulement avec places disponibles'),
+                        value: onlyAvailable,
+                        onChanged: (value) {
+                          _updateFilters(currentUserId, () {
+                            onlyAvailable = value;
+                          });
+                        },
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Seulement organisateur recherché'),
+                        value: onlyOwnerNeeded,
+                        onChanged: (value) {
+                          _updateFilters(currentUserId, () {
+                            onlyOwnerNeeded = value;
+                          });
+                        },
+                      ),
+                      SwitchListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Seulement mes catégories favorites'),
+                        subtitle: favoriteCategories.isEmpty
+                            ? const Text(
+                                'Ajoutez des catégories favorites dans votre profil',
+                              )
+                            : Text(favoriteCategories.join(', ')),
+                        value: favoriteCategories.isEmpty
+                            ? false
+                            : onlyMyFavorites,
+                        onChanged: favoriteCategories.isEmpty
+                            ? null
+                            : (value) {
+                                _updateFilters(currentUserId, () {
+                                  onlyMyFavorites = value;
+                                });
+                              },
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton.icon(
+                          onPressed: () => _resetFilters(currentUserId),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Réinitialiser les filtres'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                crossFadeState: _filtersExpanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 250),
               ),
               Expanded(
                 child: StreamBuilder<List<Activity>>(
