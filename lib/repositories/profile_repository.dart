@@ -56,6 +56,45 @@ class ProfileRepository {
         );
   }
 
+  /// Writes only the fields the user can edit from their profile page.
+  /// Never touches pseudo, explorerFilters, centresInteret, or uid.
+  Future<void> updateProfile({
+    required String userId,
+    required String prenom,
+    required String nom,
+    required String lieu,
+    required String genre,
+    required String dateNaissance,
+    required String bio,
+    required List<String> favoriteCategories,
+    String? photoUrl,
+  }) async {
+    final trimmedUserId = userId.trim();
+
+    if (trimmedUserId.isEmpty) {
+      throw ArgumentError('userId ne peut pas être vide');
+    }
+
+    if (prenom.trim().isEmpty) {
+      throw ArgumentError('Le prénom est obligatoire');
+    }
+
+    await _usersCollection.doc(trimmedUserId).set(
+      {
+        'prenom': prenom.trim(),
+        'nom': nom.trim(),
+        'lieu': lieu.trim(),
+        'genre': genre.trim(),
+        'dateNaissance': dateNaissance.trim(),
+        'bio': bio.trim(),
+        'favoriteCategories': favoriteCategories,
+        'photoUrl': photoUrl?.trim() ?? '',
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   Future<void> updateFavoriteCategories(
     String userId,
     List<String> categories,
@@ -68,23 +107,26 @@ class ProfileRepository {
 
     await _usersCollection.doc(trimmedUserId).update({
       'favoriteCategories': categories,
+      'updatedAt': FieldValue.serverTimestamp(),
     });
   }
+
   Future<void> updateExplorerFilters(
-  String userId,
-  Map<String, dynamic> filters,
-) async {
-  final trimmedUserId = userId.trim();
+    String userId,
+    Map<String, dynamic> filters,
+  ) async {
+    final trimmedUserId = userId.trim();
 
-  if (trimmedUserId.isEmpty) {
-    throw ArgumentError('userId ne peut pas être vide');
+    if (trimmedUserId.isEmpty) {
+      throw ArgumentError('userId ne peut pas être vide');
+    }
+
+    await _usersCollection.doc(trimmedUserId).set(
+      {
+        'explorerFilters': filters,
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
   }
-
-  await _usersCollection.doc(trimmedUserId).set(
-    {
-      'explorerFilters': filters,
-    },
-    SetOptions(merge: true),
-  );
-}
 }

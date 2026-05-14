@@ -7,6 +7,7 @@ import '../../services/firestore/friendship_firestore_service.dart';
 import '../../repositories/profile_repository.dart';
 import '../../services/current_user.dart';
 import '../06_groups/groups_page.dart';
+import 'edit_profile_page.dart';
 import 'friend_requests_page.dart';
 import 'friends_list_page.dart';
 
@@ -28,75 +29,6 @@ class UserProfilePage extends StatelessWidget {
     'Détente',
     'Autre',
   ];
-
-  Future<void> _editFavoriteCategories(
-    BuildContext context,
-    UserModel user,
-    ProfileRepository repository,
-  ) async {
-    final selected = List<String>.from(user.favoriteCategories);
-
-    final result = await showDialog<List<String>>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Catégories favorites'),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: availableCategories.map((category) {
-                    final isChecked = selected.contains(category);
-
-                    return CheckboxListTile(
-                      value: isChecked,
-                      title: Text(category),
-                      contentPadding: EdgeInsets.zero,
-                      controlAffinity: ListTileControlAffinity.leading,
-                      onChanged: (value) {
-                        setState(() {
-                          if (value == true) {
-                            if (!selected.contains(category)) {
-                              selected.add(category);
-                            }
-                          } else {
-                            selected.remove(category);
-                          }
-                        });
-                      },
-                    );
-                  }).toList(),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Annuler'),
-                ),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(dialogContext, selected),
-                  child: const Text('Enregistrer'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (result == null) return;
-
-    await repository.updateFavoriteCategories(user.id, result);
-
-    if (!context.mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Catégories favorites mises à jour'),
-      ),
-    );
-  }
 
   Future<void> _sendFriendRequest(
     BuildContext context,
@@ -642,10 +574,17 @@ class UserProfilePage extends StatelessWidget {
               Center(
                 child: CircleAvatar(
                   radius: 40,
-                  child: Text(
-                    avatarLetter,
-                    style: const TextStyle(fontSize: 28),
-                  ),
+                  backgroundImage: (user.photoUrl != null &&
+                          user.photoUrl!.trim().isNotEmpty)
+                      ? NetworkImage(user.photoUrl!.trim())
+                      : null,
+                  child: (user.photoUrl == null ||
+                          user.photoUrl!.trim().isEmpty)
+                      ? Text(
+                          avatarLetter,
+                          style: const TextStyle(fontSize: 28),
+                        )
+                      : null,
                 ),
               ),
               const SizedBox(height: 16),
@@ -663,6 +602,21 @@ class UserProfilePage extends StatelessWidget {
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
               ),
+              if (isCurrentUser) ...[
+                const SizedBox(height: 12),
+                Center(
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EditProfilePage(user: user),
+                      ),
+                    ),
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Modifier mon profil'),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               _buildFriendshipSection(
                 context,
@@ -695,6 +649,13 @@ class UserProfilePage extends StatelessWidget {
                     ? user.dateNaissance!.trim()
                     : 'Date de naissance non renseignée',
               ),
+              if (user.bio != null && user.bio!.trim().isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _buildInfoCard(
+                  icon: Icons.info_outline,
+                  text: user.bio!.trim(),
+                ),
+              ],
               const SizedBox(height: 12),
               Card(
                 child: Padding(
@@ -703,13 +664,13 @@ class UserProfilePage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Centres d’intérêt',
+                        "Centres d’intérêt",
                         style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
                       _buildChipWrap(
                         user.centresInteret,
-                        emptyLabel: 'Aucun centre d’intérêt',
+                        emptyLabel: "Aucun centre d’intérêt",
                       ),
                     ],
                   ),
@@ -722,29 +683,14 @@ class UserProfilePage extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          const Expanded(
-                            child: Text(
-                              'Catégories favorites',
-                              style: TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                          if (isCurrentUser)
-                            TextButton(
-                              onPressed: () => _editFavoriteCategories(
-                                context,
-                                user,
-                                repository,
-                              ),
-                              child: const Text('Modifier'),
-                            ),
-                        ],
+                      const Text(
+                        "Catégories favorites",
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
                       const SizedBox(height: 8),
                       _buildChipWrap(
                         user.favoriteCategories,
-                        emptyLabel: 'Aucune catégorie favorite',
+                        emptyLabel: "Aucune catégorie favorite",
                       ),
                     ],
                   ),
