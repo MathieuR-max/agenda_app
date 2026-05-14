@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
 import '../models/activity_invitation.dart';
+import '../models/friendship.dart';
 import '../models/group_invitation.dart';
 import '../repositories/message_badge_repository.dart';
 import '../services/current_user.dart';
 import '../services/firestore/activity_firestore_service.dart';
 import '../services/firestore/activity_invitation_firestore_service.dart';
+import '../services/firestore/friendship_firestore_service.dart';
 import '../services/firestore/group_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
 import '03_activities/all_activities_page.dart';
@@ -27,6 +29,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   late final GroupInvitationFirestoreService _groupInvitationService;
   late final MessageBadgeRepository _messageBadgeRepository;
   late final ActivityFirestoreService _activityService;
+  late final FriendshipFirestoreService _friendshipService;
 
   @override
   void initState() {
@@ -35,6 +38,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _groupInvitationService = GroupInvitationFirestoreService();
     _messageBadgeRepository = MessageBadgeRepository();
     _activityService = ActivityFirestoreService();
+    _friendshipService = FriendshipFirestoreService();
   }
 
   void _onTabTapped(int index) {
@@ -132,11 +136,13 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
                 selected: false,
                 isCurrentTab: _currentIndex == 3,
                 messageBadgeRepository: _messageBadgeRepository,
+                friendshipService: _friendshipService,
               ),
               selectedIcon: _ProfileNavIcon(
                 selected: true,
                 isCurrentTab: _currentIndex == 3,
                 messageBadgeRepository: _messageBadgeRepository,
+                friendshipService: _friendshipService,
               ),
               label: 'Profil',
             ),
@@ -236,24 +242,33 @@ class _ProfileNavIcon extends StatelessWidget {
   final bool selected;
   final bool isCurrentTab;
   final MessageBadgeRepository messageBadgeRepository;
+  final FriendshipFirestoreService friendshipService;
 
   const _ProfileNavIcon({
     required this.selected,
     required this.isCurrentTab,
     required this.messageBadgeRepository,
+    required this.friendshipService,
   });
 
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<int>(
       stream: messageBadgeRepository.watchGroupUnreadCount(),
-      builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
+      builder: (context, unreadSnapshot) {
+        final unreadCount = unreadSnapshot.data ?? 0;
 
-        return _NavBadgeIcon(
-          icon: Icon(selected ? Icons.person : Icons.person_outline),
-          count: unreadCount,
-          hideBadge: isCurrentTab,
+        return StreamBuilder<List<Friendship>>(
+          stream: friendshipService.getPendingReceivedFriendRequests(),
+          builder: (context, friendSnapshot) {
+            final pendingFriendCount = friendSnapshot.data?.length ?? 0;
+
+            return _NavBadgeIcon(
+              icon: Icon(selected ? Icons.person : Icons.person_outline),
+              count: unreadCount + pendingFriendCount,
+              hideBadge: isCurrentTab,
+            );
+          },
         );
       },
     );

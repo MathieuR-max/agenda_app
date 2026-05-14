@@ -3,6 +3,7 @@ import '../../models/user_model.dart';
 import '../../models/friendship.dart';
 import '../../repositories/friendship_repository.dart';
 import '../../repositories/message_badge_repository.dart';
+import '../../services/firestore/friendship_firestore_service.dart';
 import '../../repositories/profile_repository.dart';
 import '../../services/current_user.dart';
 import '../06_groups/groups_page.dart';
@@ -279,6 +280,37 @@ class UserProfilePage extends StatelessWidget {
     );
   }
 
+  Widget _buildFriendRequestsButton(
+    BuildContext context,
+    FriendshipFirestoreService friendshipFirestoreService,
+  ) {
+    return StreamBuilder<List<Friendship>>(
+      stream: friendshipFirestoreService.getPendingReceivedFriendRequests(),
+      builder: (context, snapshot) {
+        final pendingCount = snapshot.data?.length ?? 0;
+
+        return OutlinedButton.icon(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const FriendRequestsPage()),
+            );
+          },
+          icon: Badge(
+            isLabelVisible: pendingCount > 0,
+            label: Text(pendingCount > 99 ? '99+' : '$pendingCount'),
+            child: const Icon(Icons.group_add),
+          ),
+          label: Text(
+            pendingCount > 0
+                ? 'Voir mes demandes d’amis ($pendingCount)'
+                : 'Voir mes demandes d’amis',
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildGroupsButton(
     BuildContext context,
     MessageBadgeRepository messageBadgeRepository,
@@ -316,6 +348,7 @@ class UserProfilePage extends StatelessWidget {
     BuildContext context,
     FriendshipRepository friendshipRepository,
     MessageBadgeRepository messageBadgeRepository,
+    FriendshipFirestoreService friendshipFirestoreService,
     String profileUserId,
     String currentUserId,
     bool isCurrentUser,
@@ -340,17 +373,9 @@ class UserProfilePage extends StatelessWidget {
                 label: const Text('Voir mes amis'),
               ),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const FriendRequestsPage(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.group_add),
-                label: const Text('Voir mes demandes d’amis'),
+              _buildFriendRequestsButton(
+                context,
+                friendshipFirestoreService,
               ),
               const SizedBox(height: 12),
               _buildGroupsButton(
@@ -540,6 +565,7 @@ class UserProfilePage extends StatelessWidget {
     final repository = ProfileRepository();
     final friendshipRepository = FriendshipRepository();
     final messageBadgeRepository = MessageBadgeRepository();
+    final friendshipFirestoreService = FriendshipFirestoreService();
 
     final currentUserId = AuthUser.uidOrNull?.trim();
     final profileUserId = userId.trim();
@@ -642,6 +668,7 @@ class UserProfilePage extends StatelessWidget {
                 context,
                 friendshipRepository,
                 messageBadgeRepository,
+                friendshipFirestoreService,
                 profileUserId,
                 currentUserId,
                 isCurrentUser,
