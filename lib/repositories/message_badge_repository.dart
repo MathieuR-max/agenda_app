@@ -12,6 +12,11 @@ class MessageBadgeRepository {
   final ChatRepository _chatRepository;
   final GroupChatRepository _groupChatRepository;
 
+  // Cached broadcast streams — prevents double-subscription when NavigationDestination
+  // renders both icon and selectedIcon from the same repository instance.
+  Stream<int>? _activityUnreadCountCache;
+  Stream<int>? _groupUnreadCountCache;
+
   MessageBadgeRepository({
     FirebaseFirestore? db,
     ChatRepository? chatRepository,
@@ -68,14 +73,22 @@ class MessageBadgeRepository {
 
     Set<String> joinedIds = {};
     Set<String> ownerIds = {};
+    List<String>? lastEmittedIds; // dedup: skip if merged list unchanged
 
     void emit() {
       if (controller.isClosed) return;
 
       final merged = {...joinedIds, ...ownerIds}.toList()..sort();
 
-      debugPrint('[MessageBadgeRepository] watchMyActivityIds: $merged');
+      // Skip redundant emission when IDs haven't changed (e.g. both sources fire on init).
+      if (lastEmittedIds != null &&
+          lastEmittedIds!.length == merged.length &&
+          lastEmittedIds!.every(merged.contains)) {
+        return;
+      }
+      lastEmittedIds = merged;
 
+      debugPrint('[MessageBadgeRepository] watchMyActivityIds: $merged');
       controller.add(merged);
     }
 
@@ -137,17 +150,17 @@ class MessageBadgeRepository {
   }
 
   Stream<int> watchActivityUnreadCount() {
-    return _watchUnreadCountForIds(
+    return _activityUnreadCountCache ??= _watchUnreadCountForIds(
       idsStream: watchMyActivityIds(),
       watchUnreadCount: _chatRepository.watchUnreadCount,
-    ).map((count) {
-      debugPrint('[MessageBadgeRepository] watchActivityUnreadCount: $count');
-      return count;
+    ).map((n) {
+      debugPrint('[MessageBadgeRepository] watchActivityUnreadCount: $n');
+      return n;
     });
   }
 
   Stream<int> watchGroupUnreadCount() {
-    return _watchUnreadCountForIds(
+    return _groupUnreadCountCache ??= _watchUnreadCountForIds(
       idsStream: watchMyGroupIds(),
       watchUnreadCount: _groupChatRepository.watchUnreadCount,
     );
@@ -167,11 +180,14 @@ class MessageBadgeRepository {
 
     int activityTotal = 0;
     int groupTotal = 0;
+    int? lastEmittedTotal;
 
     void emitTotal() {
-      if (!controller.isClosed) {
-        controller.add(activityTotal + groupTotal);
-      }
+      if (controller.isClosed) return;
+      final total = activityTotal + groupTotal;
+      if (total == lastEmittedTotal) return;
+      lastEmittedTotal = total;
+      controller.add(total);
     }
 
     activitySubscription = watchActivityUnreadCount().listen(
@@ -226,18 +242,26 @@ class MessageBadgeRepository {
     final Map<String, StreamSubscription<int>> unreadSubscriptions = {};
     final Map<String, int> unreadCounts = {};
 
-    void emitTotal() {
-      final total = unreadCounts.values.fold<int>(
-        0,
-        (sum, value) => sum + value,
-      );
+    int? lastEmitted;
 
-      if (!controller.isClosed) {
-        controller.add(total);
-      }
+    void emitTotal() {
+      if (controller.isClosed) return;
+      final total = unreadCounts.values.fold<int>(0, (acc, v) => acc + v);
+      // Skip redundant emissions to avoid unnecessary widget rebuilds.
+      if (total == lastEmitted) return;
+      lastEmitted = total;
+      controller.add(total);
     }
 
+    // Serialisation guard: replaceSubscriptions is async; if idsStream emits
+    // again before the previous call completes, we save the latest IDs and
+    // process them once the current run finishes (drop intermediates).
+    bool replacing = false;
+    List<String>? queuedIds;
+
     Future<void> replaceSubscriptions(List<String> ids) async {
+      if (controller.isClosed) return;
+
       final nextIds = ids
           .map((id) => id.trim())
           .where((id) => id.isNotEmpty)
@@ -250,6 +274,10 @@ class MessageBadgeRepository {
         unreadSubscriptions.remove(removedId);
         unreadCounts.remove(removedId);
       }
+
+      // Guard after the first await: controller may have been cancelled while
+      // we were awaiting the cancellations above.
+      if (controller.isClosed) return;
 
       for (final id in nextIds.difference(existingIds)) {
         unreadSubscriptions[id] = watchUnreadCount(id).listen(
@@ -270,26 +298,43 @@ class MessageBadgeRepository {
       emitTotal();
     }
 
+    Future<void> runReplacement(List<String> ids) async {
+      replacing = true;
+      try {
+        await replaceSubscriptions(ids);
+      } finally {
+        replacing = false;
+        // If a new emission arrived while we were replacing, process it now.
+        if (queuedIds != null && !controller.isClosed) {
+          final next = queuedIds!;
+          queuedIds = null;
+          await runReplacement(next);
+        }
+      }
+    }
+
     idsSubscription = idsStream.listen(
       (ids) {
-        replaceSubscriptions(ids);
+        if (replacing) {
+          // Drop intermediate values; only the latest matters.
+          queuedIds = ids;
+        } else {
+          runReplacement(ids);
+        }
       },
       onError: (error) {
         debugPrint('[MessageBadgeRepository] idsStream error: $error');
-
-        if (!controller.isClosed) {
-          controller.add(0);
-        }
+        if (!controller.isClosed) controller.add(0);
       },
     );
 
     controller.onCancel = () async {
+      // Cancel IDs source first to stop new replaceSubscriptions from starting.
       await idsSubscription?.cancel();
-
+      // Then cancel all active unread listeners.
       for (final sub in unreadSubscriptions.values) {
         await sub.cancel();
       }
-
       unreadSubscriptions.clear();
       unreadCounts.clear();
     };
