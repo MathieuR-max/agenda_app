@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/repositories/group_chat_repository.dart';
@@ -37,20 +38,79 @@ class MessageBadgeRepository {
       return Stream.value(<String>[]);
     }
 
-    return _db
-        .collectionGroup(FirestoreCollections.participants)
-        .where('userId', isEqualTo: uid)
+    final joinedActivitiesStream = _db
+        .collection(FirestoreCollections.users)
+        .doc(uid)
+        .collection('joined_activities')
         .snapshots()
         .map((snapshot) {
-      final ids = snapshot.docs
-          .map((doc) => (doc.reference.parent.parent?.id ?? '').trim())
+      return snapshot.docs
+          .map((doc) => (doc.data()['activityId'] ?? doc.id).toString().trim())
           .where((id) => id.isNotEmpty)
-          .toSet()
-          .toList();
-
-      ids.sort();
-      return ids;
+          .toSet();
     });
+
+    final ownerStream = _db
+        .collection(FirestoreCollections.activities)
+        .where('ownerId', isEqualTo: uid)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => doc.id.trim())
+          .where((id) => id.isNotEmpty)
+          .toSet();
+    });
+
+    final controller = StreamController<List<String>>.broadcast();
+
+    StreamSubscription<Set<String>>? joinedSub;
+    StreamSubscription<Set<String>>? ownerSub;
+
+    Set<String> joinedIds = {};
+    Set<String> ownerIds = {};
+
+    void emit() {
+      if (controller.isClosed) return;
+
+      final merged = {...joinedIds, ...ownerIds}.toList()..sort();
+
+      debugPrint('[MessageBadgeRepository] watchMyActivityIds: $merged');
+
+      controller.add(merged);
+    }
+
+    joinedSub = joinedActivitiesStream.listen(
+      (ids) {
+        joinedIds = ids;
+        emit();
+      },
+      onError: (error) {
+        debugPrint(
+          '[MessageBadgeRepository] joinedActivitiesStream error: $error',
+        );
+        joinedIds = {};
+        emit();
+      },
+    );
+
+    ownerSub = ownerStream.listen(
+      (ids) {
+        ownerIds = ids;
+        emit();
+      },
+      onError: (error) {
+        debugPrint('[MessageBadgeRepository] ownerStream error: $error');
+        ownerIds = {};
+        emit();
+      },
+    );
+
+    controller.onCancel = () async {
+      await joinedSub?.cancel();
+      await ownerSub?.cancel();
+    };
+
+    return controller.stream;
   }
 
   Stream<List<String>> watchMyGroupIds() {
@@ -80,7 +140,10 @@ class MessageBadgeRepository {
     return _watchUnreadCountForIds(
       idsStream: watchMyActivityIds(),
       watchUnreadCount: _chatRepository.watchUnreadCount,
-    );
+    ).map((count) {
+      debugPrint('[MessageBadgeRepository] watchActivityUnreadCount: $count');
+      return count;
+    });
   }
 
   Stream<int> watchGroupUnreadCount() {
@@ -116,7 +179,10 @@ class MessageBadgeRepository {
         activityTotal = count;
         emitTotal();
       },
-      onError: (_) {
+      onError: (error) {
+        debugPrint(
+          '[MessageBadgeRepository] watchActivityUnreadCount error: $error',
+        );
         activityTotal = 0;
         emitTotal();
       },
@@ -127,7 +193,10 @@ class MessageBadgeRepository {
         groupTotal = count;
         emitTotal();
       },
-      onError: (_) {
+      onError: (error) {
+        debugPrint(
+          '[MessageBadgeRepository] watchGroupUnreadCount error: $error',
+        );
         groupTotal = 0;
         emitTotal();
       },
@@ -188,7 +257,10 @@ class MessageBadgeRepository {
             unreadCounts[id] = count;
             emitTotal();
           },
-          onError: (_) {
+          onError: (error) {
+            debugPrint(
+              '[MessageBadgeRepository] unread error id=$id error=$error',
+            );
             unreadCounts[id] = 0;
             emitTotal();
           },
@@ -202,7 +274,9 @@ class MessageBadgeRepository {
       (ids) {
         replaceSubscriptions(ids);
       },
-      onError: (_) {
+      onError: (error) {
+        debugPrint('[MessageBadgeRepository] idsStream error: $error');
+
         if (!controller.isClosed) {
           controller.add(0);
         }

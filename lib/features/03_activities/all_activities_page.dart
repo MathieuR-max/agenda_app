@@ -82,45 +82,48 @@ class _AllActivitiesPageState extends State<AllActivitiesPage> {
     final savedCategory = filters['selectedCategory'];
     final savedSort = filters['selectedSort'];
 
-    setState(() {
-      if (savedDay is String && days.contains(savedDay)) {
-        selectedDay = savedDay;
-      }
+    _filtersLoadedFromFirestore = true;
 
-      if (savedCategory is String && categories.contains(savedCategory)) {
-        selectedCategory = savedCategory;
-      }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        if (savedDay is String && days.contains(savedDay)) {
+          selectedDay = savedDay;
+        }
 
-      if (savedSort is String && sortOptions.contains(savedSort)) {
-        selectedSort = savedSort;
-      }
+        if (savedCategory is String && categories.contains(savedCategory)) {
+          selectedCategory = savedCategory;
+        }
 
-      final savedOnlyUpcoming = filters['onlyUpcomingActivities'];
-      if (savedOnlyUpcoming is bool) {
-        onlyUpcomingActivities = savedOnlyUpcoming;
-      }
+        if (savedSort is String && sortOptions.contains(savedSort)) {
+          selectedSort = savedSort;
+        }
 
-      final savedOnlyAvailable = filters['onlyAvailable'];
-      if (savedOnlyAvailable is bool) {
-        onlyAvailable = savedOnlyAvailable;
-      }
+        final savedOnlyUpcoming = filters['onlyUpcomingActivities'];
+        if (savedOnlyUpcoming is bool) {
+          onlyUpcomingActivities = savedOnlyUpcoming;
+        }
 
-      final savedOnlyOwnerNeeded = filters['onlyOwnerNeeded'];
-      if (savedOnlyOwnerNeeded is bool) {
-        onlyOwnerNeeded = savedOnlyOwnerNeeded;
-      }
+        final savedOnlyAvailable = filters['onlyAvailable'];
+        if (savedOnlyAvailable is bool) {
+          onlyAvailable = savedOnlyAvailable;
+        }
 
-      final savedOnlyMyFavorites = filters['onlyMyFavorites'];
-      if (savedOnlyMyFavorites is bool) {
-        onlyMyFavorites = savedOnlyMyFavorites;
-      }
+        final savedOnlyOwnerNeeded = filters['onlyOwnerNeeded'];
+        if (savedOnlyOwnerNeeded is bool) {
+          onlyOwnerNeeded = savedOnlyOwnerNeeded;
+        }
 
-      final savedPrioritizeUnread = filters['prioritizeUnreadMessages'];
-      if (savedPrioritizeUnread is bool) {
-        prioritizeUnreadMessages = savedPrioritizeUnread;
-      }
+        final savedOnlyMyFavorites = filters['onlyMyFavorites'];
+        if (savedOnlyMyFavorites is bool) {
+          onlyMyFavorites = savedOnlyMyFavorites;
+        }
 
-      _filtersLoadedFromFirestore = true;
+        final savedPrioritizeUnread = filters['prioritizeUnreadMessages'];
+        if (savedPrioritizeUnread is bool) {
+          prioritizeUnreadMessages = savedPrioritizeUnread;
+        }
+      });
     });
   }
 
