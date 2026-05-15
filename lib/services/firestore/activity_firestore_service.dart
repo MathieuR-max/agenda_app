@@ -357,6 +357,31 @@ class ActivityFirestoreService {
     });
   }
 
+  // Requires a composite index in Firebase Console:
+  //   Collection : activities
+  //   Fields     : visibility ASC, status ASC, startDateTime ASC
+  Stream<List<Activity>> getPublicDiscoverActivities() {
+    return _activities
+        .where('visibility', isEqualTo: Activity.visibilityPublic)
+        .where('status', whereIn: ['open', 'full'])
+        .where(
+          'startDateTime',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime.now()),
+        )
+        .orderBy('startDateTime')
+        .snapshots()
+        .map((snapshot) {
+      final activities =
+          snapshot.docs.map((doc) => Activity.fromDocument(doc)).toList();
+
+      _log('getPublicDiscoverActivities resultCount=${activities.length}');
+      return activities;
+    }).handleError((error, stackTrace) {
+      _log('getPublicDiscoverActivities ERROR: $error');
+      return <Activity>[];
+    });
+  }
+
   Stream<List<Activity>> getGroupActivities(String groupId) {
     final trimmedGroupId = groupId.trim();
 

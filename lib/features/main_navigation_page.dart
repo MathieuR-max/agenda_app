@@ -11,7 +11,6 @@ import '../services/firestore/activity_invitation_firestore_service.dart';
 import '../services/firestore/friendship_firestore_service.dart';
 import '../services/firestore/group_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
-import '03_activities/all_activities_page.dart';
 import '03_activities/invitations_page.dart';
 import '04_profile/my_profile_page.dart';
 
@@ -43,40 +42,54 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   void _onTabTapped(int index) {
     if (_currentIndex == index) return;
-
-    setState(() {
-      _currentIndex = index;
-    });
+    setState(() => _currentIndex = index);
   }
 
-  Future<void> _handleBackNavigation(bool didPop) async {
+  Future<void> _handleBackNavigation(bool didPop, Object? result) async {
     if (didPop) return;
-
     if (_currentIndex != 0) {
-      setState(() {
-        _currentIndex = 0;
-      });
+      setState(() => _currentIndex = 0);
     }
   }
 
   String _currentUserKey() {
     final uid = AuthUser.uidOrNull;
-
-    if (uid == null || uid.trim().isEmpty) {
-      return 'signed_out';
-    }
-
+    if (uid == null || uid.trim().isEmpty) return 'signed_out';
     return uid.trim();
   }
 
+  String _currentPageTitle() {
+    switch (_currentIndex) {
+      case 0:
+        return 'Agenda';
+      case 1:
+        return 'Mes activités';
+      case 2:
+        return 'Explorer';
+      case 3:
+        return 'Invitations';
+      default:
+        return '';
+    }
+  }
+
+  // TODO ÉTAPE 2 : remplacer les placeholders par les vraies pages.
+  // NOTE : CalendarPage et InvitationsPage ont leur propre AppBar — ils
+  // affichent une double AppBar en ÉTAPE 1 jusqu'à ce que leurs AppBars
+  // internes soient adaptés.
   List<Widget> _buildPages() {
     final userKey = _currentUserKey();
-
     return [
       CalendarPage(key: ValueKey('calendar_$userKey')),
-      AllActivitiesPage(key: ValueKey('explorer_$userKey')),
+      _PlaceholderPage(
+        key: ValueKey('my_activities_$userKey'),
+        label: 'Mes activités — à venir',
+      ),
+      _PlaceholderPage(
+        key: ValueKey('explorer_$userKey'),
+        label: 'Explorer — à venir',
+      ),
       InvitationsPage(key: ValueKey('invitations_$userKey')),
-      MyProfilePage(key: ValueKey('profile_$userKey')),
     ];
   }
 
@@ -86,8 +99,14 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
     return PopScope(
       canPop: _currentIndex == 0,
-      onPopInvoked: _handleBackNavigation,
+      onPopInvokedWithResult: _handleBackNavigation,
       child: Scaffold(
+        appBar: AppBar(
+          title: Text(_currentPageTitle()),
+          actions: [
+            _ProfileAppBarIcon(friendshipService: _friendshipService),
+          ],
+        ),
         body: IndexedStack(
           index: _currentIndex,
           children: pages,
@@ -102,49 +121,39 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
               label: 'Agenda',
             ),
             NavigationDestination(
-              icon: _ExplorerNavIcon(
+              icon: _MyActivitiesNavIcon(
                 selected: false,
                 isCurrentTab: _currentIndex == 1,
                 messageBadgeRepository: _messageBadgeRepository,
                 activityService: _activityService,
               ),
-              selectedIcon: _ExplorerNavIcon(
+              selectedIcon: _MyActivitiesNavIcon(
                 selected: true,
                 isCurrentTab: _currentIndex == 1,
                 messageBadgeRepository: _messageBadgeRepository,
                 activityService: _activityService,
               ),
+              label: 'Mes activités',
+            ),
+            const NavigationDestination(
+              icon: Icon(Icons.explore_outlined),
+              selectedIcon: Icon(Icons.explore),
               label: 'Explorer',
             ),
             NavigationDestination(
               icon: _InvitationsNavIcon(
                 selected: false,
-                isCurrentTab: _currentIndex == 2,
+                isCurrentTab: _currentIndex == 3,
                 invitationService: _invitationService,
                 groupInvitationService: _groupInvitationService,
               ),
               selectedIcon: _InvitationsNavIcon(
                 selected: true,
-                isCurrentTab: _currentIndex == 2,
+                isCurrentTab: _currentIndex == 3,
                 invitationService: _invitationService,
                 groupInvitationService: _groupInvitationService,
               ),
               label: 'Invitations',
-            ),
-            NavigationDestination(
-              icon: _ProfileNavIcon(
-                selected: false,
-                isCurrentTab: _currentIndex == 3,
-                messageBadgeRepository: _messageBadgeRepository,
-                friendshipService: _friendshipService,
-              ),
-              selectedIcon: _ProfileNavIcon(
-                selected: true,
-                isCurrentTab: _currentIndex == 3,
-                messageBadgeRepository: _messageBadgeRepository,
-                friendshipService: _friendshipService,
-              ),
-              label: 'Profil',
             ),
           ],
         ),
@@ -153,13 +162,64 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   }
 }
 
-class _ExplorerNavIcon extends StatelessWidget {
+// ─── Pages ───────────────────────────────────────────────────────────────────
+
+class _PlaceholderPage extends StatelessWidget {
+  final String label;
+
+  const _PlaceholderPage({super.key, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 16, color: Colors.grey),
+      ),
+    );
+  }
+}
+
+// ─── AppBar profile icon ──────────────────────────────────────────────────────
+
+class _ProfileAppBarIcon extends StatelessWidget {
+  final FriendshipFirestoreService friendshipService;
+
+  const _ProfileAppBarIcon({required this.friendshipService});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<Friendship>>(
+      stream: friendshipService.getPendingReceivedFriendRequests(),
+      builder: (context, snapshot) {
+        final pendingCount = snapshot.data?.length ?? 0;
+
+        return IconButton(
+          tooltip: 'Mon profil',
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const MyProfilePage()),
+          ),
+          icon: Badge(
+            isLabelVisible: pendingCount > 0,
+            label: Text(pendingCount > 99 ? '99+' : '$pendingCount'),
+            child: const Icon(Icons.account_circle),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─── Nav icons ───────────────────────────────────────────────────────────────
+
+class _MyActivitiesNavIcon extends StatelessWidget {
   final bool selected;
   final bool isCurrentTab;
   final MessageBadgeRepository messageBadgeRepository;
   final ActivityFirestoreService activityService;
 
-  const _ExplorerNavIcon({
+  const _MyActivitiesNavIcon({
     required this.selected,
     required this.isCurrentTab,
     required this.messageBadgeRepository,
@@ -176,17 +236,15 @@ class _ExplorerNavIcon extends StatelessWidget {
         return StreamBuilder<List<Activity>>(
           stream: activityService.getJoinedActivities(),
           builder: (context, activitiesSnapshot) {
-            final activities = activitiesSnapshot.data ?? [];
-
-            final ownerPendingCount = activities
-                .where((activity) => activity.ownerPending)
+            final ownerPendingCount = (activitiesSnapshot.data ?? [])
+                .where((a) => a.ownerPending)
                 .length;
 
-            final totalBadgeCount = unreadCount + ownerPendingCount;
-
             return _NavBadgeIcon(
-              icon: Icon(selected ? Icons.explore : Icons.explore_outlined),
-              count: totalBadgeCount,
+              icon: Icon(
+                selected ? Icons.list_alt : Icons.list_alt_outlined,
+              ),
+              count: unreadCount + ownerPendingCount,
               hideBadge: isCurrentTab,
             );
           },
@@ -214,58 +272,16 @@ class _InvitationsNavIcon extends StatelessWidget {
     return StreamBuilder<List<ActivityInvitation>>(
       stream: invitationService.getPendingReceivedInvitations(),
       builder: (context, activitySnapshot) {
-        final pendingActivityInvitationCount =
-            activitySnapshot.data?.length ?? 0;
+        final pendingActivityCount = activitySnapshot.data?.length ?? 0;
 
         return StreamBuilder<List<GroupInvitation>>(
           stream: groupInvitationService.getPendingReceivedInvitations(),
           builder: (context, groupSnapshot) {
-            final pendingGroupInvitationCount =
-                groupSnapshot.data?.length ?? 0;
-
-            final totalPendingInvitationCount =
-                pendingActivityInvitationCount + pendingGroupInvitationCount;
+            final pendingGroupCount = groupSnapshot.data?.length ?? 0;
 
             return _NavBadgeIcon(
               icon: Icon(selected ? Icons.mail : Icons.mail_outline),
-              count: totalPendingInvitationCount,
-              hideBadge: isCurrentTab,
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _ProfileNavIcon extends StatelessWidget {
-  final bool selected;
-  final bool isCurrentTab;
-  final MessageBadgeRepository messageBadgeRepository;
-  final FriendshipFirestoreService friendshipService;
-
-  const _ProfileNavIcon({
-    required this.selected,
-    required this.isCurrentTab,
-    required this.messageBadgeRepository,
-    required this.friendshipService,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<int>(
-      stream: messageBadgeRepository.watchGroupUnreadCount(),
-      builder: (context, unreadSnapshot) {
-        final unreadCount = unreadSnapshot.data ?? 0;
-
-        return StreamBuilder<List<Friendship>>(
-          stream: friendshipService.getPendingReceivedFriendRequests(),
-          builder: (context, friendSnapshot) {
-            final pendingFriendCount = friendSnapshot.data?.length ?? 0;
-
-            return _NavBadgeIcon(
-              icon: Icon(selected ? Icons.person : Icons.person_outline),
-              count: unreadCount + pendingFriendCount,
+              count: pendingActivityCount + pendingGroupCount,
               hideBadge: isCurrentTab,
             );
           },
@@ -288,9 +304,7 @@ class _NavBadgeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (hideBadge || count <= 0) {
-      return icon;
-    }
+    if (hideBadge || count <= 0) return icon;
 
     return Badge(
       label: Text(count > 99 ? '99+' : '$count'),
