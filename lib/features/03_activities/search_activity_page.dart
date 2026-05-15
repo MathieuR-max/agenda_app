@@ -172,9 +172,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
     return categoryMatches && dayMatches && timeMatches;
   }
 
-  Future<void> _saveSearchIfNeeded() async {
-    if (_searchSaved) return;
-
+  Future<void> _saveSearch() async {
     final selectedDate = _resolveSelectedDate();
     final startDateTime = _combineDateAndTime(selectedDate, startTime);
     final endDateTime = _combineDateAndTime(selectedDate, endTime);
@@ -188,12 +186,15 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
       endDateTime: endDateTime,
     );
 
-    _searchSaved = true;
-  }
+    if (!mounted) return;
 
-  Future<void> _markSearchDirtyAndSave() async {
-    _searchSaved = false;
-    await _saveSearchIfNeeded();
+    setState(() => _searchSaved = true);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Recherche sauvegardée dans votre agenda'),
+      ),
+    );
   }
 
   String _statusLabel(Activity activity) {
@@ -289,10 +290,6 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
     super.initState();
     startTime = widget.hour;
     endTime = getNextSlot(widget.hour);
-
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _saveSearchIfNeeded();
-    });
   }
 
   @override
@@ -302,6 +299,19 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Rechercher une activité'),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: ElevatedButton(
+            onPressed: _searchSaved ? null : _saveSearch,
+            child: Text(
+              _searchSaved
+                  ? 'Recherche sauvegardée ✓'
+                  : 'Sauvegarder cette recherche',
+            ),
+          ),
+        ),
       ),
       body: Padding(
         padding: const EdgeInsets.all(16),
@@ -319,21 +329,17 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) async {
+              onChanged: (value) {
                 if (value == null) return;
-
                 setState(() {
                   startTime = value;
-
                   final selectedStart = timeToMinutes(startTime);
                   final selectedEnd = timeToMinutes(endTime);
-
                   if (selectedEnd <= selectedStart) {
                     endTime = getNextSlot(startTime);
                   }
+                  _searchSaved = false;
                 });
-
-                await _markSearchDirtyAndSave();
               },
               decoration: const InputDecoration(
                 labelText: 'Heure de début',
@@ -351,20 +357,17 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) async {
+              onChanged: (value) {
                 if (value == null) return;
-
                 final proposedEnd = value;
                 final startMinutes = timeToMinutes(startTime);
                 final endMinutes = timeToMinutes(proposedEnd);
-
                 setState(() {
                   endTime = endMinutes <= startMinutes
                       ? getNextSlot(startTime)
                       : proposedEnd;
+                  _searchSaved = false;
                 });
-
-                await _markSearchDirtyAndSave();
               },
               decoration: const InputDecoration(
                 labelText: 'Heure de fin',
@@ -382,14 +385,12 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
                     ),
                   )
                   .toList(),
-              onChanged: (value) async {
+              onChanged: (value) {
                 if (value == null) return;
-
                 setState(() {
                   category = value;
+                  _searchSaved = false;
                 });
-
-                await _markSearchDirtyAndSave();
               },
               decoration: const InputDecoration(
                 labelText: 'Catégorie',

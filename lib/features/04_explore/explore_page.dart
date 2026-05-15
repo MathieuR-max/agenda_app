@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
+import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 
 class ExplorePage extends StatefulWidget {
@@ -51,6 +52,10 @@ class _ExplorePageState extends State<ExplorePage> {
   }
 
   bool _matchesFilters(Activity activity) {
+    final uid = AuthUser.uidOrNull;
+    if (uid != null && activity.ownerId == uid) return false;
+    if (_joinedIds.contains(activity.id)) return false;
+
     if (_selectedCategory != 'Toutes' &&
         activity.category != _selectedCategory) {
       return false;
