@@ -12,6 +12,7 @@ import '../services/firestore/friendship_firestore_service.dart';
 import '../services/firestore/group_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
 import '03_activities/invitations_page.dart';
+import '04_explore/explore_page.dart';
 import '04_profile/my_profile_page.dart';
 
 class MainNavigationPage extends StatefulWidget {
@@ -85,10 +86,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
         key: ValueKey('my_activities_$userKey'),
         label: 'Mes activités — à venir',
       ),
-      _PlaceholderPage(
-        key: ValueKey('explorer_$userKey'),
-        label: 'Explorer — à venir',
-      ),
+      ExplorePage(key: ValueKey('explorer_$userKey')),
       InvitationsPage(key: ValueKey('invitations_$userKey')),
     ];
   }
