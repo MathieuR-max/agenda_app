@@ -210,6 +210,15 @@ class ChatRepository {
     });
   }
 
+  /// Alias nommé de [watchUnreadCount], exposé pour les contextes
+  /// où la sémantique "par activité" est plus explicite (ex. MyActivitiesPage).
+  Stream<int> watchUnreadCountForActivity(String activityId) {
+    if (activityId.trim().isEmpty || currentUserIdOrNull == null) {
+      return Stream.value(0);
+    }
+    return watchUnreadCount(activityId).handleError((_) => 0);
+  }
+
   DateTime? _parseDate(dynamic value) {
     if (value == null) return null;
     if (value is DateTime) return value;

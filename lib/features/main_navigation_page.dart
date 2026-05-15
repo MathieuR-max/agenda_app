@@ -12,6 +12,7 @@ import '../services/firestore/friendship_firestore_service.dart';
 import '../services/firestore/group_invitation_firestore_service.dart';
 import '02_calendar/calendar_page.dart';
 import '03_activities/invitations_page.dart';
+import '03_activities/my_activities_page.dart';
 import '04_explore/explore_page.dart';
 import '04_profile/my_profile_page.dart';
 
@@ -74,18 +75,13 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     }
   }
 
-  // TODO ÉTAPE 2 : remplacer les placeholders par les vraies pages.
-  // NOTE : CalendarPage et InvitationsPage ont leur propre AppBar — ils
-  // affichent une double AppBar en ÉTAPE 1 jusqu'à ce que leurs AppBars
-  // internes soient adaptés.
+  // NOTE : CalendarPage et InvitationsPage ont leur propre AppBar — double
+  // AppBar temporaire jusqu'à ce que leurs AppBars internes soient retirés.
   List<Widget> _buildPages() {
     final userKey = _currentUserKey();
     return [
       CalendarPage(key: ValueKey('calendar_$userKey')),
-      _PlaceholderPage(
-        key: ValueKey('my_activities_$userKey'),
-        label: 'Mes activités — à venir',
-      ),
+      MyActivitiesPage(key: ValueKey('my_activities_$userKey')),
       ExplorePage(key: ValueKey('explorer_$userKey')),
       InvitationsPage(key: ValueKey('invitations_$userKey')),
     ];
@@ -155,24 +151,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ─── Pages ───────────────────────────────────────────────────────────────────
-
-class _PlaceholderPage extends StatelessWidget {
-  final String label;
-
-  const _PlaceholderPage({super.key, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 16, color: Colors.grey),
       ),
     );
   }
