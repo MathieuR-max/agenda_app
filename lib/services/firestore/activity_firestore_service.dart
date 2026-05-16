@@ -330,7 +330,7 @@ class ActivityFirestoreService {
 
     _log('getCreatedActivities uid=$uid');
 
-    return _activities.where('ownerId', isEqualTo: uid).snapshots().map((
+    return _activities.where('ownerId', isEqualTo: uid).limit(50).snapshots().map((
       snapshot,
     ) {
       final activities =
@@ -345,6 +345,7 @@ class ActivityFirestoreService {
   Stream<List<Activity>> getAllActivities() {
     return _activities
         .where('visibility', isEqualTo: Activity.visibilityPublic)
+        .limit(100)
         .snapshots()
         .map((snapshot) {
       final activities = snapshot.docs
@@ -553,20 +554,19 @@ class ActivityFirestoreService {
 
     final List<Activity> activities = [];
 
-    for (final activityId in ids) {
+    final futures = ids.map<Future<DocumentSnapshot<Map<String, dynamic>>?>>((id) async {
       try {
-        final doc = await _activityDoc(activityId).get();
-
-        if (!doc.exists || doc.data() == null) {
-          continue;
-        }
-
-        activities.add(Activity.fromDocument(doc));
+        return await _activityDoc(id).get();
       } catch (e) {
-        _log(
-          'getJoinedActivities skipped activity=$activityId error=$e',
-        );
+        _log('getJoinedActivities skipped activity=$id error=$e');
+        return null;
       }
+    });
+    final docs = await Future.wait(futures);
+
+    for (final doc in docs) {
+      if (doc == null || !doc.exists || doc.data() == null) continue;
+      activities.add(Activity.fromDocument(doc));
     }
 
     _sortActivitiesByRecency(activities);

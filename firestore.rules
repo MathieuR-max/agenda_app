@@ -414,7 +414,8 @@ service cloud.firestore {
     match /activities/{activityId} {
       allow get: if canReadActivity(activityId, resource.data);
 
-      allow list: if isAuthenticated();
+      allow list: if isAuthenticated()
+        && request.query.limit <= 100;
 
       allow create: if isValidActivityCreate();
 
@@ -515,7 +516,8 @@ service cloud.firestore {
           && isActivityOwner(resource.data.activityId)
         );
 
-      allow list: if isAuthenticated();
+      allow list: if isAuthenticated()
+        && request.query.limit <= 50;
 
       allow create: if isAuthenticated()
         && request.resource.data.fromUserId == request.auth.uid
@@ -539,7 +541,8 @@ service cloud.firestore {
     match /group_invitations/{invitationId} {
       allow read: if isGroupInvitationParticipant();
 
-      allow list: if isAuthenticated();
+      allow list: if isAuthenticated()
+        && request.query.limit <= 50;
 
       allow create: if isAuthenticated()
         && request.resource.data.fromUserId == request.auth.uid
