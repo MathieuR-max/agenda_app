@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/services/current_user.dart';
 
@@ -68,5 +68,38 @@ class UserFirestoreService {
       'lieu': (data['lieu'] ?? data['Lieu'] ?? '').toString().trim(),
       'genre': (data['genre'] ?? '').toString().trim(),
     };
+  }
+
+  Future<List<Map<String, dynamic>>> searchUsersByPseudo(String query) async {
+    final trimmed = query.trim();
+
+    if (trimmed.length < 2) return [];
+
+    try {
+      final snapshot = await _db
+          .collection('users')
+          .where('pseudo', isGreaterThanOrEqualTo: trimmed)
+          .where('pseudo', isLessThan: trimmed + '')
+          .limit(20)
+          .get();
+
+      final currentUid = currentUserIdOrNull;
+
+      return snapshot.docs
+          .where((doc) => doc.id != currentUid)
+          .map((doc) {
+            final data = doc.data();
+            return {
+              'id': doc.id,
+              'pseudo': (data['pseudo'] ?? '').toString().trim(),
+              'prenom': (data['prenom'] ?? '').toString().trim(),
+              'nom': (data['nom'] ?? '').toString().trim(),
+              'lieu': (data['lieu'] ?? data['Lieu'] ?? '').toString().trim(),
+            };
+          })
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 }

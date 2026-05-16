@@ -10,6 +10,7 @@ import '../06_groups/groups_page.dart';
 import 'edit_profile_page.dart';
 import 'friend_requests_page.dart';
 import 'friends_list_page.dart';
+import 'search_users_page.dart';
 
 class UserProfilePage extends StatelessWidget {
   final String userId;
@@ -292,6 +293,17 @@ class UserProfilePage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              OutlinedButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const SearchUsersPage(),
+                  ),
+                ),
+                icon: const Icon(Icons.person_search),
+                label: const Text('Rechercher des utilisateurs'),
+              ),
+              const SizedBox(height: 12),
               OutlinedButton.icon(
                 onPressed: () {
                   Navigator.push(
