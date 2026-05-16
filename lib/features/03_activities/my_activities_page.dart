@@ -9,7 +9,12 @@ import 'search_detail_page.dart';
 
 // ─── Filtre actif ─────────────────────────────────────────────────────────────
 
-enum _Filter { all, created, joined, searches }
+enum _Filter {
+  // Filtres principaux (type)
+  all, created, joined, searches,
+  // Filtres avancés (statut — alternatifs aux principaux)
+  full, cancelled, done, ownerPending,
+}
 
 // ─── Élément unifié pour le filtre "Tout" ────────────────────────────────────
 
@@ -44,6 +49,9 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
   late final ChatRepository _chatRepository;
 
   _Filter _activeFilter = _Filter.all;
+  bool _showAdvancedFilters = false;
+  bool _showUpcomingOnly = true;
+  bool _showPastOnly = false;
 
   static const List<String> _weekdays = [
     'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'
@@ -93,6 +101,60 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     return joined.where((a) => !createdIds.contains(a.id)).toList();
   }
 
+  // Applique le filtre temporel puis le filtre de statut avancé.
+  List<Activity> _applyActivityFilters(List<Activity> activities) {
+    final now = DateTime.now();
+    var result = activities;
+
+    if (_showUpcomingOnly) {
+      result = result.where((a) {
+        final start = a.resolvedStartDateTime;
+        return start == null || !start.isBefore(now);
+      }).toList();
+    } else if (_showPastOnly) {
+      result = result.where((a) {
+        final start = a.resolvedStartDateTime;
+        return start != null && start.isBefore(now);
+      }).toList();
+    }
+
+    switch (_activeFilter) {
+      case _Filter.full:
+        result = result.where((a) => a.isFull).toList();
+        break;
+      case _Filter.cancelled:
+        result = result.where((a) => a.isCancelled).toList();
+        break;
+      case _Filter.done:
+        result = result.where((a) => a.isDone).toList();
+        break;
+      case _Filter.ownerPending:
+        result = result.where((a) => a.ownerPending).toList();
+        break;
+      default:
+        break;
+    }
+
+    return result;
+  }
+
+  // Pour les recherches : filtre temporel uniquement (pas de statut).
+  List<Map<String, dynamic>> _applySearchFilters(
+    List<Map<String, dynamic>> searches,
+  ) {
+    if (!_showUpcomingOnly && !_showPastOnly) return searches;
+
+    final now = DateTime.now();
+    return searches.where((s) {
+      final start = s['startDateTime'] as DateTime?;
+      if (_showUpcomingOnly) {
+        return start == null || !start.isBefore(now);
+      } else {
+        return start != null && start.isBefore(now);
+      }
+    }).toList();
+  }
+
   List<_ListItem> _buildAllItemsSorted(
     List<Activity> created,
     List<Activity> joinedDeduplicated,
@@ -132,7 +194,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     return items;
   }
 
-  // ─── Chips de filtre ──────────────────────────────────────────────────────
+  // ─── Chip de filtre ───────────────────────────────────────────────────────
 
   Widget _buildFilterChip({
     required String label,
@@ -166,46 +228,188 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     );
   }
 
+  // ─── Barre de filtres ─────────────────────────────────────────────────────
+
   Widget _buildFilterBar() {
-    return SizedBox(
-      height: 42,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        children: [
-          _buildFilterChip(
-            label: 'Tout',
-            backgroundColor: Colors.grey.shade200,
-            textColor: Colors.grey.shade900,
-            isActive: _activeFilter == _Filter.all,
-            onTap: () => setState(() => _activeFilter = _Filter.all),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Ligne 1 : chips principaux (type)
+        SizedBox(
+          height: 42,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            children: [
+              _buildFilterChip(
+                label: 'Tout',
+                backgroundColor: Colors.grey.shade200,
+                textColor: Colors.grey.shade900,
+                isActive: _activeFilter == _Filter.all,
+                onTap: () => setState(() => _activeFilter = _Filter.all),
+              ),
+              const SizedBox(width: 8),
+              _buildFilterChip(
+                label: 'Créées',
+                backgroundColor: Colors.blue.shade100,
+                textColor: Colors.blue.shade900,
+                isActive: _activeFilter == _Filter.created,
+                onTap: () => setState(() => _activeFilter = _Filter.created),
+              ),
+              const SizedBox(width: 8),
+              _buildFilterChip(
+                label: 'Rejointes',
+                backgroundColor: Colors.purple.shade100,
+                textColor: Colors.purple.shade900,
+                isActive: _activeFilter == _Filter.joined,
+                onTap: () => setState(() => _activeFilter = _Filter.joined),
+              ),
+              const SizedBox(width: 8),
+              _buildFilterChip(
+                label: 'Recherches',
+                backgroundColor: Colors.orange.shade100,
+                textColor: Colors.orange.shade900,
+                isActive: _activeFilter == _Filter.searches,
+                onTap: () => setState(() => _activeFilter = _Filter.searches),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-            label: 'Créées',
-            backgroundColor: Colors.blue.shade100,
-            textColor: Colors.blue.shade900,
-            isActive: _activeFilter == _Filter.created,
-            onTap: () => setState(() => _activeFilter = _Filter.created),
+        ),
+
+        // Ligne 2 : bouton "Afficher / Masquer les filtres"
+        Padding(
+          padding: const EdgeInsets.only(left: 10, top: 2),
+          child: TextButton(
+            onPressed: () =>
+                setState(() => _showAdvancedFilters = !_showAdvancedFilters),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.tune, size: 18),
+                const SizedBox(width: 4),
+                Text(
+                  _showAdvancedFilters
+                      ? 'Masquer les filtres'
+                      : 'Afficher les filtres',
+                  style: const TextStyle(fontSize: 13),
+                ),
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: _showAdvancedFilters ? 0.5 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: const Icon(Icons.expand_more, size: 18),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-            label: 'Rejointes',
-            backgroundColor: Colors.purple.shade100,
-            textColor: Colors.purple.shade900,
-            isActive: _activeFilter == _Filter.joined,
-            onTap: () => setState(() => _activeFilter = _Filter.joined),
+        ),
+
+        if (_showAdvancedFilters) ...[
+          const SizedBox(height: 4),
+
+          // Ligne 3 : chips temporels
+          SizedBox(
+            height: 42,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                _buildFilterChip(
+                  label: 'À venir',
+                  backgroundColor: Colors.teal.shade100,
+                  textColor: Colors.teal.shade900,
+                  isActive: _showUpcomingOnly,
+                  onTap: () => setState(() {
+                    _showUpcomingOnly = true;
+                    _showPastOnly = false;
+                  }),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Passées',
+                  backgroundColor: Colors.teal.shade100,
+                  textColor: Colors.teal.shade900,
+                  isActive: _showPastOnly,
+                  onTap: () => setState(() {
+                    _showUpcomingOnly = false;
+                    _showPastOnly = true;
+                  }),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Toutes les dates',
+                  backgroundColor: Colors.teal.shade100,
+                  textColor: Colors.teal.shade900,
+                  isActive: !_showUpcomingOnly && !_showPastOnly,
+                  onTap: () => setState(() {
+                    _showUpcomingOnly = false;
+                    _showPastOnly = false;
+                  }),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(width: 8),
-          _buildFilterChip(
-            label: 'Recherches',
-            backgroundColor: Colors.orange.shade100,
-            textColor: Colors.orange.shade900,
-            isActive: _activeFilter == _Filter.searches,
-            onTap: () => setState(() => _activeFilter = _Filter.searches),
+
+          const SizedBox(height: 4),
+
+          // Ligne 4 : chips statut (alternatifs aux chips principaux)
+          SizedBox(
+            height: 42,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              children: [
+                _buildFilterChip(
+                  label: 'Complètes',
+                  backgroundColor: Colors.amber.shade100,
+                  textColor: Colors.amber.shade900,
+                  isActive: _activeFilter == _Filter.full,
+                  onTap: () => setState(() => _activeFilter =
+                      _activeFilter == _Filter.full ? _Filter.all : _Filter.full),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Annulées',
+                  backgroundColor: Colors.red.shade100,
+                  textColor: Colors.red.shade900,
+                  isActive: _activeFilter == _Filter.cancelled,
+                  onTap: () => setState(() => _activeFilter =
+                      _activeFilter == _Filter.cancelled
+                          ? _Filter.all
+                          : _Filter.cancelled),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Terminées',
+                  backgroundColor: Colors.blueGrey.shade100,
+                  textColor: Colors.blueGrey.shade900,
+                  isActive: _activeFilter == _Filter.done,
+                  onTap: () => setState(() => _activeFilter =
+                      _activeFilter == _Filter.done ? _Filter.all : _Filter.done),
+                ),
+                const SizedBox(width: 8),
+                _buildFilterChip(
+                  label: 'Owner requis',
+                  backgroundColor: Colors.deepOrange.shade100,
+                  textColor: Colors.deepOrange.shade900,
+                  isActive: _activeFilter == _Filter.ownerPending,
+                  onTap: () => setState(() => _activeFilter =
+                      _activeFilter == _Filter.ownerPending
+                          ? _Filter.all
+                          : _Filter.ownerPending),
+                ),
+              ],
+            ),
           ),
         ],
-      ),
+
+        const SizedBox(height: 4),
+      ],
     );
   }
 
@@ -412,8 +616,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer la recherche ?'),
-        content:
-            const Text('Cette recherche sera retirée de votre agenda.'),
+        content: const Text('Cette recherche sera retirée de votre agenda.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -436,19 +639,41 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
   // ─── État vide ────────────────────────────────────────────────────────────
 
   Widget _buildEmptyState() {
+    final isUpcoming = _showUpcomingOnly;
+
     final String message;
     switch (_activeFilter) {
       case _Filter.all:
-        message = 'Aucune activité ni recherche pour le moment';
+        message = isUpcoming
+            ? 'Aucune activité ni recherche à venir'
+            : 'Aucune activité ni recherche pour le moment';
         break;
       case _Filter.created:
-        message = "Vous n'avez créé aucune activité";
+        message = isUpcoming
+            ? 'Aucune activité créée à venir'
+            : "Vous n'avez créé aucune activité";
         break;
       case _Filter.joined:
-        message = "Vous n'avez rejoint aucune activité";
+        message = isUpcoming
+            ? 'Aucune activité rejointe à venir'
+            : "Vous n'avez rejoint aucune activité";
         break;
       case _Filter.searches:
-        message = 'Aucune recherche sauvegardée';
+        message = isUpcoming
+            ? 'Aucune recherche à venir'
+            : 'Aucune recherche sauvegardée';
+        break;
+      case _Filter.full:
+        message = 'Aucune activité complète';
+        break;
+      case _Filter.cancelled:
+        message = 'Aucune activité annulée';
+        break;
+      case _Filter.done:
+        message = 'Aucune activité terminée';
+        break;
+      case _Filter.ownerPending:
+        message = "Aucune activité ne requiert d'organisateur";
         break;
     }
 
@@ -481,32 +706,55 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     List<Activity> joinedDeduplicated,
     List<Map<String, dynamic>> searches,
   ) {
+    final filteredCreated = _applyActivityFilters(created);
+    final filteredJoined = _applyActivityFilters(joinedDeduplicated);
+    final filteredSearches = _applySearchFilters(searches);
+    final createdIds = created.map((a) => a.id).toSet();
+
     switch (_activeFilter) {
       case _Filter.created:
-        if (created.isEmpty) return _buildEmptyState();
+        if (filteredCreated.isEmpty) return _buildEmptyState();
         return ListView.builder(
-          itemCount: created.length,
-          itemBuilder: (_, i) => _buildActivityCard(created[i], true),
+          itemCount: filteredCreated.length,
+          itemBuilder: (_, i) => _buildActivityCard(filteredCreated[i], true),
         );
 
       case _Filter.joined:
-        if (joinedDeduplicated.isEmpty) return _buildEmptyState();
+        if (filteredJoined.isEmpty) return _buildEmptyState();
         return ListView.builder(
-          itemCount: joinedDeduplicated.length,
+          itemCount: filteredJoined.length,
           itemBuilder: (_, i) =>
-              _buildActivityCard(joinedDeduplicated[i], false),
+              _buildActivityCard(filteredJoined[i], false),
         );
 
       case _Filter.searches:
-        if (searches.isEmpty) return _buildEmptyState();
+        if (filteredSearches.isEmpty) return _buildEmptyState();
         return ListView.builder(
-          itemCount: searches.length,
-          itemBuilder: (_, i) => _buildSearchCard(searches[i]),
+          itemCount: filteredSearches.length,
+          itemBuilder: (_, i) => _buildSearchCard(filteredSearches[i]),
+        );
+
+      // Filtres de statut : activités créées + rejointes fusionnées
+      case _Filter.full:
+      case _Filter.cancelled:
+      case _Filter.done:
+      case _Filter.ownerPending:
+        final merged = [...filteredCreated, ...filteredJoined];
+        if (merged.isEmpty) return _buildEmptyState();
+        return ListView.builder(
+          itemCount: merged.length,
+          itemBuilder: (_, i) {
+            final a = merged[i];
+            return _buildActivityCard(a, createdIds.contains(a.id));
+          },
         );
 
       case _Filter.all:
-        final items =
-            _buildAllItemsSorted(created, joinedDeduplicated, searches);
+        final items = _buildAllItemsSorted(
+          filteredCreated,
+          filteredJoined,
+          filteredSearches,
+        );
         if (items.isEmpty) return _buildEmptyState();
         return ListView.builder(
           itemCount: items.length,
@@ -528,7 +776,6 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
       children: [
         const SizedBox(height: 6),
         _buildFilterBar(),
-        const SizedBox(height: 6),
         Expanded(
           child: StreamBuilder<List<Activity>>(
             stream: _activityService.getCreatedActivities(),
