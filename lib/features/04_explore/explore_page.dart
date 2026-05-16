@@ -215,7 +215,7 @@ class _ExplorePageState extends State<ExplorePage> {
         AnimatedCrossFade(
           firstChild: const SizedBox.shrink(),
           secondChild: Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -224,7 +224,7 @@ class _ExplorePageState extends State<ExplorePage> {
                   decoration: const InputDecoration(
                     labelText: 'Catégorie',
                     border: OutlineInputBorder(),
-                    isDense: true,
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                   ),
                   child: DropdownButtonHideUnderline(
                     child: DropdownButton<String>(

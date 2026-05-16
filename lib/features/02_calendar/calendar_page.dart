@@ -5,7 +5,6 @@ import '../../services/activity_clipboard_service.dart';
 import '../../services/firestore/activity_firestore_service.dart';
 import '../../services/firestore/availability_firestore_service.dart';
 import '../../services/firestore/search_firestore_service.dart';
-import '../01_auth/test_user_selector_page.dart';
 import '../03_activities/activity_detail_page.dart';
 import '../03_activities/create_activity_page.dart';
 import '../03_activities/search_activity_page.dart';
@@ -393,19 +392,6 @@ class _CalendarPageState extends State<CalendarPage> {
     setState(() {
       _activeFilter = filter;
     });
-  }
-
-  Future<void> _openUserSelector() async {
-    final changed = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (context) => const TestUserSelectorPage(),
-      ),
-    );
-
-    if (changed == true) {
-      setState(() {});
-    }
   }
 
   bool _isInactiveActivity(Activity activity) {
@@ -916,7 +902,7 @@ class _CalendarPageState extends State<CalendarPage> {
           const SizedBox(height: 2),
           Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
+            child: TextButton(
               onPressed: () {
                 setState(() {
                   _showAdvancedFilters = !_showAdvancedFilters;
@@ -924,18 +910,28 @@ class _CalendarPageState extends State<CalendarPage> {
               },
               style: TextButton.styleFrom(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 2,
+                  horizontal: 4,
                   vertical: 0,
                 ),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              icon: Icon(
-                _showAdvancedFilters ? Icons.expand_less : Icons.expand_more,
-                size: 18,
-              ),
-              label: Text(
-                _showAdvancedFilters ? 'Moins de filtres' : 'Plus de filtres',
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.tune, size: 18),
+                  const SizedBox(width: 4),
+                  Text(
+                    _showAdvancedFilters ? 'Moins de filtres' : 'Filtres avancés',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(width: 4),
+                  AnimatedRotation(
+                    turns: _showAdvancedFilters ? 0.5 : 0.0,
+                    duration: const Duration(milliseconds: 200),
+                    child: const Icon(Icons.expand_more, size: 18),
+                  ),
+                ],
               ),
             ),
           ),
@@ -1086,20 +1082,7 @@ class _CalendarPageState extends State<CalendarPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        toolbarHeight: 36,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.switch_account),
-            tooltip: 'Changer d’utilisateur',
-            onPressed: _openUserSelector,
-          ),
-        ],
-      ),
-      body: StreamBuilder<List<Activity>>(
+    return StreamBuilder<List<Activity>>(
         stream: activityService.getCreatedActivities(),
         builder: (context, createdSnapshot) {
           if (createdSnapshot.hasError) {
@@ -1208,8 +1191,7 @@ class _CalendarPageState extends State<CalendarPage> {
             },
           );
         },
-      ),
-    );
+      );
   }
 
   Widget buildDaysHeader() {

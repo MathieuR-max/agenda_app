@@ -704,20 +704,18 @@ class _InvitationsPageState extends State<InvitationsPage> {
   Widget build(BuildContext context) {
     return DefaultTabController(
       length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Invitations'),
-          bottom: PreferredSize(
-            preferredSize: const Size.fromHeight(kTextTabBarHeight),
-            child: _buildTabBar(),
+      child: Column(
+        children: [
+          _buildTabBar(),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _buildActivitiesTab(),
+                _buildGroupsTab(),
+              ],
+            ),
           ),
-        ),
-        body: TabBarView(
-          children: [
-            _buildActivitiesTab(),
-            _buildGroupsTab(),
-          ],
-        ),
+        ],
       ),
     );
   }

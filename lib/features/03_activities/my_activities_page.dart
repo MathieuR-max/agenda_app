@@ -294,8 +294,8 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                 const SizedBox(width: 4),
                 Text(
                   _showAdvancedFilters
-                      ? 'Masquer les filtres'
-                      : 'Afficher les filtres',
+                      ? 'Moins de filtres'
+                      : 'Filtres avancés',
                   style: const TextStyle(fontSize: 13),
                 ),
                 const SizedBox(width: 4),

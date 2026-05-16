@@ -97,6 +97,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       child: Scaffold(
         appBar: AppBar(
           title: Text(_currentPageTitle()),
+          titleTextStyle: Theme.of(context).textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w500,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
           actions: [
             _ProfileAppBarIcon(friendshipService: _friendshipService),
           ],
