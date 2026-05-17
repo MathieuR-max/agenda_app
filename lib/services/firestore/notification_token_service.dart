@@ -52,11 +52,6 @@ class NotificationTokenService {
 
     final deviceId = _buildDeviceId(trimmedToken);
 
-    await _removeTokenFromOtherUsers(
-      token: trimmedToken,
-      currentUserId: trimmedUserId,
-    );
-
     await _db
         .collection(FirestoreCollections.users)
         .doc(trimmedUserId)
@@ -67,34 +62,6 @@ class NotificationTokenService {
       'platform': _platformLabel(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
-  }
-
-  Future<void> _removeTokenFromOtherUsers({
-    required String token,
-    required String currentUserId,
-  }) async {
-    final snapshot = await _db
-        .collectionGroup('devices')
-        .where('token', isEqualTo: token)
-        .get();
-
-    if (snapshot.docs.isEmpty) {
-      return;
-    }
-
-    final batch = _db.batch();
-
-    for (final doc in snapshot.docs) {
-      final ownerUserId = doc.reference.parent.parent?.id.trim() ?? '';
-
-      if (ownerUserId.isEmpty || ownerUserId == currentUserId) {
-        continue;
-      }
-
-      batch.delete(doc.reference);
-    }
-
-    await batch.commit();
   }
 
   String _buildDeviceId(String token) {
