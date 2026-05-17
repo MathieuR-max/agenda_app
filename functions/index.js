@@ -1,5 +1,5 @@
 const {setGlobalOptions} = require("firebase-functions");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -388,6 +388,76 @@ exports.notifyOnGroupMessageCreated = onDocumentCreated(
           trigger: "notifyOnGroupMessageCreated",
           groupId,
           messageId,
+        },
+      });
+    }
+  }
+);
+
+exports.notifyOnOwnerPendingActivity = onDocumentUpdated(
+  {
+    document: "activities/{activityId}",
+    region: "europe-west1",
+  },
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+
+    if (!after) {
+      console.warn("Missing after data on activity update.", {
+        activityId: event.params.activityId,
+      });
+      return;
+    }
+
+    if (before?.ownerPending !== false || after.ownerPending !== true) {
+      return;
+    }
+
+    const activityId = String(event.params.activityId || "").trim();
+    const activityTitle = String(after.title || "").trim();
+    const createdById = String(after.createdById || "").trim();
+    const participantCount = Number(after.participantCount || 0);
+
+    if (participantCount <= 0) {
+      console.log("No participants on owner pending activity.", {activityId});
+      return;
+    }
+
+    const participantsSnap = await db
+      .collection("activities")
+      .doc(activityId)
+      .collection("participants")
+      .get();
+
+    const recipientIds = participantsSnap.docs
+      .map((doc) => String(doc.id || "").trim())
+      .filter((userId) => userId && userId !== createdById);
+
+    if (recipientIds.length === 0) {
+      console.log("No recipients for owner pending notification.", {activityId});
+      return;
+    }
+
+    const notificationTitle = "Organisateur recherché";
+    const notificationBody = activityTitle
+      ? `L'organisateur de «${activityTitle}» a quitté. Tu peux reprendre le rôle !`
+      : "L'organisateur d'une activité a quitté. Tu peux reprendre le rôle !";
+
+    for (const userId of recipientIds) {
+      await sendPushToUser({
+        userId,
+        notification: {
+          title: notificationTitle,
+          body: notificationBody,
+        },
+        data: {
+          type: "owner_pending",
+          activityId,
+        },
+        logContext: {
+          trigger: "notifyOnOwnerPendingActivity",
+          activityId,
         },
       });
     }

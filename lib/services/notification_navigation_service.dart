@@ -2,6 +2,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import 'package:agenda_app/core/utils/app_navigator.dart';
+import 'package:agenda_app/features/03_activities/activity_detail_page.dart';
 import 'package:agenda_app/features/03_activities/invitations_page.dart';
 import 'package:agenda_app/features/05_chat/activity_chat_page.dart';
 import 'package:agenda_app/features/06_groups/group_chat_page.dart';
@@ -59,6 +60,13 @@ class NotificationNavigationService {
         }
         break;
 
+      case 'owner_pending':
+        final activityId = (data['activityId'] ?? '').toString().trim();
+        if (activityId.isNotEmpty) {
+          await _openActivityDetail(activityId);
+        }
+        break;
+
       default:
         debugPrint('Unknown notification type: $type');
     }
@@ -94,6 +102,28 @@ class NotificationNavigationService {
       );
     } catch (e) {
       debugPrint('Failed to open activity chat from notification: $e');
+    }
+  }
+
+  Future<void> _openActivityDetail(String activityId) async {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return;
+
+    try {
+      final Activity? activity = await _activityService.getActivityById(activityId);
+
+      if (activity == null) {
+        debugPrint('Activity not found for owner_pending notification: $activityId');
+        return;
+      }
+
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => ActivityDetailPage(activity: activity),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Failed to open activity detail from notification: $e');
     }
   }
 
