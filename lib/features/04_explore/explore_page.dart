@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
@@ -19,8 +21,28 @@ class _ExplorePageState extends State<ExplorePage> {
   int? _selectedWeekday; // null = tous les jours
   bool _filtersExpanded = false;
 
-  // IDs rejoints dans cette session — évite un rechargement complet
+  late final StreamSubscription<List<String>> _joinedIdsSub;
   final Set<String> _joinedIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _joinedIdsSub = _activityService.watchJoinedActivityIds().listen((ids) {
+      if (mounted) {
+        setState(() {
+          _joinedIds
+            ..clear()
+            ..addAll(ids);
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _joinedIdsSub.cancel();
+    super.dispose();
+  }
 
   static const List<String> _categories = [
     'Toutes',
