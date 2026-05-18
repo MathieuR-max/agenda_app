@@ -58,6 +58,7 @@ class MessageBadgeRepository {
     final ownerStream = _db
         .collection(FirestoreCollections.activities)
         .where('ownerId', isEqualTo: uid)
+        .limit(100)
         .snapshots()
         .map((snapshot) {
       return snapshot.docs
@@ -134,18 +135,20 @@ class MessageBadgeRepository {
     }
 
     return _db
-        .collectionGroup(FirestoreCollections.members)
-        .where('userId', isEqualTo: uid)
+        .collection(FirestoreCollections.groups)
+        .where('memberIds', arrayContains: uid)
         .snapshots()
         .map((snapshot) {
       final ids = snapshot.docs
-          .map((doc) => (doc.reference.parent.parent?.id ?? '').trim())
+          .map((doc) => doc.id.trim())
           .where((id) => id.isNotEmpty)
-          .toSet()
           .toList();
 
       ids.sort();
       return ids;
+    }).handleError((error) {
+      debugPrint('[MessageBadgeRepository] watchMyGroupIds error: $error');
+      return <String>[];
     });
   }
 

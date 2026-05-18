@@ -430,11 +430,17 @@ service cloud.firestore {
         && resource.data.participantCount <= 1;
 
       match /participants/{userId} {
-        allow read: if isAuthenticated()
+        allow get: if isAuthenticated()
           && (
             isActivityOwner(activityId)
             || isParticipant(activityId)
             || isSelf(userId)
+          );
+
+        allow list: if isAuthenticated()
+          && (
+            isActivityOwner(activityId)
+            || isParticipant(activityId)
           );
 
         allow create: if isAuthenticated()

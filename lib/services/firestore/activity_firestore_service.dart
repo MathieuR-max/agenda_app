@@ -370,6 +370,7 @@ class ActivityFirestoreService {
           isGreaterThanOrEqualTo: Timestamp.fromDate(DateTime.now()),
         )
         .orderBy('startDateTime')
+        .limit(100)
         .snapshots()
         .map((snapshot) {
       final activities =
