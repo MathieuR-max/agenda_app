@@ -5,26 +5,32 @@ import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/repositories/chat_repository.dart';
 import 'package:agenda_app/repositories/group_chat_repository.dart';
+import 'package:agenda_app/repositories/private_chat_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 
 class MessageBadgeRepository {
   final FirebaseFirestore _db;
   final ChatRepository _chatRepository;
   final GroupChatRepository _groupChatRepository;
+  final PrivateChatRepository _privateChatRepository;
 
   // Cached broadcast streams — prevents double-subscription when NavigationDestination
   // renders both icon and selectedIcon from the same repository instance.
   Stream<int>? _activityUnreadCountCache;
   Stream<int>? _groupUnreadCountCache;
+  Stream<int>? _privateUnreadCountCache;
 
   MessageBadgeRepository({
     FirebaseFirestore? db,
     ChatRepository? chatRepository,
     GroupChatRepository? groupChatRepository,
+    PrivateChatRepository? privateChatRepository,
   })  : _db = db ?? FirebaseFirestore.instance,
         _chatRepository = chatRepository ?? ChatRepository(db: db),
         _groupChatRepository =
-            groupChatRepository ?? GroupChatRepository(db: db);
+            groupChatRepository ?? GroupChatRepository(db: db),
+        _privateChatRepository =
+            privateChatRepository ?? PrivateChatRepository(db: db);
 
   String? get currentUserIdOrNull {
     final uid = AuthUser.uidOrNull?.trim();
@@ -169,6 +175,39 @@ class MessageBadgeRepository {
     );
   }
 
+  Stream<List<String>> watchMyPrivateChatIds() {
+    final uid = currentUserIdOrNull;
+
+    if (uid == null) {
+      return Stream.value(<String>[]);
+    }
+
+    return _db
+        .collection('private_chats')
+        .where('participantIds', arrayContains: uid)
+        .limit(50)
+        .snapshots()
+        .map((snapshot) {
+      final ids = snapshot.docs
+          .map((doc) => doc.id.trim())
+          .where((id) => id.isNotEmpty)
+          .toList();
+
+      ids.sort();
+      return ids;
+    }).handleError((error) {
+      debugPrint('[MessageBadgeRepository] watchMyPrivateChatIds error: $error');
+      return <String>[];
+    });
+  }
+
+  Stream<int> watchPrivateUnreadCount() {
+    return _privateUnreadCountCache ??= _watchUnreadCountForIds(
+      idsStream: watchMyPrivateChatIds(),
+      watchUnreadCount: _privateChatRepository.watchUnreadCount,
+    );
+  }
+
   Stream<int> watchTotalUnreadCount() {
     final uid = currentUserIdOrNull;
 
@@ -180,14 +219,16 @@ class MessageBadgeRepository {
 
     StreamSubscription<int>? activitySubscription;
     StreamSubscription<int>? groupSubscription;
+    StreamSubscription<int>? privateSubscription;
 
     int activityTotal = 0;
     int groupTotal = 0;
+    int privateTotal = 0;
     int? lastEmittedTotal;
 
     void emitTotal() {
       if (controller.isClosed) return;
-      final total = activityTotal + groupTotal;
+      final total = activityTotal + groupTotal + privateTotal;
       if (total == lastEmittedTotal) return;
       lastEmittedTotal = total;
       controller.add(total);
@@ -221,9 +262,24 @@ class MessageBadgeRepository {
       },
     );
 
+    privateSubscription = watchPrivateUnreadCount().listen(
+      (count) {
+        privateTotal = count;
+        emitTotal();
+      },
+      onError: (error) {
+        debugPrint(
+          '[MessageBadgeRepository] watchPrivateUnreadCount error: $error',
+        );
+        privateTotal = 0;
+        emitTotal();
+      },
+    );
+
     controller.onCancel = () async {
       await activitySubscription?.cancel();
       await groupSubscription?.cancel();
+      await privateSubscription?.cancel();
     };
 
     return controller.stream;

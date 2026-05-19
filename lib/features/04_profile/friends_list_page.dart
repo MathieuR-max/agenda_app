@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
+import 'package:agenda_app/repositories/private_chat_repository.dart';
 import 'package:agenda_app/services/firestore/user_firestore_service.dart';
 import 'package:agenda_app/features/04_profile/user_profile_page.dart';
+import 'package:agenda_app/features/05_chat/private_chat_page.dart';
 
 class FriendsListPage extends StatefulWidget {
   const FriendsListPage({super.key});
@@ -262,27 +264,46 @@ class _FriendsListPageState extends State<FriendsListPage> {
               ],
             ),
             isThreeLine: friendshipDate != null,
-            trailing: PopupMenuButton<String>(
-              onSelected: (value) async {
-                if (value == 'open') {
-                  await _openFriendProfile(friendId);
-                }
-
-                if (value == 'remove') {
-                  await _confirmRemoveFriend(
-                    friendship,
-                    displayName,
-                  );
-                }
-              },
-              itemBuilder: (context) => const [
-                PopupMenuItem<String>(
-                  value: 'open',
-                  child: Text('Voir le profil'),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chat_bubble_outline),
+                  tooltip: 'Message privé',
+                  onPressed: () async {
+                    final chatId = await PrivateChatRepository()
+                        .getOrCreateChatWithUser(friendId);
+                    if (!context.mounted) return;
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PrivateChatPage(
+                          chatId: chatId,
+                          otherUserPseudo: displayName,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                PopupMenuItem<String>(
-                  value: 'remove',
-                  child: Text('Supprimer cet ami'),
+                PopupMenuButton<String>(
+                  onSelected: (value) async {
+                    if (value == 'open') {
+                      await _openFriendProfile(friendId);
+                    }
+                    if (value == 'remove') {
+                      await _confirmRemoveFriend(friendship, displayName);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem<String>(
+                      value: 'open',
+                      child: Text('Voir le profil'),
+                    ),
+                    PopupMenuItem<String>(
+                      value: 'remove',
+                      child: Text('Supprimer cet ami'),
+                    ),
+                  ],
                 ),
               ],
             ),

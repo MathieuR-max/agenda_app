@@ -394,6 +394,80 @@ exports.notifyOnGroupMessageCreated = onDocumentCreated(
   }
 );
 
+exports.notifyOnPrivateMessageCreated = onDocumentCreated(
+  {
+    document: "private_chats/{chatId}/messages/{messageId}",
+    region: "europe-west1",
+  },
+  async (event) => {
+    const snapshot = event.data;
+
+    if (!snapshot) {
+      console.warn("No snapshot data for private message event.");
+      return;
+    }
+
+    const messageDoc = snapshot.data();
+    if (!messageDoc) {
+      console.warn("Private message document is empty.");
+      return;
+    }
+
+    const chatId = String(event.params.chatId || "").trim();
+    const messageId = String(event.params.messageId || "").trim();
+    const senderId = String(messageDoc.senderId || "").trim();
+    const senderPseudo = String(messageDoc.senderPseudo || "").trim();
+    const text = String(messageDoc.text || "").trim();
+    const type = String(messageDoc.type || "").trim();
+
+    if (!chatId || !senderId) {
+      console.warn("Missing chatId or senderId on private message.", {messageId});
+      return;
+    }
+
+    if (type === "system") {
+      console.log("System private message, skipping notification.", {chatId, messageId});
+      return;
+    }
+
+    const chatSnap = await db.collection("private_chats").doc(chatId).get();
+
+    if (!chatSnap.exists) {
+      console.warn("Private chat not found.", {chatId, messageId});
+      return;
+    }
+
+    const participantIds = chatSnap.data()?.participantIds || [];
+    const recipientId = participantIds.find((uid) => uid !== senderId);
+
+    if (!recipientId) {
+      console.log("No recipient found for private message.", {chatId, messageId});
+      return;
+    }
+
+    const notificationTitle = senderPseudo || "Nouveau message";
+    const notificationBody = text.length > 100 ? text.substring(0, 100) + "…" : text;
+
+    await sendPushToUser({
+      userId: recipientId,
+      notification: {
+        title: notificationTitle,
+        body: notificationBody,
+      },
+      data: {
+        type: "private_message_created",
+        chatId,
+        senderPseudo,
+      },
+      logContext: {
+        trigger: "notifyOnPrivateMessageCreated",
+        chatId,
+        messageId,
+      },
+    });
+  }
+);
+
 exports.notifyOnOwnerPendingActivity = onDocumentUpdated(
   {
     document: "activities/{activityId}",
