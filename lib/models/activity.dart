@@ -17,6 +17,9 @@ class Activity {
   final DateTime? endDateTime;
 
   final String location;
+  final String? address;
+  final double? latitude;
+  final double? longitude;
   final int maxParticipants;
   final String level;
   final String groupType;
@@ -67,6 +70,9 @@ class Activity {
     required this.startDateTime,
     required this.endDateTime,
     required this.location,
+    this.address,
+    this.latitude,
+    this.longitude,
     required this.maxParticipants,
     required this.level,
     required this.groupType,
@@ -122,6 +128,9 @@ class Activity {
       startDateTime: resolvedStartDateTime,
       endDateTime: resolvedEndDateTime,
       location: _parseString(map['location']),
+      address: _parseNullableString(map['address']),
+      latitude: _parseNullableDouble(map['latitude']),
+      longitude: _parseNullableDouble(map['longitude']),
       maxParticipants: _parseInt(map['maxParticipants']),
       level: _parseString(map['level']),
       groupType: _parseString(map['groupType']),
@@ -199,6 +208,9 @@ class Activity {
       startDateTime: null,
       endDateTime: null,
       location: '',
+      address: null,
+      latitude: null,
+      longitude: null,
       maxParticipants: 0,
       level: '',
       groupType: '',
@@ -241,6 +253,9 @@ class Activity {
               : null,
 
       'location': location,
+      if (address != null && address!.isNotEmpty) 'address': address,
+      if (latitude != null) 'latitude': latitude,
+      if (longitude != null) 'longitude': longitude,
       'maxParticipants': maxParticipants,
       'level': level,
       'groupType': groupType,
@@ -307,6 +322,12 @@ class Activity {
     DateTime? startDateTime,
     DateTime? endDateTime,
     String? location,
+    String? address,
+    double? latitude,
+    double? longitude,
+    bool clearAddress = false,
+    bool clearLatitude = false,
+    bool clearLongitude = false,
     int? maxParticipants,
     String? level,
     String? groupType,
@@ -394,6 +415,9 @@ class Activity {
       endDateTime: nextEndDateTime,
 
       location: location ?? this.location,
+      address: clearAddress ? null : (address ?? this.address),
+      latitude: clearLatitude ? null : (latitude ?? this.latitude),
+      longitude: clearLongitude ? null : (longitude ?? this.longitude),
       maxParticipants: maxParticipants ?? this.maxParticipants,
       level: level ?? this.level,
       groupType: groupType ?? this.groupType,
@@ -502,6 +526,10 @@ class Activity {
   bool get hasBeenReclaimed =>
       reclaimedByPseudo != null &&
       reclaimedByPseudo!.trim().isNotEmpty;
+
+  bool get hasCoordinates => latitude != null && longitude != null;
+
+  bool get hasAddress => address != null && address!.trim().isNotEmpty;
 
   String get organizerDisplayLabel {
   final created = createdByPseudo.trim().isNotEmpty
@@ -836,6 +864,14 @@ class Activity {
     if (value == null) return fallback;
 
     return value.toString().trim();
+  }
+
+  static double? _parseNullableDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value.trim());
+    return null;
   }
 
   static String? _parseNullableString(dynamic value) {

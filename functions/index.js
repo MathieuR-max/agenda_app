@@ -1,5 +1,5 @@
 const {setGlobalOptions} = require("firebase-functions");
-const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
+const {onDocumentCreated, onDocumentUpdated, onDocumentWritten} = require("firebase-functions/v2/firestore");
 const admin = require("firebase-admin");
 
 admin.initializeApp();
@@ -533,6 +533,84 @@ exports.notifyOnOwnerPendingActivity = onDocumentUpdated(
           trigger: "notifyOnOwnerPendingActivity",
           activityId,
         },
+      });
+    }
+  }
+);
+
+exports.geocodeActivityOnWrite = onDocumentWritten(
+  {
+    document: "activities/{activityId}",
+    region: "europe-west1",
+  },
+  async (event) => {
+    try {
+      const afterSnap = event.data?.after;
+
+      if (!afterSnap || !afterSnap.exists) {
+        return;
+      }
+
+      const activityId = String(event.params.activityId || "").trim();
+      const data = afterSnap.data() || {};
+
+      const address = String(data.address || "").trim();
+      if (!address) {
+        return;
+      }
+
+      const geocodedAddress = String(data.geocodedAddress || "").trim();
+      const hasCoords = data.latitude != null && data.longitude != null;
+
+      if (address === geocodedAddress && hasCoords) {
+        return;
+      }
+
+      const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+
+      const response = await fetch(url, {
+        headers: {"User-Agent": "AgendaSocialApp/1.0"},
+      });
+
+      if (!response.ok) {
+        console.error("Nominatim HTTP error.", {
+          activityId,
+          address,
+          status: response.status,
+        });
+        await afterSnap.ref.update({geocodeStatus: "failed"});
+        return;
+      }
+
+      const results = await response.json();
+
+      if (!Array.isArray(results) || results.length === 0) {
+        console.error("Nominatim no results.", {activityId, address});
+        await afterSnap.ref.update({geocodeStatus: "failed"});
+        return;
+      }
+
+      const lat = parseFloat(results[0].lat);
+      const lon = parseFloat(results[0].lon);
+
+      await afterSnap.ref.update({
+        latitude: lat,
+        longitude: lon,
+        geocodedAddress: address,
+        geocodedAt: new Date(),
+        geocodeStatus: "ok",
+      });
+
+      console.log("Geocoding success.", {
+        activityId,
+        geocodedAddress: address,
+        lat,
+        lon,
+      });
+    } catch (e) {
+      console.error("geocodeActivityOnWrite unexpected error.", {
+        activityId: event.params?.activityId,
+        error: String(e),
       });
     }
   }

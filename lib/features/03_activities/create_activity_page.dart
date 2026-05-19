@@ -42,6 +42,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
   final TextEditingController titleController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
   final TextEditingController locationController = TextEditingController();
+  final TextEditingController addressController = TextEditingController();
   final TextEditingController maxParticipantsController =
       TextEditingController();
 
@@ -366,6 +367,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     titleController.text = activity.title;
     descriptionController.text = activity.description;
     locationController.text = activity.location;
+    addressController.text = activity.address ?? '';
 
     maxParticipantsController.text =
         activity.maxParticipants > 0 ? activity.maxParticipants.toString() : '';
@@ -758,6 +760,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     titleController.dispose();
     descriptionController.dispose();
     locationController.dispose();
+    addressController.dispose();
     maxParticipantsController.dispose();
     super.dispose();
   }
@@ -843,6 +846,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
         startDateTime: startDateTime,
         endDateTime: endDateTime,
         location: trimmedLocation,
+        address: addressController.text.trim().isEmpty ? null : addressController.text.trim(),
         maxParticipants: normalizedMaxParticipants,
         level: level,
         groupType: groupType,
@@ -1144,6 +1148,19 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                       decoration: const InputDecoration(
                         labelText: 'Lieu',
                         border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: addressController,
+                      enabled: !isSaving,
+                      decoration: InputDecoration(
+                        labelText: 'Adresse (optionnel)',
+                        hintText: 'Ex : 12 rue de Rivoli, Paris',
+                        helperText: "Permet d'afficher la distance dans Explorer",
+                        helperStyle: TextStyle(fontSize: 11, color: Colors.blueGrey.shade400),
+                        border: const OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.place_outlined, color: Colors.blueGrey.shade400),
                       ),
                     ),
                     const SizedBox(height: 15),

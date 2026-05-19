@@ -106,6 +106,7 @@ class ActivityRepository {
     required DateTime startDateTime,
     required DateTime endDateTime,
     required String location,
+    String? address,
     required String maxParticipants,
     required String level,
     required String groupType,
@@ -134,6 +135,9 @@ class ActivityRepository {
     if (!endDateTime.isAfter(startDateTime)) {
       throw Exception('La date de fin doit être après la date de début.');
     }
+
+    final resolvedAddress =
+        (address?.trim().isEmpty ?? true) ? null : address?.trim();
 
     final ownerPseudo = await _userService.getCurrentUserPseudo();
 
@@ -182,6 +186,7 @@ class ActivityRepository {
       startDateTime: startDateTime,
       endDateTime: endDateTime,
       location: resolvedLocation,
+      address: resolvedAddress,
       maxParticipants: maxParticipantsInt,
       level: resolvedLevel,
       groupType: resolvedGroupType,
@@ -224,6 +229,8 @@ class ActivityRepository {
     DateTime? startDateTime,
     DateTime? endDateTime,
     String? location,
+    String? address,
+    bool updateAddress = false,
     String? maxParticipants,
     String? level,
     String? groupType,
@@ -353,6 +360,7 @@ class ActivityRepository {
         'startDateTime': Timestamp.fromDate(resolvedStartDateTime),
         'endDateTime': Timestamp.fromDate(resolvedEndDateTime),
         'location': resolvedLocation,
+        if (updateAddress) 'address': (address ?? '').trim().isEmpty ? null : address!.trim(),
         'maxParticipants': resolvedMaxParticipants,
         'level': resolvedLevel,
         'groupType': resolvedGroupType,

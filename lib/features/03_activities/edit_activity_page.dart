@@ -22,6 +22,7 @@ class _EditActivityPageState extends State<EditActivityPage> {
   final TextEditingController titleController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
   final TextEditingController locationController = TextEditingController();
+  final TextEditingController addressController = TextEditingController();
   final TextEditingController maxParticipantsController =
       TextEditingController();
 
@@ -277,6 +278,7 @@ class _EditActivityPageState extends State<EditActivityPage> {
     titleController.text = widget.activity.title;
     descriptionController.text = widget.activity.description;
     locationController.text = widget.activity.location;
+    addressController.text = widget.activity.address ?? '';
     maxParticipantsController.text = widget.activity.hasUnlimitedPlaces
         ? ''
         : widget.activity.maxParticipants.toString();
@@ -291,6 +293,7 @@ class _EditActivityPageState extends State<EditActivityPage> {
     titleController.dispose();
     descriptionController.dispose();
     locationController.dispose();
+    addressController.dispose();
     maxParticipantsController.dispose();
     super.dispose();
   }
@@ -373,6 +376,8 @@ class _EditActivityPageState extends State<EditActivityPage> {
           startDateTime: startDateTime,
           endDateTime: endDateTime,
           location: trimmedLocation,
+          address: addressController.text,
+          updateAddress: true,
           maxParticipants: normalizedMaxParticipants,
           level: level,
           groupType: groupType,
@@ -586,6 +591,21 @@ class _EditActivityPageState extends State<EditActivityPage> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (canFullyEdit) ...[
+              const SizedBox(height: 10),
+              TextField(
+                controller: addressController,
+                enabled: !isSaving,
+                decoration: InputDecoration(
+                  labelText: 'Adresse (optionnel)',
+                  hintText: 'Ex : 12 rue de Rivoli, Paris',
+                  helperText: "Permet d'afficher la distance dans Explorer",
+                  helperStyle: TextStyle(fontSize: 11, color: Colors.blueGrey.shade400),
+                  border: const OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.place_outlined, color: Colors.blueGrey.shade400),
+                ),
+              ),
+            ],
             const SizedBox(height: 15),
             TextField(
               controller: maxParticipantsController,

@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
@@ -20,6 +22,10 @@ class _ExplorePageState extends State<ExplorePage> {
   String _selectedCategory = 'Toutes';
   int? _selectedWeekday; // null = tous les jours
   bool _filtersExpanded = false;
+
+  Position? _userPosition;
+  bool _sortByDistance = false;
+  bool _isLoadingPosition = false;
 
   late final StreamSubscription<List<String>> _joinedIdsSub;
   final Set<String> _joinedIds = {};
@@ -87,6 +93,76 @@ class _ExplorePageState extends State<ExplorePage> {
       if (start == null || start.weekday != _selectedWeekday) return false;
     }
     return true;
+  }
+
+  double _distanceKm(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371.0;
+    final dLat = (lat2 - lat1) * pi / 180;
+    final dLon = (lon2 - lon1) * pi / 180;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * pi / 180) * cos(lat2 * pi / 180) *
+        sin(dLon / 2) * sin(dLon / 2);
+    return r * 2 * asin(sqrt(a));
+  }
+
+  Future<void> _requestLocationAndSort() async {
+    if (_isLoadingPosition) return;
+    setState(() => _isLoadingPosition = true);
+
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Service de localisation désactivé')),
+          );
+        }
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Permission de localisation refusée')),
+            );
+          }
+          return;
+        }
+      }
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Localisation bloquée — modifiez les paramètres de l'app"),
+            ),
+          );
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+      );
+
+      if (mounted) {
+        setState(() {
+          _userPosition = position;
+          _sortByDistance = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('EXPLORER geoloc error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Impossible d'obtenir la position")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoadingPosition = false);
+    }
   }
 
   void _resetFilters() {
@@ -181,6 +257,25 @@ class _ExplorePageState extends State<ExplorePage> {
                   .where(_matchesFilters)
                   .toList();
 
+              if (_sortByDistance && _userPosition != null) {
+                filtered.sort((a, b) {
+                  final aHas = a.hasCoordinates;
+                  final bHas = b.hasCoordinates;
+                  if (!aHas && !bHas) return 0;
+                  if (!aHas) return 1;
+                  if (!bHas) return -1;
+                  final aDist = _distanceKm(
+                    _userPosition!.latitude, _userPosition!.longitude,
+                    a.latitude!, a.longitude!,
+                  );
+                  final bDist = _distanceKm(
+                    _userPosition!.latitude, _userPosition!.longitude,
+                    b.latitude!, b.longitude!,
+                  );
+                  return aDist.compareTo(bDist);
+                });
+              }
+
               if (filtered.isEmpty) {
                 return _buildEmptyState();
               }
@@ -214,6 +309,28 @@ class _ExplorePageState extends State<ExplorePage> {
                 icon: const Icon(Icons.tune),
                 label: const Text('Filtres'),
               ),
+              const SizedBox(width: 8),
+              _isLoadingPosition
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : FilterChip(
+                      label: const Text('Près de moi'),
+                      selected: _sortByDistance,
+                      avatar: const Icon(Icons.near_me, size: 16),
+                      onSelected: (_) {
+                        if (_sortByDistance) {
+                          setState(() {
+                            _sortByDistance = false;
+                            _userPosition = null;
+                          });
+                        } else {
+                          _requestLocationAndSort();
+                        }
+                      },
+                    ),
               if (_activeFilterCount > 0)
                 Container(
                   padding:
@@ -430,7 +547,14 @@ class _ExplorePageState extends State<ExplorePage> {
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      activity.location,
+                      _userPosition != null && activity.hasCoordinates
+                          ? '${activity.location} • à ${_distanceKm(
+                              _userPosition!.latitude,
+                              _userPosition!.longitude,
+                              activity.latitude!,
+                              activity.longitude!,
+                            ).toStringAsFixed(1)} km'
+                          : activity.location,
                       style: const TextStyle(fontSize: 13),
                     ),
                   ),

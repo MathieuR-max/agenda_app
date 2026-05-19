@@ -147,6 +147,7 @@ class ActivityFirestoreService {
     DateTime? startDateTime,
     DateTime? endDateTime,
     required String location,
+    String? address,
     required int maxParticipants,
     required String level,
     required String groupType,
@@ -192,6 +193,7 @@ class ActivityFirestoreService {
       'endDateTime':
           endDateTime != null ? Timestamp.fromDate(endDateTime) : null,
       'location': trimmedLocation,
+      if (address != null && address.trim().isNotEmpty) 'address': address.trim(),
       'maxParticipants': maxParticipants,
       'level': trimmedLevel,
       'groupType': trimmedGroupType,
