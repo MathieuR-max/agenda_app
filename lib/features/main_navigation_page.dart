@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import '../models/activity.dart';
@@ -31,6 +34,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   late final MessageBadgeRepository _messageBadgeRepository;
   late final ActivityFirestoreService _activityService;
   late final FriendshipFirestoreService _friendshipService;
+  StreamSubscription<dynamic>? _foregroundMessageSub;
 
   @override
   void initState() {
@@ -40,6 +44,23 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _messageBadgeRepository = MessageBadgeRepository();
     _activityService = ActivityFirestoreService();
     _friendshipService = FriendshipFirestoreService();
+    _foregroundMessageSub = FirebaseMessaging.onMessage.listen((message) {
+      final type = (message.data['type'] ?? '').toString();
+      if (type == 'private_message_created') {
+        final pseudo =
+            (message.data['senderPseudo'] ?? 'Quelqu\'un').toString();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('💬 Message de $pseudo')),
+        );
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _foregroundMessageSub?.cancel();
+    super.dispose();
   }
 
   void _onTabTapped(int index) {
@@ -102,7 +123,10 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             color: Theme.of(context).colorScheme.onSurface,
           ),
           actions: [
-            _ProfileAppBarIcon(friendshipService: _friendshipService),
+            _ProfileAppBarIcon(
+              friendshipService: _friendshipService,
+              messageBadgeRepository: _messageBadgeRepository,
+            ),
           ],
         ),
         body: IndexedStack(
@@ -164,27 +188,39 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
 class _ProfileAppBarIcon extends StatelessWidget {
   final FriendshipFirestoreService friendshipService;
+  final MessageBadgeRepository messageBadgeRepository;
 
-  const _ProfileAppBarIcon({required this.friendshipService});
+  const _ProfileAppBarIcon({
+    required this.friendshipService,
+    required this.messageBadgeRepository,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<Friendship>>(
-      stream: friendshipService.getPendingReceivedFriendRequests(),
-      builder: (context, snapshot) {
-        final pendingCount = snapshot.data?.length ?? 0;
+    return StreamBuilder<int>(
+      stream: messageBadgeRepository.watchPrivateUnreadCount(),
+      builder: (context, privateSnapshot) {
+        final privateUnread = privateSnapshot.data ?? 0;
 
-        return IconButton(
-          tooltip: 'Mon profil',
-          onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const MyProfilePage()),
-          ),
-          icon: Badge(
-            isLabelVisible: pendingCount > 0,
-            label: Text(pendingCount > 99 ? '99+' : '$pendingCount'),
-            child: const Icon(Icons.account_circle),
-          ),
+        return StreamBuilder<List<Friendship>>(
+          stream: friendshipService.getPendingReceivedFriendRequests(),
+          builder: (context, snapshot) {
+            final pendingCount = snapshot.data?.length ?? 0;
+            final total = pendingCount + privateUnread;
+
+            return IconButton(
+              tooltip: 'Mon profil',
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MyProfilePage()),
+              ),
+              icon: Badge(
+                isLabelVisible: total > 0,
+                label: Text(total > 99 ? '99+' : '$total'),
+                child: const Icon(Icons.account_circle),
+              ),
+            );
+          },
         );
       },
     );

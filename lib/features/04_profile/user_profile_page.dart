@@ -9,6 +9,7 @@ import '../../services/current_user.dart';
 import '../06_groups/groups_page.dart';
 import 'edit_profile_page.dart';
 import 'friend_requests_page.dart';
+import '../05_chat/private_conversations_page.dart';
 import 'friends_list_page.dart';
 import 'search_users_page.dart';
 
@@ -315,6 +316,32 @@ class UserProfilePage extends StatelessWidget {
                 },
                 icon: const Icon(Icons.people),
                 label: const Text('Voir mes amis'),
+              ),
+              const SizedBox(height: 12),
+              StreamBuilder<int>(
+                stream: messageBadgeRepository.watchPrivateUnreadCount(),
+                builder: (context, unreadSnapshot) {
+                  final unreadCount = unreadSnapshot.data ?? 0;
+
+                  return OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PrivateConversationsPage(),
+                        ),
+                      );
+                    },
+                    icon: Badge(
+                      isLabelVisible: unreadCount > 0,
+                      label: Text(
+                        unreadCount > 99 ? '99+' : '$unreadCount',
+                      ),
+                      child: const Icon(Icons.chat_bubble_outline),
+                    ),
+                    label: const Text('Messages privés'),
+                  );
+                },
               ),
               const SizedBox(height: 12),
               _buildFriendRequestsButton(

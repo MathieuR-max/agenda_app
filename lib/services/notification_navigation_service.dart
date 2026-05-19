@@ -5,6 +5,7 @@ import 'package:agenda_app/core/utils/app_navigator.dart';
 import 'package:agenda_app/features/03_activities/activity_detail_page.dart';
 import 'package:agenda_app/features/03_activities/invitations_page.dart';
 import 'package:agenda_app/features/05_chat/activity_chat_page.dart';
+import 'package:agenda_app/features/05_chat/private_chat_page.dart';
 import 'package:agenda_app/features/06_groups/group_chat_page.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/models/group_model.dart';
@@ -67,6 +68,14 @@ class NotificationNavigationService {
         }
         break;
 
+      case 'private_message_created':
+        final chatId = (data['chatId'] ?? '').toString().trim();
+        final senderPseudo = (data['senderPseudo'] ?? '').toString().trim();
+        if (chatId.isNotEmpty) {
+          await _openPrivateChat(chatId, senderPseudo);
+        }
+        break;
+
       default:
         debugPrint('Unknown notification type: $type');
     }
@@ -124,6 +133,24 @@ class NotificationNavigationService {
       );
     } catch (e) {
       debugPrint('Failed to open activity detail from notification: $e');
+    }
+  }
+
+  Future<void> _openPrivateChat(String chatId, String senderPseudo) async {
+    final navigator = appNavigatorKey.currentState;
+    if (navigator == null) return;
+
+    try {
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => PrivateChatPage(
+            chatId: chatId,
+            otherUserPseudo: senderPseudo.isNotEmpty ? senderPseudo : 'Message privé',
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Failed to open private chat from notification: $e');
     }
   }
 
