@@ -8,11 +8,13 @@ import 'package:agenda_app/features/03_activities/create_activity_page.dart';
 class PrivateChatPage extends StatefulWidget {
   final String chatId;
   final String otherUserPseudo;
+  final String otherUserId;
 
   const PrivateChatPage({
     super.key,
     required this.chatId,
     required this.otherUserPseudo,
+    required this.otherUserId,
   });
 
   @override
@@ -168,31 +170,49 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   Widget _buildActivityCta() {
     return InkWell(
       onTap: () {
+        final now = DateTime.now();
+        final hour = now.hour;
+        final minute = now.minute >= 30 ? 30 : 0;
+        final timeSlot =
+            '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+        final days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+        final dayLabel = days[now.weekday - 1];
+
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => const CreateActivityPage(day: '', hour: ''),
+            builder: (_) => CreateActivityPage(
+              day: dayLabel,
+              hour: timeSlot,
+              selectedDate: now,
+              preselectedFriendIds: [widget.otherUserId],
+            ),
           ),
         );
       },
       child: Container(
-        height: 44,
+        height: 52,
         color: Colors.indigo.shade50,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Row(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.event, size: 18, color: Colors.indigo.shade600),
-            const SizedBox(width: 8),
             Text(
-              'Organiser une activité ensemble',
+              'Discutez, puis organisez.',
               style: TextStyle(
-                color: Colors.indigo.shade700,
+                fontSize: 12,
+                color: Colors.grey.shade500,
+              ),
+            ),
+            Text(
+              'Créer une activité avec ${widget.otherUserPseudo} →',
+              style: TextStyle(
                 fontSize: 13,
+                color: Colors.indigo.shade700,
                 fontWeight: FontWeight.w500,
               ),
             ),
-            const Spacer(),
-            Icon(Icons.chevron_right, size: 16, color: Colors.indigo.shade400),
           ],
         ),
       ),

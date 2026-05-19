@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/core/utils/app_navigator.dart';
 import 'package:agenda_app/features/01_auth/login_page.dart';
@@ -209,6 +210,16 @@ class _AgendaAppState extends State<AgendaApp> {
       navigatorKey: appNavigatorKey,
       title: 'Agenda App',
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('fr', 'FR'),
+        Locale('en', 'US'),
+      ],
+      locale: const Locale('fr', 'FR'),
       theme: ThemeData(
         useMaterial3: true,
       ),

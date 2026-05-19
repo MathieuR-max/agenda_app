@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:agenda_app/core/constants/app_status.dart';
 import 'package:agenda_app/models/activity.dart';
@@ -211,7 +211,9 @@ class _EditActivityPageState extends State<EditActivityPage> {
   }
 
   String _buildSchedulePreview() {
-    return '${_formatDisplayDate(selectedDate)} • $startTime - $endTime';
+    final isOvernight = timeToMinutes(endTime) <= timeToMinutes(startTime);
+    final endLabel = isOvernight ? '$endTime (+1j)' : endTime;
+    return '${_formatDisplayDate(selectedDate)} • $startTime - $endLabel';
   }
 
   Future<void> _pickSelectedDate() async {
@@ -282,10 +284,6 @@ class _EditActivityPageState extends State<EditActivityPage> {
     if (endTime.trim().isEmpty) {
       endTime = getNextSlot(startTime);
     }
-
-    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-      endTime = getNextSlot(startTime);
-    }
   }
 
   @override
@@ -329,17 +327,6 @@ class _EditActivityPageState extends State<EditActivityPage> {
       final startMinutes = timeToMinutes(startTime);
       final endMinutes = timeToMinutes(endTime);
 
-      if (endMinutes <= startMinutes) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'L’heure de fin doit être après l’heure de début',
-            ),
-          ),
-        );
-        return;
-      }
-
       final maxParticipantsText = maxParticipantsController.text.trim();
 
       if (maxParticipantsText.isNotEmpty) {
@@ -356,19 +343,12 @@ class _EditActivityPageState extends State<EditActivityPage> {
         }
       }
 
+      final isOvernight = endMinutes <= startMinutes;
       startDateTime = _combineDateAndTime(selectedDate, startTime);
-      endDateTime = _combineDateAndTime(selectedDate, endTime);
-
-      if (!endDateTime.isAfter(startDateTime)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'La date de fin doit être après la date de début',
-            ),
-          ),
-        );
-        return;
-      }
+      final endDate = isOvernight
+          ? selectedDate.add(const Duration(days: 1))
+          : selectedDate;
+      endDateTime = _combineDateAndTime(endDate, endTime);
     }
 
     setState(() {
@@ -522,13 +502,6 @@ class _EditActivityPageState extends State<EditActivityPage> {
 
                       setState(() {
                         startTime = value;
-
-                        final startMinutes = timeToMinutes(startTime);
-                        final endMinutes = timeToMinutes(endTime);
-
-                        if (endMinutes <= startMinutes) {
-                          endTime = getNextSlot(startTime);
-                        }
                       });
                     },
               decoration: const InputDecoration(

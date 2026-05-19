@@ -21,6 +21,7 @@ class CreateActivityPage extends StatefulWidget {
   final String? groupId;
   final String? groupName;
   final Activity? duplicatedFromActivity;
+  final List<String> preselectedFriendIds;
 
   const CreateActivityPage({
     super.key,
@@ -30,6 +31,7 @@ class CreateActivityPage extends StatefulWidget {
     this.groupId,
     this.groupName,
     this.duplicatedFromActivity,
+    this.preselectedFriendIds = const [],
   });
 
   @override
@@ -281,7 +283,9 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
   }
 
   String _schedulePreview() {
-    return '${_formatDisplayDate(selectedDate)} • $startTime - $endTime';
+    final isOvernight = timeToMinutes(endTime) <= timeToMinutes(startTime);
+    final endLabel = isOvernight ? '$endTime (+1j)' : endTime;
+    return '${_formatDisplayDate(selectedDate)} • $startTime - $endLabel';
   }
 
   String _groupActivityInfoText() {
@@ -685,6 +689,16 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     endTime = getNextSlot(widget.hour);
     _friendsFuture = _loadFriendsFromFriendships();
 
+    selectedFriendIds.addAll(
+      widget.preselectedFriendIds
+          .map((id) => id.trim())
+          .where((id) => id.isNotEmpty),
+    );
+
+    if (widget.preselectedFriendIds.isNotEmpty) {
+      visibility = ActivityVisibilityValues.inviteOnly;
+    }
+
     final duplicatedActivity = widget.duplicatedFromActivity;
 
     if (duplicatedActivity != null) {
@@ -719,10 +733,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     fallback: getNextSlot(startTime),
   );
 }
-
-    if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
-      endTime = getNextSlot(startTime);
-    }
 
     selectedGroupId = widget.groupId?.trim().isNotEmpty == true
         ? widget.groupId!.trim()
@@ -770,20 +780,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
       return;
     }
 
-    final startMinutes = timeToMinutes(startTime);
-    final endMinutes = timeToMinutes(endTime);
-
-    if (endMinutes <= startMinutes) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'L’heure de fin doit être après l’heure de début',
-          ),
-        ),
-      );
-      return;
-    }
-
     final maxParticipantsText = maxParticipantsController.text.trim();
     final normalizedMaxParticipants =
         maxParticipantsText.isEmpty ? '0' : maxParticipantsText;
@@ -803,7 +799,10 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     }
 
     final startDateTime = _combineDateAndTime(selectedDate, startTime);
-    final endDateTime = _combineDateAndTime(selectedDate, endTime);
+    final endDate = timeToMinutes(endTime) <= timeToMinutes(startTime)
+        ? selectedDate.add(const Duration(days: 1))
+        : selectedDate;
+    final endDateTime = _combineDateAndTime(endDate, endTime);
 
     if (!endDateTime.isAfter(startDateTime)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -944,25 +943,91 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    Text(
-                      'Jour sélectionné : ${_formatDisplayDate(selectedDate)}',
-                    ),
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blueGrey.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: Colors.blueGrey.shade100,
+                    InkWell(
+                      onTap: isSaving
+                          ? null
+                          : () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate: selectedDate,
+                                firstDate: DateTime.now(),
+                                lastDate: DateTime.now().add(
+                                  const Duration(days: 365),
+                                ),
+                                locale: const Locale('fr', 'FR'),
+                              );
+                              if (picked != null) {
+                                setState(() {
+                                  selectedDate = DateTime(
+                                    picked.year,
+                                    picked.month,
+                                    picked.day,
+                                  );
+                                });
+                              }
+                            },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 14,
                         ),
-                      ),
-                      child: Text(
-                        'Créneau prévu : ${_schedulePreview()}',
-                        style: TextStyle(
-                          color: Colors.blueGrey.shade800,
-                          fontWeight: FontWeight.w600,
+                        decoration: BoxDecoration(
+                          color: Colors.indigo.shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: Colors.indigo.shade200,
+                            width: 1.5,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: Colors.indigo.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.calendar_today,
+                                size: 20,
+                                color: Colors.indigo.shade600,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    "Date de l'activité",
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.indigo.shade400,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _formatDisplayDate(selectedDate),
+                                    style: TextStyle(
+                                      fontSize: 17,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.indigo.shade800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.edit_outlined,
+                              size: 18,
+                              color: Colors.indigo.shade400,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -984,13 +1049,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
 
                               setState(() {
                                 startTime = value;
-
-                                final startMinutes = timeToMinutes(startTime);
-                                final endMinutes = timeToMinutes(endTime);
-
-                                if (endMinutes <= startMinutes) {
-                                  endTime = getNextSlot(startTime);
-                                }
                               });
                             },
                       decoration: const InputDecoration(
@@ -1015,18 +1073,24 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                               if (value == null) return;
 
                               setState(() {
-                                final proposedEnd = value;
-                                final startMinutes = timeToMinutes(startTime);
-                                final endMinutes = timeToMinutes(proposedEnd);
-
-                                endTime = endMinutes <= startMinutes
-                                    ? getNextSlot(startTime)
-                                    : proposedEnd;
+                                endTime = value;
                               });
                             },
                       decoration: const InputDecoration(
                         labelText: 'Heure de fin',
                         border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _schedulePreview(),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey.shade600,
+                        fontStyle: timeToMinutes(endTime) <=
+                                timeToMinutes(startTime)
+                            ? FontStyle.italic
+                            : FontStyle.normal,
                       ),
                     ),
                     const SizedBox(height: 15),

@@ -206,6 +206,7 @@ class _ConversationTile extends StatelessWidget {
                       builder: (_) => PrivateChatPage(
                         chatId: chatId,
                         otherUserPseudo: displayName,
+                        otherUserId: otherUid,
                       ),
                     ),
                   );

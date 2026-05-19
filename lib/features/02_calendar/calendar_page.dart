@@ -225,13 +225,27 @@ class _CalendarPageState extends State<CalendarPage> {
       final activityEnd = activity.resolvedEndDateTime;
 
       if (activityStart == null || activityEnd == null) continue;
-      if (!DateUtils.isSameDay(activityStart, slotDate)) continue;
 
-      final start = activityStart.hour * 60 + activityStart.minute;
-      final end = activityEnd.hour * 60 + activityEnd.minute;
+      final isOvernight = activityEnd.isAfter(
+            DateTime(
+              activityStart.year,
+              activityStart.month,
+              activityStart.day,
+              23,
+              59,
+            ),
+          ) &&
+          !DateUtils.isSameDay(activityStart, activityEnd);
 
-      if (slotMinutes >= start && slotMinutes < end) {
-        return activity;
+      if (DateUtils.isSameDay(activityStart, slotDate)) {
+        final start = activityStart.hour * 60 + activityStart.minute;
+        final end = isOvernight
+            ? 24 * 60
+            : (activityEnd.hour * 60 + activityEnd.minute);
+        if (slotMinutes >= start && slotMinutes < end) return activity;
+      } else if (isOvernight && DateUtils.isSameDay(activityEnd, slotDate)) {
+        final end = activityEnd.hour * 60 + activityEnd.minute;
+        if (slotMinutes < end) return activity;
       }
     }
     return null;
@@ -1260,6 +1274,7 @@ class _CalendarPageState extends State<CalendarPage> {
               Expanded(
                 child: Builder(
                   builder: (context) {
+                    final slotDate = _getDateForDay(day);
                     final rawCreatedActivity =
                         getActivityForSlot(day, hour, createdActivities);
                     final rawJoinedActivity =
@@ -1380,11 +1395,49 @@ class _CalendarPageState extends State<CalendarPage> {
                           ? _getMutedBorderColor(baseBorderColor)
                           : baseBorderColor;
 
-                      if (_isActivityStartSlot(joinedActivity, hour)) {
+                      final isJoinedStartSlot =
+                          _isActivityStartSlot(joinedActivity, hour);
+                      final isJoinedOvernightStart = !isJoinedStartSlot &&
+                          joinedActivity.resolvedStartDateTime != null &&
+                          joinedActivity.resolvedEndDateTime != null &&
+                          !DateUtils.isSameDay(
+                            joinedActivity.resolvedStartDateTime!,
+                            joinedActivity.resolvedEndDateTime!,
+                          ) &&
+                          DateUtils.isSameDay(
+                            joinedActivity.resolvedEndDateTime!,
+                            slotDate,
+                          ) &&
+                          timeToMinutes(hour) == 0;
+
+                      if (isJoinedStartSlot) {
                         cellContent = _buildActivityStartContent(
                           joinedActivity,
                           isCreated: false,
                           isDimmed: isJoinedDimmed,
+                        );
+                      } else if (isJoinedOvernightStart) {
+                        cellContent = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              joinedActivity.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              '→ fin ${joinedActivity.resolvedEndDateTime!.hour.toString().padLeft(2, '0')}:${joinedActivity.resolvedEndDateTime!.minute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                fontSize: 8,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
                         );
                       } else {
                         cellContent = _buildContinuationMarker(
@@ -1409,11 +1462,49 @@ class _CalendarPageState extends State<CalendarPage> {
                           ? _getMutedBorderColor(baseBorderColor)
                           : baseBorderColor;
 
-                      if (_isActivityStartSlot(createdActivity, hour)) {
+                      final isCreatedStartSlot =
+                          _isActivityStartSlot(createdActivity, hour);
+                      final isCreatedOvernightStart = !isCreatedStartSlot &&
+                          createdActivity.resolvedStartDateTime != null &&
+                          createdActivity.resolvedEndDateTime != null &&
+                          !DateUtils.isSameDay(
+                            createdActivity.resolvedStartDateTime!,
+                            createdActivity.resolvedEndDateTime!,
+                          ) &&
+                          DateUtils.isSameDay(
+                            createdActivity.resolvedEndDateTime!,
+                            slotDate,
+                          ) &&
+                          timeToMinutes(hour) == 0;
+
+                      if (isCreatedStartSlot) {
                         cellContent = _buildActivityStartContent(
                           createdActivity,
                           isCreated: true,
                           isDimmed: isCreatedDimmed,
+                        );
+                      } else if (isCreatedOvernightStart) {
+                        cellContent = Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              createdActivity.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            Text(
+                              '→ fin ${createdActivity.resolvedEndDateTime!.hour.toString().padLeft(2, '0')}:${createdActivity.resolvedEndDateTime!.minute.toString().padLeft(2, '0')}',
+                              style: const TextStyle(
+                                fontSize: 8,
+                                color: Colors.black54,
+                              ),
+                            ),
+                          ],
                         );
                       } else {
                         cellContent = _buildContinuationMarker(

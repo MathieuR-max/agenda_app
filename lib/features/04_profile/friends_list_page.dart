@@ -267,10 +267,8 @@ class _FriendsListPageState extends State<FriendsListPage> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.chat_bubble_outline),
-                  tooltip: 'Message privé',
-                  onPressed: () async {
+                InkWell(
+                  onTap: () async {
                     final chatId = await PrivateChatRepository()
                         .getOrCreateChatWithUser(friendId);
                     if (!context.mounted) return;
@@ -280,10 +278,25 @@ class _FriendsListPageState extends State<FriendsListPage> {
                         builder: (_) => PrivateChatPage(
                           chatId: chatId,
                           otherUserPseudo: displayName,
+                          otherUserId: friendId,
                         ),
                       ),
                     );
                   },
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: Colors.indigo.shade50,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.chat_bubble_outline,
+                      color: Colors.indigo.shade400,
+                      size: 20,
+                    ),
+                  ),
                 ),
                 PopupMenuButton<String>(
                   onSelected: (value) async {

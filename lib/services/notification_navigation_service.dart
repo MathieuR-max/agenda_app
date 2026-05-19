@@ -146,6 +146,7 @@ class NotificationNavigationService {
           builder: (_) => PrivateChatPage(
             chatId: chatId,
             otherUserPseudo: senderPseudo.isNotEmpty ? senderPseudo : 'Message privé',
+            otherUserId: '',
           ),
         ),
       );
