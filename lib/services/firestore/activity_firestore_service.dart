@@ -393,6 +393,7 @@ class ActivityFirestoreService {
 
     return _activities
         .where('groupId', isEqualTo: trimmedGroupId)
+        .limit(50)
         .snapshots()
         .map((snapshot) {
       final activities =
