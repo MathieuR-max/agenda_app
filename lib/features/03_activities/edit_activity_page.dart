@@ -31,6 +31,7 @@ class _EditActivityPageState extends State<EditActivityPage> {
   late DateTime selectedDate;
   late String startTime;
   late String endTime;
+  DateTime? endDate;
   late String category;
   late String level;
   late String groupType;
@@ -212,6 +213,9 @@ class _EditActivityPageState extends State<EditActivityPage> {
   }
 
   String _buildSchedulePreview() {
+    if (endDate != null) {
+      return '${_formatDisplayDate(selectedDate)} $startTime → ${_formatDisplayDate(endDate!)} $endTime';
+    }
     final isOvernight = timeToMinutes(endTime) <= timeToMinutes(startTime);
     final endLabel = isOvernight ? '$endTime (+1j)' : endTime;
     return '${_formatDisplayDate(selectedDate)} • $startTime - $endLabel';
@@ -286,6 +290,22 @@ class _EditActivityPageState extends State<EditActivityPage> {
     if (endTime.trim().isEmpty) {
       endTime = getNextSlot(startTime);
     }
+
+    if (resolvedStart != null && resolvedEnd != null) {
+      final startDay = DateTime(
+        resolvedStart.year,
+        resolvedStart.month,
+        resolvedStart.day,
+      );
+      final endDay = DateTime(
+        resolvedEnd.year,
+        resolvedEnd.month,
+        resolvedEnd.day,
+      );
+      if (endDay.difference(startDay).inDays > 1) {
+        endDate = endDay;
+      }
+    }
   }
 
   @override
@@ -346,12 +366,26 @@ class _EditActivityPageState extends State<EditActivityPage> {
         }
       }
 
-      final isOvernight = endMinutes <= startMinutes;
       startDateTime = _combineDateAndTime(selectedDate, startTime);
-      final endDate = isOvernight
-          ? selectedDate.add(const Duration(days: 1))
-          : selectedDate;
-      endDateTime = _combineDateAndTime(endDate, endTime);
+      final DateTime resolvedEndDate;
+      if (endDate != null) {
+        resolvedEndDate = endDate!;
+        final diff = endDate!.difference(selectedDate).inDays;
+        if (diff > 7) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('La durée maximale est de 7 jours'),
+            ),
+          );
+          setState(() => isSaving = false);
+          return;
+        }
+      } else if (endMinutes <= startMinutes) {
+        resolvedEndDate = selectedDate.add(const Duration(days: 1));
+      } else {
+        resolvedEndDate = selectedDate;
+      }
+      endDateTime = _combineDateAndTime(resolvedEndDate, endTime);
     }
 
     setState(() {
@@ -539,6 +573,63 @@ class _EditActivityPageState extends State<EditActivityPage> {
                 border: OutlineInputBorder(),
               ),
             ),
+            if (canFullyEdit) ...[
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: endDate == null
+                        ? OutlinedButton.icon(
+                            onPressed: isSaving
+                                ? null
+                                : () async {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: selectedDate.add(
+                                        const Duration(days: 1),
+                                      ),
+                                      firstDate: selectedDate.add(
+                                        const Duration(days: 1),
+                                      ),
+                                      lastDate: selectedDate.add(
+                                        const Duration(days: 7),
+                                      ),
+                                      helpText: "Date de fin de l'activité",
+                                      locale: const Locale('fr', 'FR'),
+                                    );
+                                    if (picked != null) {
+                                      setState(() {
+                                        endDate = DateTime(
+                                          picked.year,
+                                          picked.month,
+                                          picked.day,
+                                        );
+                                      });
+                                    }
+                                  },
+                            icon: const Icon(Icons.date_range, size: 16),
+                            label: const Text('Activité multi-jours ?'),
+                          )
+                        : InputDecorator(
+                            decoration: InputDecoration(
+                              labelText: 'Date de fin',
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.close, size: 18),
+                                tooltip: 'Revenir à overnight auto',
+                                onPressed: isSaving
+                                    ? null
+                                    : () {
+                                        setState(() => endDate = null);
+                                      },
+                              ),
+                            ),
+                            child: Text(_formatDisplayDate(endDate!)),
+                          ),
+                  ),
+                ],
+              ),
+            ],
             const SizedBox(height: 15),
             TextField(
               controller: titleController,
