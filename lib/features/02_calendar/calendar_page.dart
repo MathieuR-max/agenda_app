@@ -271,7 +271,25 @@ class _CalendarPageState extends State<CalendarPage> {
             ? 24 * 60
             : (activityEnd.hour * 60 + activityEnd.minute);
         if (slotMinutes >= start && slotMinutes < end) return activity;
-      } else if (isOvernight && DateUtils.isSameDay(activityEnd, slotDate)) {
+      }
+
+      // Jour intermédiaire (multi-jours : ni début ni fin)
+      final startDay = DateTime(
+        activityStart.year, activityStart.month, activityStart.day,
+      );
+      final endDay = DateTime(
+        activityEnd.year, activityEnd.month, activityEnd.day,
+      );
+      final slotDay = DateTime(
+        slotDate.year, slotDate.month, slotDate.day,
+      );
+      if (isOvernight &&
+          slotDay.isAfter(startDay) &&
+          slotDay.isBefore(endDay)) {
+        if (slotMinutes >= 0 && slotMinutes < 24 * 60) return activity;
+      }
+
+      if (isOvernight && DateUtils.isSameDay(activityEnd, slotDate)) {
         final end = activityEnd.hour * 60 + activityEnd.minute;
         if (slotMinutes < end) return activity;
       }

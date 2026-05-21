@@ -687,24 +687,29 @@ class Activity {
   }
 
   String get scheduleLabel {
-    final parts = <String>[];
+    final start = resolvedStartDateTime;
+    final end = resolvedEndDateTime;
 
-    if (effectiveDay.isNotEmpty) {
-      parts.add(effectiveDay);
+    if (start == null) return effectiveDay;
+
+    final startDayLabel = _shortDayLabel(start);
+
+    if (end == null) {
+      return '$startDayLabel • ${_formatTimeOnly(start)}';
     }
 
-    final start = effectiveStartTime;
-    final end = effectiveEndTime;
+    final startDay = DateTime(start.year, start.month, start.day);
+    final endDay = DateTime(end.year, end.month, end.day);
+    final diffDays = endDay.difference(startDay).inDays;
 
-    if (start.isNotEmpty && end.isNotEmpty) {
-      parts.add('$start - $end');
-    } else if (start.isNotEmpty) {
-      parts.add(start);
-    } else if (end.isNotEmpty) {
-      parts.add(end);
+    final startStr = '${_shortDayLabel(start)} ${_formatTimeOnly(start)}';
+    final endStr = '${_shortDayLabel(end)} ${_formatTimeOnly(end)}';
+
+    if (diffDays == 0) {
+      return '${_shortDayLabel(start)} • ${_formatTimeOnly(start)} - ${_formatTimeOnly(end)}';
+    } else {
+      return '$startStr → $endStr';
     }
-
-    return parts.join(' • ');
   }
 
   DateTime? _resolveEndDateTimeFromLegacyFallback() {
@@ -833,6 +838,17 @@ class Activity {
     final minute = value.minute.toString().padLeft(2, '0');
 
     return '$hour:$minute';
+  }
+
+  static String _shortDayLabel(DateTime dt) {
+    const weekdays = ['lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+    const months = [
+      '', 'jan.', 'fév.', 'mar.', 'avr.', 'mai', 'juin',
+      'juil.', 'août', 'sep.', 'oct.', 'nov.', 'déc.',
+    ];
+    final weekday = weekdays[dt.weekday - 1];
+    final month = months[dt.month];
+    return '$weekday ${dt.day} $month';
   }
 
   static int _parseInt(dynamic value) {
