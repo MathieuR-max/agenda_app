@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:agenda_app/core/utils/temporal_activity_utils.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:agenda_app/models/activity.dart';
+import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
+import 'package:agenda_app/repositories/friendship_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
 
@@ -19,6 +21,9 @@ class ExplorePage extends StatefulWidget {
 class _ExplorePageState extends State<ExplorePage> {
   final _activityService = ActivityFirestoreService();
   final _activityRepository = ActivityRepository();
+  final FriendshipRepository _friendshipRepository = FriendshipRepository();
+
+  List<String> _friendIds = [];
 
   String _selectedCategory = 'Toutes';
   int? _selectedWeekday; // null = tous les jours
@@ -43,6 +48,21 @@ class _ExplorePageState extends State<ExplorePage> {
         });
       }
     });
+    _loadFriendIds();
+  }
+
+  Future<void> _loadFriendIds() async {
+    try {
+      final friendships = await _friendshipRepository.getAcceptedFriendships();
+      if (!mounted) return;
+      setState(() {
+        _friendIds = friendships
+            .map((f) => _friendshipRepository.getOtherUserId(f))
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('ExplorePage: erreur chargement amis: $e');
+    }
   }
 
   @override
@@ -580,6 +600,12 @@ class _ExplorePageState extends State<ExplorePage> {
                     label: 'Ce week-end',
                     backgroundColor: Colors.indigo.shade100,
                     textColor: Colors.indigo.shade800,
+                  ),
+                if (_friendIds.isNotEmpty && _friendIds.contains(activity.ownerId))
+                  _buildChip(
+                    label: '👥 Organisé par un ami',
+                    backgroundColor: Colors.teal.shade50,
+                    textColor: Colors.teal.shade700,
                   ),
                 _buildChip(
                   label: activity.hasUnlimitedPlaces
