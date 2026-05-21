@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:agenda_app/models/friendship.dart';
+import 'package:agenda_app/repositories/friendship_repository.dart';
 import '../../core/utils/temporal_activity_utils.dart';
 import '../../models/activity.dart';
 import '../../models/availability.dart';
@@ -39,6 +41,9 @@ class _CalendarPageState extends State<CalendarPage> {
   final AvailabilityFirestoreService availabilityService =
       AvailabilityFirestoreService();
   final SearchFirestoreService searchService = SearchFirestoreService();
+  final FriendshipRepository _friendshipRepository = FriendshipRepository();
+
+  List<String> _friendIds = [];
 
   final List<String> days = const [
     'Lundi',
@@ -54,16 +59,35 @@ class _CalendarPageState extends State<CalendarPage> {
 
   CalendarFilterType _activeFilter = CalendarFilterType.none;
   CalendarFilterType? _timeFilter;
+  bool _filterByFriends = false;
   bool _showAdvancedFilters = false;
   late DateTime _displayedWeekAnchor;
 
-  bool get _hasActiveFilter => _activeFilter != CalendarFilterType.none;
+  bool get _hasActiveFilter =>
+      _activeFilter != CalendarFilterType.none ||
+      _timeFilter != null ||
+      _filterByFriends;
 
   @override
   void initState() {
     super.initState();
     _timeSlots = generateTimeSlots();
     _displayedWeekAnchor = _normalizeDate(DateTime.now());
+    _loadFriendIds();
+  }
+
+  Future<void> _loadFriendIds() async {
+    try {
+      final friendships = await _friendshipRepository.getAcceptedFriendships();
+      if (!mounted) return;
+      setState(() {
+        _friendIds = friendships
+            .map((f) => _friendshipRepository.getOtherUserId(f))
+            .toList();
+      });
+    } catch (e) {
+      debugPrint('CalendarPage: erreur chargement amis: $e');
+    }
   }
 
   List<String> generateTimeSlots() {
@@ -410,6 +434,12 @@ class _CalendarPageState extends State<CalendarPage> {
     }
   }
 
+  bool _matchesFriendsFilter(Activity activity) {
+    if (!_filterByFriends) return true;
+    if (_friendIds.isEmpty) return false;
+    return _friendIds.contains(activity.ownerId);
+  }
+
   void _jumpToCurrentWeek() {
     setState(() {
       _displayedWeekAnchor = _normalizeDate(DateTime.now());
@@ -450,6 +480,10 @@ class _CalendarPageState extends State<CalendarPage> {
   void _setActiveFilter(CalendarFilterType filter) {
     setState(() {
       _activeFilter = filter;
+      if (filter == CalendarFilterType.none) {
+        _timeFilter = null;
+        _filterByFriends = false;
+      }
     });
   }
 
@@ -617,7 +651,7 @@ class _CalendarPageState extends State<CalendarPage> {
               final isWeekendActivity = TemporalActivityUtils.isWeekendActivity(
                 activity.resolvedStartDateTime,
               );
-              if (!isTonightActivity && !isWeekendActivity) {
+              if (isDimmed || (!isTonightActivity && !isWeekendActivity)) {
                 return const SizedBox.shrink();
               }
               return Padding(
@@ -936,6 +970,25 @@ class _CalendarPageState extends State<CalendarPage> {
                 : CalendarFilterType.weekend;
           });
           if (_timeFilter == CalendarFilterType.weekend) _jumpToWeekendWeek();
+        },
+      ),
+      _buildSummaryChip(
+        label: _friendIds.isEmpty ? 'Amis' : 'Amis (${_friendIds.length})',
+        value: null,
+        backgroundColor: Colors.teal.shade100,
+        textColor: Colors.teal.shade900,
+        isActive: _filterByFriends,
+        onTap: () {
+          if (_friendIds.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Aucun ami pour le moment'),
+                duration: Duration(seconds: 2),
+              ),
+            );
+            return;
+          }
+          setState(() => _filterByFriends = !_filterByFriends);
         },
       ),
       _buildSummaryChip(
@@ -1363,7 +1416,7 @@ class _CalendarPageState extends State<CalendarPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Container(
-              width: 72,
+              width: 44,
               height: 56,
               alignment: Alignment.center,
               child: Text(
@@ -1386,13 +1439,15 @@ class _CalendarPageState extends State<CalendarPage> {
 
                     final matchedCreatedActivity =
                         rawCreatedActivity != null &&
-                                _matchesCreatedFilter(rawCreatedActivity)
+                                _matchesCreatedFilter(rawCreatedActivity) &&
+                                _matchesFriendsFilter(rawCreatedActivity)
                             ? rawCreatedActivity
                             : null;
 
                     final matchedJoinedActivity =
                         rawJoinedActivity != null &&
-                                _matchesJoinedFilter(rawJoinedActivity)
+                                _matchesJoinedFilter(rawJoinedActivity) &&
+                                _matchesFriendsFilter(rawJoinedActivity)
                             ? rawJoinedActivity
                             : null;
 
