@@ -63,6 +63,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
   late String startTime;
   late String endTime;
   late DateTime selectedDate;
+  DateTime? endDate;
 
   String? selectedGroupId;
   String? selectedGroupName;
@@ -284,6 +285,9 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
   }
 
   String _schedulePreview() {
+    if (endDate != null) {
+      return '${_formatDisplayDate(selectedDate)} $startTime → ${_formatDisplayDate(endDate!)} $endTime';
+    }
     final isOvernight = timeToMinutes(endTime) <= timeToMinutes(startTime);
     final endLabel = isOvernight ? '$endTime (+1j)' : endTime;
     return '${_formatDisplayDate(selectedDate)} • $startTime - $endLabel';
@@ -802,10 +806,26 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     }
 
     final startDateTime = _combineDateAndTime(selectedDate, startTime);
-    final endDate = timeToMinutes(endTime) <= timeToMinutes(startTime)
-        ? selectedDate.add(const Duration(days: 1))
-        : selectedDate;
-    final endDateTime = _combineDateAndTime(endDate, endTime);
+
+    final DateTime resolvedEndDate;
+    if (endDate != null) {
+      resolvedEndDate = endDate!;
+    } else if (timeToMinutes(endTime) <= timeToMinutes(startTime)) {
+      resolvedEndDate = selectedDate.add(const Duration(days: 1));
+    } else {
+      resolvedEndDate = selectedDate;
+    }
+    final endDateTime = _combineDateAndTime(resolvedEndDate, endTime);
+
+    if (endDate != null) {
+      final diff = endDate!.difference(selectedDate).inDays;
+      if (diff > 7) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('La durée maximale est de 7 jours')),
+        );
+        return;
+      }
+    }
 
     if (!endDateTime.isAfter(startDateTime)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1086,13 +1106,83 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: endDate == null
+                              ? OutlinedButton.icon(
+                                  onPressed: isSaving
+                                      ? null
+                                      : () async {
+                                          final picked =
+                                              await showDatePicker(
+                                            context: context,
+                                            initialDate: selectedDate.add(
+                                              const Duration(days: 1),
+                                            ),
+                                            firstDate: selectedDate.add(
+                                              const Duration(days: 1),
+                                            ),
+                                            lastDate: selectedDate.add(
+                                              const Duration(days: 7),
+                                            ),
+                                            locale:
+                                                const Locale('fr', 'FR'),
+                                            helpText:
+                                                "Date de fin de l'activité",
+                                          );
+                                          if (picked != null) {
+                                            setState(() {
+                                              endDate = DateTime(
+                                                picked.year,
+                                                picked.month,
+                                                picked.day,
+                                              );
+                                            });
+                                          }
+                                        },
+                                  icon: const Icon(
+                                    Icons.date_range,
+                                    size: 16,
+                                  ),
+                                  label:
+                                      const Text('Activité multi-jours ?'),
+                                )
+                              : InputDecorator(
+                                  decoration: InputDecoration(
+                                    labelText: 'Date de fin',
+                                    border: const OutlineInputBorder(),
+                                    suffixIcon: IconButton(
+                                      icon: const Icon(
+                                        Icons.close,
+                                        size: 18,
+                                      ),
+                                      tooltip: 'Revenir à overnight auto',
+                                      onPressed: isSaving
+                                          ? null
+                                          : () {
+                                              setState(
+                                                () => endDate = null,
+                                              );
+                                            },
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _formatDisplayDate(endDate!),
+                                  ),
+                                ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       _schedulePreview(),
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.blueGrey.shade600,
-                        fontStyle: timeToMinutes(endTime) <=
-                                timeToMinutes(startTime)
+                        fontStyle: endDate == null &&
+                                timeToMinutes(endTime) <=
+                                    timeToMinutes(startTime)
                             ? FontStyle.italic
                             : FontStyle.normal,
                       ),
