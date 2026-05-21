@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:agenda_app/core/utils/temporal_activity_utils.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:agenda_app/models/activity.dart';
-import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
@@ -32,6 +31,7 @@ class _ExplorePageState extends State<ExplorePage> {
   Position? _userPosition;
   bool _sortByDistance = false;
   bool _isLoadingPosition = false;
+  int? _radiusKm;
 
   late final StreamSubscription<List<String>> _joinedIdsSub;
   final Set<String> _joinedIds = {};
@@ -97,6 +97,7 @@ class _ExplorePageState extends State<ExplorePage> {
     int count = 0;
     if (_selectedCategory != 'Toutes') count++;
     if (_selectedWeekday != null) count++;
+    if (_radiusKm != null) count++;
     return count;
   }
 
@@ -186,10 +187,37 @@ class _ExplorePageState extends State<ExplorePage> {
     }
   }
 
+  bool _matchesRadiusFilter(Activity activity) {
+    if (_radiusKm == null) return true;
+    if (_userPosition == null) return true;
+    if (!activity.hasCoordinates) return false;
+    final dist = _distanceKm(
+      _userPosition!.latitude,
+      _userPosition!.longitude,
+      activity.latitude!,
+      activity.longitude!,
+    );
+    return dist <= _radiusKm!;
+  }
+
+  Future<void> _selectRadius(int radiusKm) async {
+    if (_radiusKm == radiusKm) {
+      setState(() => _radiusKm = null);
+      return;
+    }
+    setState(() => _radiusKm = radiusKm);
+    if (_userPosition == null) {
+      await _requestLocationAndSort();
+    } else {
+      setState(() => _sortByDistance = true);
+    }
+  }
+
   void _resetFilters() {
     setState(() {
       _selectedCategory = 'Toutes';
       _selectedWeekday = null;
+      _radiusKm = null;
     });
   }
 
@@ -276,6 +304,7 @@ class _ExplorePageState extends State<ExplorePage> {
 
               final filtered = snapshot.data!
                   .where(_matchesFilters)
+                  .where(_matchesRadiusFilter)
                   .toList();
 
               if (_sortByDistance && _userPosition != null) {
@@ -352,6 +381,14 @@ class _ExplorePageState extends State<ExplorePage> {
                         }
                       },
                     ),
+              ...([2, 5, 10, 25].map((km) => Padding(
+                    padding: const EdgeInsets.only(left: 6),
+                    child: FilterChip(
+                      label: Text('$km km'),
+                      selected: _radiusKm == km,
+                      onSelected: (_) => _selectRadius(km),
+                    ),
+                  ))),
               if (_activeFilterCount > 0)
                 Container(
                   padding:
