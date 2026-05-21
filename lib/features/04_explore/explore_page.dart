@@ -190,7 +190,7 @@ class _ExplorePageState extends State<ExplorePage> {
   bool _matchesRadiusFilter(Activity activity) {
     if (_radiusKm == null) return true;
     if (_userPosition == null) return true;
-    if (!activity.hasCoordinates) return false;
+    if (!activity.hasCoordinates) return true;
     final dist = _distanceKm(
       _userPosition!.latitude,
       _userPosition!.longitude,
