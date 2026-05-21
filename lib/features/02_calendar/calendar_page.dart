@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/utils/temporal_activity_utils.dart';
 import '../../models/activity.dart';
 import '../../models/availability.dart';
 import '../../services/activity_clipboard_service.dart';
@@ -29,6 +30,8 @@ enum CalendarFilterType {
   cancelled,
   done,
   ownerRequired,
+  tonight,
+  weekend,
 }
 
 class _CalendarPageState extends State<CalendarPage> {
@@ -50,6 +53,7 @@ class _CalendarPageState extends State<CalendarPage> {
   late final List<String> _timeSlots;
 
   CalendarFilterType _activeFilter = CalendarFilterType.none;
+  CalendarFilterType? _timeFilter;
   bool _showAdvancedFilters = false;
   late DateTime _displayedWeekAnchor;
 
@@ -346,18 +350,20 @@ class _CalendarPageState extends State<CalendarPage> {
     switch (_activeFilter) {
       case CalendarFilterType.none:
       case CalendarFilterType.created:
-        return true;
+        return _matchesTimeFilter(activity);
       case CalendarFilterType.full:
-        return activity.isFull;
+        return activity.isFull && _matchesTimeFilter(activity);
       case CalendarFilterType.cancelled:
-        return activity.isCancelled;
+        return activity.isCancelled && _matchesTimeFilter(activity);
       case CalendarFilterType.done:
-        return activity.isDone;
+        return activity.isDone && _matchesTimeFilter(activity);
       case CalendarFilterType.ownerRequired:
-        return activity.requiresOwner;
+        return activity.requiresOwner && _matchesTimeFilter(activity);
       case CalendarFilterType.joined:
       case CalendarFilterType.searches:
       case CalendarFilterType.availabilities:
+      case CalendarFilterType.tonight:
+      case CalendarFilterType.weekend:
         return false;
     }
   }
@@ -366,18 +372,20 @@ class _CalendarPageState extends State<CalendarPage> {
     switch (_activeFilter) {
       case CalendarFilterType.none:
       case CalendarFilterType.joined:
-        return true;
+        return _matchesTimeFilter(activity);
       case CalendarFilterType.full:
-        return activity.isFull;
+        return activity.isFull && _matchesTimeFilter(activity);
       case CalendarFilterType.cancelled:
-        return activity.isCancelled;
+        return activity.isCancelled && _matchesTimeFilter(activity);
       case CalendarFilterType.done:
-        return activity.isDone;
+        return activity.isDone && _matchesTimeFilter(activity);
       case CalendarFilterType.ownerRequired:
-        return activity.requiresOwner;
+        return activity.requiresOwner && _matchesTimeFilter(activity);
       case CalendarFilterType.created:
       case CalendarFilterType.searches:
       case CalendarFilterType.availabilities:
+      case CalendarFilterType.tonight:
+      case CalendarFilterType.weekend:
         return false;
     }
   }
@@ -400,6 +408,43 @@ class _CalendarPageState extends State<CalendarPage> {
       default:
         return false;
     }
+  }
+
+  void _jumpToCurrentWeek() {
+    setState(() {
+      _displayedWeekAnchor = _normalizeDate(DateTime.now());
+    });
+  }
+
+  void _jumpToWeekendWeek() {
+    final now = _normalizeDate(DateTime.now());
+    final weekday = now.weekday;
+    final daysUntilSaturday = weekday <= 6 ? 6 - weekday : 0;
+    final saturday = now.add(Duration(days: daysUntilSaturday));
+    setState(() {
+      _displayedWeekAnchor = saturday;
+    });
+  }
+
+  bool _matchesTimeFilter(Activity activity) {
+    if (_timeFilter == null) return true;
+
+    final start = activity.resolvedStartDateTime;
+    if (start == null) return false;
+
+    if (_timeFilter == CalendarFilterType.tonight) {
+      return TemporalActivityUtils.isTonightActivity(
+        activity.resolvedStartDateTime,
+      );
+    }
+
+    if (_timeFilter == CalendarFilterType.weekend) {
+      return TemporalActivityUtils.isWeekendActivity(
+        activity.resolvedStartDateTime,
+      );
+    }
+
+    return true;
   }
 
   void _setActiveFilter(CalendarFilterType filter) {
@@ -563,6 +608,32 @@ class _CalendarPageState extends State<CalendarPage> {
                   isDimmed: isDimmed,
                 ),
             ],
+          ),
+          Builder(
+            builder: (context) {
+              final isTonightActivity = TemporalActivityUtils.isTonightActivity(
+                activity.resolvedStartDateTime,
+              );
+              final isWeekendActivity = TemporalActivityUtils.isWeekendActivity(
+                activity.resolvedStartDateTime,
+              );
+              if (!isTonightActivity && !isWeekendActivity) {
+                return const SizedBox.shrink();
+              }
+              return Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: _buildMiniBadge(
+                  isTonightActivity ? 'Ce soir' : 'Ce week-end',
+                  backgroundColor: isTonightActivity
+                      ? Colors.teal.shade100
+                      : Colors.indigo.shade100,
+                  textColor: isTonightActivity
+                      ? Colors.teal.shade800
+                      : Colors.indigo.shade800,
+                  isDimmed: isDimmed,
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -836,6 +907,36 @@ class _CalendarPageState extends State<CalendarPage> {
         textColor: Colors.grey.shade900,
         isActive: _activeFilter == CalendarFilterType.none,
         onTap: () => _setActiveFilter(CalendarFilterType.none),
+      ),
+      _buildSummaryChip(
+        label: 'Ce soir',
+        value: null,
+        backgroundColor: Colors.teal.shade100,
+        textColor: Colors.teal.shade900,
+        isActive: _timeFilter == CalendarFilterType.tonight,
+        onTap: () {
+          setState(() {
+            _timeFilter = _timeFilter == CalendarFilterType.tonight
+                ? null
+                : CalendarFilterType.tonight;
+          });
+          if (_timeFilter == CalendarFilterType.tonight) _jumpToCurrentWeek();
+        },
+      ),
+      _buildSummaryChip(
+        label: 'Ce week-end',
+        value: null,
+        backgroundColor: Colors.indigo.shade100,
+        textColor: Colors.indigo.shade900,
+        isActive: _timeFilter == CalendarFilterType.weekend,
+        onTap: () {
+          setState(() {
+            _timeFilter = _timeFilter == CalendarFilterType.weekend
+                ? null
+                : CalendarFilterType.weekend;
+          });
+          if (_timeFilter == CalendarFilterType.weekend) _jumpToWeekendWeek();
+        },
       ),
       _buildSummaryChip(
         label: 'Créées',

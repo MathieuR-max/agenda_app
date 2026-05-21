@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:agenda_app/core/utils/temporal_activity_utils.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
@@ -568,6 +569,18 @@ class _ExplorePageState extends State<ExplorePage> {
               spacing: 8,
               runSpacing: 6,
               children: [
+                if (TemporalActivityUtils.isTonightActivity(activity.resolvedStartDateTime))
+                  _buildChip(
+                    label: 'Ce soir',
+                    backgroundColor: Colors.teal.shade100,
+                    textColor: Colors.teal.shade800,
+                  ),
+                if (TemporalActivityUtils.isWeekendActivity(activity.resolvedStartDateTime))
+                  _buildChip(
+                    label: 'Ce week-end',
+                    backgroundColor: Colors.indigo.shade100,
+                    textColor: Colors.indigo.shade800,
+                  ),
                 _buildChip(
                   label: activity.hasUnlimitedPlaces
                       ? '${activity.participantCount} participant(s) • Illimité'
