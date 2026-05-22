@@ -1,14 +1,13 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 class ProfilePhotoService {
   final ImagePicker _picker = ImagePicker();
-  final ImageCropper _cropper = ImageCropper();
 
   Future<String?> pickAndUploadPhoto(String userId) async {
     try {
@@ -16,30 +15,30 @@ class ProfilePhotoService {
       final XFile? picked = await _picker.pickImage(
         source: ImageSource.gallery,
       );
+      print('PICK result: ${picked?.path}');
       if (picked == null) return null;
 
-      // 2. CROP
-      final CroppedFile? cropped = await _cropper.cropImage(
-        sourcePath: picked.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        uiSettings: [
-          AndroidUiSettings(lockAspectRatio: true),
-          IOSUiSettings(),
-        ],
-      );
-      if (cropped == null) return null;
+      // 2. CROP (carré centré manuel)
+      final bytes = await File(picked.path).readAsBytes();
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) return null;
 
-      // 3. COMPRESS
-      final Uint8List? compressed = await FlutterImageCompress.compressWithFile(
-        cropped.path,
-        minWidth: 512,
-        minHeight: 512,
-        quality: 78,
-        format: CompressFormat.jpeg,
-      );
-      if (compressed == null) return null;
+      final size = decoded.width < decoded.height ? decoded.width : decoded.height;
+      final x = (decoded.width - size) ~/ 2;
+      final y = (decoded.height - size) ~/ 2;
+      var cropped = img.copyCrop(decoded, x: x, y: y, width: size, height: size);
+      print('CROP result: ${cropped.width}x${cropped.height}');
 
-      // 4. UPLOAD
+      // 3. RESIZE (max 512px)
+      if (size > 512) {
+        cropped = img.copyResize(cropped, width: 512, height: 512);
+      }
+
+      // 4. ENCODE
+      final compressed = Uint8List.fromList(img.encodeJpg(cropped, quality: 78));
+      print('COMPRESS result: ${compressed.length} bytes');
+
+      // 5. UPLOAD
       final ref = FirebaseStorage.instance
           .ref()
           .child('users/$userId/profile/avatar.jpg');
@@ -50,8 +49,9 @@ class ProfilePhotoService {
       );
 
       final String downloadUrl = await ref.getDownloadURL();
+      print('UPLOAD done: $downloadUrl');
 
-      // 5. FIRESTORE
+      // 6. FIRESTORE
       await FirebaseFirestore.instance
           .collection('users')
           .doc(userId)
