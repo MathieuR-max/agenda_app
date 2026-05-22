@@ -24,7 +24,7 @@ class ProfilePhotoService {
         aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
         uiSettings: [
           AndroidUiSettings(lockAspectRatio: true),
-          IOSUiSettings(lockAspectRatio: true),
+          IOSUiSettings(),
         ],
       );
       if (cropped == null) return null;

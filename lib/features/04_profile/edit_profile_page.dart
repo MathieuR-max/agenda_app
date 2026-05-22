@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../models/user_model.dart';
 import '../../repositories/profile_repository.dart';
+import '../../services/current_user.dart' show AuthUser;
+import '../../services/profile_photo_service.dart';
 import 'user_profile_page.dart';
 
 class EditProfilePage extends StatefulWidget {
@@ -25,6 +27,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
   late List<String> _selectedCategories;
   DateTime? _dateNaissance;
 
+  late String? _photoUrl;
+  bool _isUploadingPhoto = false;
   bool _isLoading = false;
   String? _errorMessage;
 
@@ -40,6 +44,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
     _genre = _validGenre(u.genre);
     _selectedCategories = List<String>.from(u.favoriteCategories);
     _dateNaissance = _parseDateString(u.dateNaissance);
+    _photoUrl = u.photoUrl;
   }
 
   @override
@@ -71,6 +76,21 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   String _formatDate(DateTime date) =>
       '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+  Future<void> _pickPhoto() async {
+    setState(() => _isUploadingPhoto = true);
+    try {
+      final url = await ProfilePhotoService().pickAndUploadPhoto(AuthUser.uid);
+      if (url != null && mounted) {
+        setState(() {
+          _photoUrl = url;
+          _photoUrlController.text = url;
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isUploadingPhoto = false);
+    }
+  }
 
   Future<void> _save() async {
     final prenom = _prenomController.text.trim();
@@ -123,6 +143,49 @@ class _EditProfilePageState extends State<EditProfilePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Center(
+              child: GestureDetector(
+                onTap: _isUploadingPhoto ? null : _pickPhoto,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 45,
+                      backgroundImage: (_photoUrl != null && _photoUrl!.isNotEmpty)
+                          ? NetworkImage(_photoUrl!)
+                          : null,
+                      child: (_photoUrl == null || _photoUrl!.isEmpty)
+                          ? Text(
+                              '${widget.user.prenom.isNotEmpty ? widget.user.prenom[0].toUpperCase() : ''}${widget.user.nom.isNotEmpty ? widget.user.nom[0].toUpperCase() : ''}',
+                              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
+                            )
+                          : null,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).primaryColor,
+                          shape: BoxShape.circle,
+                        ),
+                        child: _isUploadingPhoto
+                            ? const Padding(
+                                padding: EdgeInsets.all(6),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
             TextField(
               controller: _prenomController,
               decoration: const InputDecoration(
