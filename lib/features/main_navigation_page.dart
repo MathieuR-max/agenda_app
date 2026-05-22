@@ -7,7 +7,9 @@ import '../models/activity.dart';
 import '../models/activity_invitation.dart';
 import '../models/friendship.dart';
 import '../models/group_invitation.dart';
+import '../models/user_model.dart';
 import '../repositories/message_badge_repository.dart';
+import '../repositories/profile_repository.dart';
 import '../services/current_user.dart';
 import '../services/firestore/activity_firestore_service.dart';
 import '../services/firestore/activity_invitation_firestore_service.dart';
@@ -197,28 +199,48 @@ class _ProfileAppBarIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<int>(
-      stream: messageBadgeRepository.watchPrivateUnreadCount(),
-      builder: (context, privateSnapshot) {
-        final privateUnread = privateSnapshot.data ?? 0;
+    final uid = AuthUser.uidOrNull;
 
-        return StreamBuilder<List<Friendship>>(
-          stream: friendshipService.getPendingReceivedFriendRequests(),
-          builder: (context, snapshot) {
-            final pendingCount = snapshot.data?.length ?? 0;
-            final total = pendingCount + privateUnread;
+    return StreamBuilder<UserModel?>(
+      stream: uid != null
+          ? ProfileRepository().watchUser(uid)
+          : Stream.value(null),
+      builder: (context, userSnapshot) {
+        final photoUrl = userSnapshot.data?.photoUrl?.trim();
 
-            return IconButton(
-              tooltip: 'Mon profil',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MyProfilePage()),
-              ),
-              icon: Badge(
-                isLabelVisible: total > 0,
-                label: Text(total > 99 ? '99+' : '$total'),
-                child: const Icon(Icons.account_circle),
-              ),
+        return StreamBuilder<int>(
+          stream: messageBadgeRepository.watchPrivateUnreadCount(),
+          builder: (context, privateSnapshot) {
+            final privateUnread = privateSnapshot.data ?? 0;
+
+            return StreamBuilder<List<Friendship>>(
+              stream: friendshipService.getPendingReceivedFriendRequests(),
+              builder: (context, snapshot) {
+                final pendingCount = snapshot.data?.length ?? 0;
+                final total = pendingCount + privateUnread;
+
+                final Widget avatarWidget = (photoUrl != null &&
+                        photoUrl.isNotEmpty)
+                    ? CircleAvatar(
+                        radius: 16,
+                        backgroundImage: NetworkImage(photoUrl),
+                        backgroundColor: Colors.transparent,
+                      )
+                    : const Icon(Icons.account_circle);
+
+                return IconButton(
+                  tooltip: 'Mon profil',
+                  onPressed: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MyProfilePage()),
+                  ),
+                  icon: Badge(
+                    isLabelVisible: total > 0,
+                    label: Text(total > 99 ? '99+' : '$total'),
+                    child: avatarWidget,
+                  ),
+                );
+              },
             );
           },
         );
