@@ -7,8 +7,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:agenda_app/models/activity.dart';
 import 'package:agenda_app/repositories/activity_repository.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
+import 'package:agenda_app/repositories/notification_repository.dart';
 import 'package:agenda_app/services/current_user.dart';
 import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
+import '../03_activities/activity_detail_page.dart';
 
 class ExplorePage extends StatefulWidget {
   const ExplorePage({super.key});
@@ -21,6 +23,7 @@ class _ExplorePageState extends State<ExplorePage> {
   final _activityService = ActivityFirestoreService();
   final _activityRepository = ActivityRepository();
   final FriendshipRepository _friendshipRepository = FriendshipRepository();
+  final NotificationRepository _notificationRepository = NotificationRepository();
 
   List<String> _friendIds = [];
 
@@ -32,6 +35,8 @@ class _ExplorePageState extends State<ExplorePage> {
   bool _sortByDistance = false;
   bool _isLoadingPosition = false;
   int? _radiusKm;
+
+  List<Activity> _matchedActivities = [];
 
   late final StreamSubscription<List<String>> _joinedIdsSub;
   final Set<String> _joinedIds = {};
@@ -49,6 +54,7 @@ class _ExplorePageState extends State<ExplorePage> {
       }
     });
     _loadFriendIds();
+    _loadMatchedActivities();
   }
 
   Future<void> _loadFriendIds() async {
@@ -62,6 +68,34 @@ class _ExplorePageState extends State<ExplorePage> {
       });
     } catch (e) {
       debugPrint('ExplorePage: erreur chargement amis: $e');
+    }
+  }
+
+  Future<void> _loadMatchedActivities() async {
+    try {
+      final notifications = await _notificationRepository.getActivityMatchNotifications();
+      final now = DateTime.now();
+      final seen = <String>{};
+      final results = <Activity>[];
+
+      for (final notif in notifications) {
+        final activityId = (notif['activityId'] ?? '').toString();
+        if (activityId.isEmpty || seen.contains(activityId)) continue;
+        seen.add(activityId);
+
+        final activity = await _activityService.getActivityById(activityId);
+        if (activity == null) continue;
+        if (activity.isCancelled || activity.isDone) continue;
+        final start = activity.resolvedStartDateTime;
+        if (start == null || start.isBefore(now)) continue;
+
+        results.add(activity);
+        if (results.length >= 5) break;
+      }
+
+      if (mounted) setState(() => _matchedActivities = results);
+    } catch (e) {
+      debugPrint('EXPLORE_MATCH error: $e');
     }
   }
 
@@ -288,7 +322,31 @@ class _ExplorePageState extends State<ExplorePage> {
 
   Widget _buildDiscoveryTab() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (_matchedActivities.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Text(
+              '✨ Correspond à vos recherches',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Colors.teal.shade700,
+              ),
+            ),
+          ),
+          SizedBox(
+            height: 200,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              itemCount: _matchedActivities.length,
+              itemBuilder: (context, index) =>
+                  _buildMatchedActivityCard(_matchedActivities[index]),
+            ),
+          ),
+        ],
         _buildFilterBar(),
         Expanded(
           child: StreamBuilder<List<Activity>>(
@@ -526,6 +584,69 @@ class _ExplorePageState extends State<ExplorePage> {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+
+  // ─── Carte activité matchée ───────────────────────────────────────────────
+
+  Widget _buildMatchedActivityCard(Activity activity) {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActivityDetailPage(activity: activity),
+        ),
+      ),
+      child: Card(
+        margin: const EdgeInsets.only(right: 10),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: Colors.teal.shade300, width: 1.5),
+        ),
+        child: SizedBox(
+          width: 220,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  activity.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  activity.scheduleLabel,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  activity.location,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 8),
+                Chip(
+                  label: const Text(
+                    'Correspond à votre recherche',
+                    style: TextStyle(fontSize: 10),
+                  ),
+                  backgroundColor: Colors.teal.shade50,
+                  labelStyle: TextStyle(color: Colors.teal.shade700),
+                  padding: EdgeInsets.zero,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );

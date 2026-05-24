@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 class NotificationRepository {
   final _db = FirebaseFirestore.instance;
@@ -64,7 +65,8 @@ class NotificationRepository {
           'createdAt': d['createdAt'],
         };
       }).toList();
-    } catch (_) {
+    } catch (e) {
+      debugPrint('NOTIF_REPO error: $e');
       return [];
     }
   }

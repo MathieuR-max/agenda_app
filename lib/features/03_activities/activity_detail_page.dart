@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/models/activity.dart';
@@ -643,28 +643,38 @@ class ActivityDetailPage extends StatelessWidget {
                   stream: activityService.getParticipants(currentActivity.id),
                   builder: (context, participantIdsSnapshot) {
                     if (participantIdsSnapshot.hasError) {
-                      if (_isPermissionDenied(participantIdsSnapshot.error)) {
+                      if (_isPermissionDenied(participantIdsSnapshot.error) &&
+                          currentActivity.isPublic &&
+                          !isOwner) {
+                        // Permission denied is expected for non-participants
+                        // on public activities — continue with an empty list.
+                        // participantVisibility will hide the list anyway.
+                      } else if (_isPermissionDenied(
+                          participantIdsSnapshot.error)) {
                         return _buildAccessLostView(
                           context,
                           message:
                               'Vous n’avez plus accès aux participants de cette activité. Si vous venez de quitter l’activité, vous pouvez revenir à l’écran précédent.',
                         );
+                      } else {
+                        return Center(
+                          child: Text(
+                            'Erreur participants : ${participantIdsSnapshot.error}',
+                          ),
+                        );
                       }
-
-                      return Center(
-                        child: Text(
-                          'Erreur participants : ${participantIdsSnapshot.error}',
-                        ),
-                      );
                     }
 
-                    if (!participantIdsSnapshot.hasData) {
+                    if (!participantIdsSnapshot.hasData &&
+                        !participantIdsSnapshot.hasError) {
                       return const Center(
                         child: CircularProgressIndicator(),
                       );
                     }
 
-                    final participantIds = participantIdsSnapshot.data ?? [];
+                    final participantIds = participantIdsSnapshot.hasError
+                        ? <String>[]
+                        : (participantIdsSnapshot.data ?? []);
                     final normalizedParticipantIds =
                         participantIds.map((id) => id.trim()).toSet();
 
@@ -707,7 +717,8 @@ class ActivityDetailPage extends StatelessWidget {
                           .snapshots(),
                       builder: (context, privacySnapshot) {
                         if (privacySnapshot.hasError &&
-                            _isPermissionDenied(privacySnapshot.error)) {
+                            _isPermissionDenied(privacySnapshot.error) &&
+                            (!currentActivity.isPublic || isOwner)) {
                           return _buildAccessLostView(
                             context,
                             message:
@@ -715,7 +726,9 @@ class ActivityDetailPage extends StatelessWidget {
                           );
                         }
 
-                        final rawData = privacySnapshot.data?.data();
+                        final rawData = privacySnapshot.hasError
+                            ? null
+                            : privacySnapshot.data?.data();
 
                         final participantVisibility =
                             (rawData?['participantVisibility'] ??
