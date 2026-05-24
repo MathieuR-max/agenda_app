@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:agenda_app/services/firestore/search_firestore_service.dart';
+import 'search_activity_page.dart';
 
 class SearchDetailPage extends StatelessWidget {
   final String searchId;
@@ -191,6 +192,31 @@ class SearchDetailPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      final result = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SearchActivityPage(
+                            existingSearch: search,
+                            day: (search['day'] ?? '').toString(),
+                            hour: (search['startTime'] ?? '08:00').toString(),
+                            selectedDate:
+                                search['startDateTime'] as DateTime? ??
+                                    DateTime.now(),
+                          ),
+                        ),
+                      );
+                      if (result == true && context.mounted) {
+                        Navigator.pop(context, true);
+                      }
+                    },
+                    child: const Text('Modifier'),
+                  ),
+                ),
+                const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
