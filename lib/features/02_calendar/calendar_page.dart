@@ -347,6 +347,32 @@ class _CalendarPageState extends State<CalendarPage> {
     return null;
   }
 
+  List<Map<String, dynamic>> getSearchesForSlot(
+    String day,
+    String slotTime,
+    List<Map<String, dynamic>> searches,
+  ) {
+    final slotMinutes = timeToMinutes(slotTime);
+    final slotDate = _getDateForDay(day);
+    final result = <Map<String, dynamic>>[];
+
+    for (final search in searches) {
+      final startDateTime = _searchResolvedStartDateTime(search);
+      final endDateTime = _searchResolvedEndDateTime(search);
+
+      if (startDateTime == null || endDateTime == null) continue;
+      if (!DateUtils.isSameDay(startDateTime, slotDate)) continue;
+
+      final start = startDateTime.hour * 60 + startDateTime.minute;
+      final end = endDateTime.hour * 60 + endDateTime.minute;
+
+      if (slotMinutes >= start && slotMinutes < end) {
+        result.add(search);
+      }
+    }
+    return result;
+  }
+
   List<Activity> _deduplicateJoinedActivities(
     List<Activity> createdActivities,
     List<Activity> joinedActivities,
@@ -868,6 +894,89 @@ class _CalendarPageState extends State<CalendarPage> {
           height: 1,
         ),
       ),
+    );
+  }
+
+  Widget _buildAggregateSearchContent(
+    int count, {
+    bool isDimmed = false,
+  }) {
+    return Opacity(
+      opacity: isDimmed ? 0.38 : 1,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 48),
+        child: Text(
+          '🔍 $count recherches',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            height: 1.1,
+            color: isDimmed ? Colors.black54 : Colors.black87,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMultipleSearchesBottomSheet(
+    BuildContext context,
+    List<Map<String, dynamic>> searches,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Recherches sur ce créneau',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ...searches.map((search) {
+                final startDt = search['startDateTime'] as DateTime?;
+                final endDt = search['endDateTime'] as DateTime?;
+                final cat = (search['category'] ?? '').toString().trim();
+
+                final startStr = startDt != null
+                    ? '${startDt.hour.toString().padLeft(2, '0')}:${startDt.minute.toString().padLeft(2, '0')}'
+                    : (search['startTime'] ?? '').toString();
+                final endStr = endDt != null
+                    ? '${endDt.hour.toString().padLeft(2, '0')}:${endDt.minute.toString().padLeft(2, '0')}'
+                    : (search['endTime'] ?? '').toString();
+
+                final timeRange = '$startStr - $endStr';
+                final label = cat.isNotEmpty ? '$timeRange • $cat' : timeRange;
+
+                return ListTile(
+                  title: Text(label),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SearchDetailPage(
+                          searchId: (search['id'] ?? '').toString(),
+                          day: (search['day'] ?? '').toString(),
+                          startTime: (search['startTime'] ?? '').toString(),
+                          endTime: (search['endTime'] ?? '').toString(),
+                          category: (search['category'] ?? '').toString(),
+                        ),
+                      ),
+                    );
+                  },
+                );
+              }),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -1466,7 +1575,10 @@ class _CalendarPageState extends State<CalendarPage> {
                         getActivityForSlot(day, hour, joinedActivities);
                     final rawAvailability =
                         getAvailabilityForSlot(day, hour, availabilities);
-                    final rawSearch = getSearchForSlot(day, hour, searches);
+                    final rawSearches = getSearchesForSlot(day, hour, searches);
+                    final rawSearch = rawSearches.length == 1 ? rawSearches.first : null;
+                    final hasMultipleSearches = rawSearches.length >= 2;
+                    final rawSearchProxy = hasMultipleSearches ? rawSearches.first : rawSearch;
 
                     final matchedCreatedActivity =
                         rawCreatedActivity != null &&
@@ -1489,8 +1601,9 @@ class _CalendarPageState extends State<CalendarPage> {
                             : null;
 
                     final matchedSearch =
-                        rawSearch != null && _matchesSearchFilter(rawSearch)
-                            ? rawSearch
+                        rawSearchProxy != null &&
+                                _matchesSearchFilter(rawSearchProxy)
+                            ? rawSearchProxy
                             : null;
 
                     final hasMatchedElement =
@@ -1510,7 +1623,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         : rawJoinedActivity;
                     final availability =
                         hasMatchedElement ? matchedAvailability : rawAvailability;
-                    final search = hasMatchedElement ? matchedSearch : rawSearch;
+                    final search = hasMatchedElement ? matchedSearch : rawSearchProxy;
 
                     final isCreatedDimmed =
                         shouldDimNonMatching && createdActivity != null;
@@ -1534,7 +1647,18 @@ class _CalendarPageState extends State<CalendarPage> {
                           ? _getMutedBorderColor(Colors.orange.shade200)
                           : Colors.grey.shade300;
 
-                      if (_isSearchStartSlot(search, hour)) {
+                      if (hasMultipleSearches) {
+                        if (_isSearchStartSlot(rawSearches.first, hour)) {
+                          cellContent = _buildAggregateSearchContent(
+                            rawSearches.length,
+                            isDimmed: isSearchDimmed,
+                          );
+                        } else {
+                          cellContent = _buildContinuationMarker(
+                            isDimmed: isSearchDimmed,
+                          );
+                        }
+                      } else if (_isSearchStartSlot(search, hour)) {
                         cellContent = _buildSearchStartContent(
                           search,
                           isDimmed: isSearchDimmed,
@@ -1728,19 +1852,27 @@ class _CalendarPageState extends State<CalendarPage> {
                         }
 
                         if (search != null) {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => SearchDetailPage(
-                                searchId: (search['id'] ?? '').toString(),
-                                day: (search['day'] ?? '').toString(),
-                                startTime:
-                                    (search['startTime'] ?? '').toString(),
-                                endTime: (search['endTime'] ?? '').toString(),
-                                category: (search['category'] ?? '').toString(),
+                          if (hasMultipleSearches) {
+                            _showMultipleSearchesBottomSheet(
+                              context,
+                              rawSearches,
+                            );
+                          } else {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => SearchDetailPage(
+                                  searchId: (search['id'] ?? '').toString(),
+                                  day: (search['day'] ?? '').toString(),
+                                  startTime:
+                                      (search['startTime'] ?? '').toString(),
+                                  endTime: (search['endTime'] ?? '').toString(),
+                                  category:
+                                      (search['category'] ?? '').toString(),
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          }
                           return;
                         }
 
