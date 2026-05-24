@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:agenda_app/core/constants/firestore_collections.dart';
 import 'package:agenda_app/services/current_user.dart';
 
@@ -279,6 +280,26 @@ class SearchFirestoreService {
             resolvedStartDateTime ?? _toDateTime(data['createdAt']),
       };
     });
+  }
+
+  Future<void> updateSearch(
+    String searchId,
+    DateTime startDateTime,
+    DateTime endDateTime,
+    String category,
+  ) async {
+    final trimmedId = searchId.trim();
+    if (trimmedId.isEmpty) return;
+    try {
+      await _searches.doc(trimmedId).update({
+        'startDateTime': Timestamp.fromDate(startDateTime),
+        'endDateTime': Timestamp.fromDate(endDateTime),
+        'category': category.trim(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint('SearchFirestoreService.updateSearch error: $e');
+    }
   }
 
   Future<void> deleteSearch(String searchId) async {
