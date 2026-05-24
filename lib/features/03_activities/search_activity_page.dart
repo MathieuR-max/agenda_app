@@ -9,12 +9,14 @@ class SearchActivityPage extends StatefulWidget {
   final String day;
   final String hour;
   final DateTime selectedDate;
+  final Map<String, dynamic>? existingSearch;
 
   const SearchActivityPage({
     super.key,
     required this.day,
     required this.hour,
     required this.selectedDate,
+    this.existingSearch,
   });
 
   @override
@@ -43,6 +45,17 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
   late String startTime;
   late String endTime;
   bool _searchSaved = false;
+
+  bool get _isEditMode => widget.existingSearch != null;
+
+  DateTime get _resolvedDate {
+    final existing = widget.existingSearch;
+    if (existing != null) {
+      final dt = existing['startDateTime'];
+      if (dt is DateTime) return DateTime(dt.year, dt.month, dt.day);
+    }
+    return widget.selectedDate;
+  }
 
   List<String> generateTimeSlots() {
     final List<String> slots = [];
@@ -103,6 +116,21 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
     return '$year-$month-$day';
   }
 
+  String _formatTimeFromDateTime(DateTime dt) {
+    return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  String _snapToSlot(String time) {
+    final slots = generateTimeSlots();
+    if (slots.contains(time)) return time;
+    // Round down to nearest 30-min slot
+    final parts = time.split(':');
+    final hour = int.tryParse(parts[0]) ?? 0;
+    final minute = int.tryParse(parts[1]) ?? 0;
+    final snapped = '${hour.toString().padLeft(2, '0')}:${(minute ~/ 30 * 30).toString().padLeft(2, '0')}';
+    return slots.contains(snapped) ? snapped : slots.first;
+  }
+
   bool overlaps(Activity activity) {
     final selectedStart = timeToMinutes(startTime);
     final selectedEnd = timeToMinutes(endTime);
@@ -145,12 +173,20 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
   }
 
   Future<void> _saveSearch() async {
-    final selectedDate = widget.selectedDate;
-    final startDateTime = _combineDateAndTime(selectedDate, startTime);
-    final endDateTime = _combineDateAndTime(selectedDate, endTime);
+    final resolvedDate = _resolvedDate;
+    final startDateTime = _combineDateAndTime(resolvedDate, startTime);
+    final endDateTime = _combineDateAndTime(resolvedDate, endTime);
+
+    if (_isEditMode) {
+      final id = widget.existingSearch!['id'] as String;
+      await searchService.updateSearch(id, startDateTime, endDateTime, category);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+      return;
+    }
 
     await searchService.saveSearch(
-      day: _formatDateOnly(selectedDate),
+      day: _formatDateOnly(resolvedDate),
       startTime: startTime,
       endTime: endTime,
       category: category,
@@ -260,8 +296,21 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
   @override
   void initState() {
     super.initState();
-    startTime = widget.hour;
-    endTime = getNextSlot(widget.hour);
+    final existing = widget.existingSearch;
+    if (existing != null) {
+      final start = existing['startDateTime'] as DateTime?;
+      final end = existing['endDateTime'] as DateTime?;
+      startTime = start != null
+          ? _snapToSlot(_formatTimeFromDateTime(start))
+          : widget.hour;
+      endTime = end != null
+          ? _snapToSlot(_formatTimeFromDateTime(end))
+          : getNextSlot(widget.hour);
+      category = (existing['category'] as String?) ?? 'Toutes';
+    } else {
+      startTime = widget.hour;
+      endTime = getNextSlot(widget.hour);
+    }
   }
 
   @override
@@ -270,17 +319,21 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Rechercher une activité'),
+        title: Text(
+          _isEditMode ? 'Modifier la recherche' : 'Rechercher une activité',
+        ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(12),
           child: ElevatedButton(
-            onPressed: _searchSaved ? null : _saveSearch,
+            onPressed: (!_isEditMode && _searchSaved) ? null : _saveSearch,
             child: Text(
-              _searchSaved
-                  ? 'Recherche sauvegardée ✓'
-                  : 'Sauvegarder cette recherche',
+              _isEditMode
+                  ? 'Enregistrer les modifications'
+                  : _searchSaved
+                      ? 'Recherche sauvegardée ✓'
+                      : 'Sauvegarder cette recherche',
             ),
           ),
         ),
