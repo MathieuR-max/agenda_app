@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/ricau/dev/agenda_app/**)",
+      "Read(//c/Users/ricau/dev/agenda_app/android/app/src/main/**)",
+      "Read(//c/Users/ricau/dev/agenda_app/ios/Runner/**)",
+      "Bash(firebase deploy *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\ricau\\dev\\agenda_app\\functions"
+    ]
+  }
+}

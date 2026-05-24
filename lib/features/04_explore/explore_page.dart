@@ -360,35 +360,44 @@ class _ExplorePageState extends State<ExplorePage> {
                 label: const Text('Filtres'),
               ),
               const SizedBox(width: 8),
-              _isLoadingPosition
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : FilterChip(
-                      label: const Text('Près de moi'),
-                      selected: _sortByDistance,
-                      avatar: const Icon(Icons.near_me, size: 16),
-                      onSelected: (_) {
-                        if (_sortByDistance) {
-                          setState(() {
-                            _sortByDistance = false;
-                            _userPosition = null;
-                          });
-                        } else {
-                          _requestLocationAndSort();
-                        }
-                      },
-                    ),
-              ...([2, 5, 10, 25].map((km) => Padding(
-                    padding: const EdgeInsets.only(left: 6),
-                    child: FilterChip(
-                      label: Text('$km km'),
-                      selected: _radiusKm == km,
-                      onSelected: (_) => _selectRadius(km),
-                    ),
-                  ))),
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _isLoadingPosition
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : FilterChip(
+                              label: const Text('Près de moi'),
+                              selected: _sortByDistance,
+                              avatar: const Icon(Icons.near_me, size: 16),
+                              onSelected: (_) {
+                                if (_sortByDistance) {
+                                  setState(() {
+                                    _sortByDistance = false;
+                                    _userPosition = null;
+                                  });
+                                } else {
+                                  _requestLocationAndSort();
+                                }
+                              },
+                            ),
+                      ...([2, 5, 10, 25].map((km) => Padding(
+                            padding: const EdgeInsets.only(left: 6),
+                            child: FilterChip(
+                              label: Text('$km km'),
+                              selected: _radiusKm == km,
+                              onSelected: (_) => _selectRadius(km),
+                            ),
+                          ))),
+                    ],
+                  ),
+                ),
+              ),
               if (_activeFilterCount > 0)
                 Container(
                   padding:

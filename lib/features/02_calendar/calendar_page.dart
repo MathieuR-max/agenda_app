@@ -602,11 +602,14 @@ class _CalendarPageState extends State<CalendarPage> {
 
     return Opacity(
       opacity: isDimmed ? 0.38 : (isInactive ? 0.72 : 1),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            activity.title,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              activity.title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -688,6 +691,7 @@ class _CalendarPageState extends State<CalendarPage> {
             },
           ),
         ],
+        ),
       ),
     );
   }
@@ -726,9 +730,12 @@ class _CalendarPageState extends State<CalendarPage> {
   }) {
     return Opacity(
       opacity: isDimmed ? 0.38 : 1,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Text(
             availability.title,
             maxLines: 2,
@@ -767,6 +774,7 @@ class _CalendarPageState extends State<CalendarPage> {
             ],
           ),
         ],
+        ),
       ),
     );
   }
@@ -779,47 +787,51 @@ class _CalendarPageState extends State<CalendarPage> {
 
     return Opacity(
       opacity: isDimmed ? 0.38 : 1,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Recherche activité',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              height: 1.1,
-              color: isDimmed ? Colors.black54 : Colors.black87,
-            ),
-          ),
-          const SizedBox(height: 3),
-          Wrap(
-            spacing: 3,
-            runSpacing: 3,
-            children: [
-              _buildMiniBadge(
-                'Recherche',
-                backgroundColor: Colors.white.withOpacity(0.85),
-                textColor: Colors.black87,
-                isDimmed: isDimmed,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Rech. activité',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+                color: isDimmed ? Colors.black54 : Colors.black87,
               ),
-              if (category.isNotEmpty)
+            ),
+            const SizedBox(height: 3),
+            Wrap(
+              spacing: 3,
+              runSpacing: 3,
+              children: [
                 _buildMiniBadge(
-                  category,
+                  'Rech.',
                   backgroundColor: Colors.white.withOpacity(0.85),
                   textColor: Colors.black87,
                   isDimmed: isDimmed,
                 ),
-              if (isDimmed)
-                _buildMiniBadge(
-                  'Hors filtre',
-                  backgroundColor: Colors.grey.shade200,
-                  textColor: Colors.grey.shade700,
-                ),
-            ],
-          ),
-        ],
+                if (category.isNotEmpty)
+                  _buildMiniBadge(
+                    category,
+                    backgroundColor: Colors.white.withOpacity(0.85),
+                    textColor: Colors.black87,
+                    isDimmed: isDimmed,
+                  ),
+                if (isDimmed)
+                  _buildMiniBadge(
+                    'Hors filtre',
+                    backgroundColor: Colors.grey.shade200,
+                    textColor: Colors.grey.shade700,
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1382,10 +1394,11 @@ class _CalendarPageState extends State<CalendarPage> {
 
   Widget buildDaysHeader() {
     final weekStart = _startOfWeek(_displayedWeekAnchor);
+    const dayAbbreviations = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
 
     return Row(
       children: [
-        const SizedBox(width: 72),
+        const SizedBox(width: 46),
         for (int i = 0; i < days.length; i++)
           Expanded(
             child: Container(
@@ -1394,7 +1407,7 @@ class _CalendarPageState extends State<CalendarPage> {
               child: Column(
                 children: [
                   Text(
-                    days[i],
+                    dayAbbreviations[i],
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,

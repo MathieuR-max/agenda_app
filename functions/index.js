@@ -705,6 +705,23 @@ exports.matchSearchesOnActivityCreated = onDocumentCreated(
           searchId,
           searchUserId,
         });
+
+        await sendPushToUser({
+          userId: searchUserId,
+          notification: {
+            title: "Nouvelle activité trouvée",
+            body: `${actTitle} correspond à votre recherche`,
+          },
+          data: {
+            type: "activity_match",
+            activityId,
+          },
+          logContext: {
+            trigger: "matchSearchesOnActivityCreated",
+            activityId,
+            searchId,
+          },
+        });
       }
     } catch (e) {
       console.error("matchSearchesOnActivityCreated error.", {
