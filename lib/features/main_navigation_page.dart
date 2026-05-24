@@ -9,6 +9,7 @@ import '../models/friendship.dart';
 import '../models/group_invitation.dart';
 import '../models/user_model.dart';
 import '../repositories/message_badge_repository.dart';
+import '../repositories/notification_repository.dart';
 import '../repositories/profile_repository.dart';
 import '../services/current_user.dart';
 import '../services/firestore/activity_firestore_service.dart';
@@ -36,6 +37,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   late final MessageBadgeRepository _messageBadgeRepository;
   late final ActivityFirestoreService _activityService;
   late final FriendshipFirestoreService _friendshipService;
+  late final NotificationRepository _notificationRepository;
   StreamSubscription<dynamic>? _foregroundMessageSub;
 
   @override
@@ -46,6 +48,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _messageBadgeRepository = MessageBadgeRepository();
     _activityService = ActivityFirestoreService();
     _friendshipService = FriendshipFirestoreService();
+    _notificationRepository = NotificationRepository();
     _foregroundMessageSub = FirebaseMessaging.onMessage.listen((message) {
       final type = (message.data['type'] ?? '').toString();
       if (type == 'private_message_created') {
@@ -67,6 +70,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
   void _onTabTapped(int index) {
     if (_currentIndex == index) return;
+    if (index == 2) _notificationRepository.markActivityMatchesAsRead();
     setState(() => _currentIndex = index);
   }
 
@@ -159,9 +163,17 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
               ),
               label: 'Mes activités',
             ),
-            const NavigationDestination(
-              icon: Icon(Icons.explore_outlined),
-              selectedIcon: Icon(Icons.explore),
+            NavigationDestination(
+              icon: _ExploreNavIcon(
+                selected: false,
+                isCurrentTab: _currentIndex == 2,
+                notificationRepository: _notificationRepository,
+              ),
+              selectedIcon: _ExploreNavIcon(
+                selected: true,
+                isCurrentTab: _currentIndex == 2,
+                notificationRepository: _notificationRepository,
+              ),
               label: 'Explorer',
             ),
             NavigationDestination(
@@ -286,6 +298,32 @@ class _MyActivitiesNavIcon extends StatelessWidget {
               hideBadge: isCurrentTab,
             );
           },
+        );
+      },
+    );
+  }
+}
+
+class _ExploreNavIcon extends StatelessWidget {
+  final bool selected;
+  final bool isCurrentTab;
+  final NotificationRepository notificationRepository;
+
+  const _ExploreNavIcon({
+    required this.selected,
+    required this.isCurrentTab,
+    required this.notificationRepository,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<int>(
+      stream: notificationRepository.watchUnreadMatchCount(),
+      builder: (context, snapshot) {
+        return _NavBadgeIcon(
+          icon: Icon(selected ? Icons.explore : Icons.explore_outlined),
+          count: snapshot.data ?? 0,
+          hideBadge: isCurrentTab,
         );
       },
     );
