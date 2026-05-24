@@ -1873,7 +1873,7 @@ class _CalendarPageState extends State<CalendarPage> {
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
-                            SearchActivityPage(day: day, hour: hour),
+                            SearchActivityPage(day: day, hour: hour, selectedDate: _getDateForDay(day)),
                       ),
                     );
                   },

@@ -8,11 +8,13 @@ import 'activity_detail_page.dart';
 class SearchActivityPage extends StatefulWidget {
   final String day;
   final String hour;
+  final DateTime selectedDate;
 
   const SearchActivityPage({
     super.key,
     required this.day,
     required this.hour,
+    required this.selectedDate,
   });
 
   @override
@@ -80,36 +82,6 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
     return DateTime(date.year, date.month, date.day);
   }
 
-  int _weekdayFromFrenchDay(String day) {
-    switch (day.trim().toLowerCase()) {
-      case 'lundi':
-        return DateTime.monday;
-      case 'mardi':
-        return DateTime.tuesday;
-      case 'mercredi':
-        return DateTime.wednesday;
-      case 'jeudi':
-        return DateTime.thursday;
-      case 'vendredi':
-        return DateTime.friday;
-      case 'samedi':
-        return DateTime.saturday;
-      case 'dimanche':
-        return DateTime.sunday;
-      default:
-        return DateTime.monday;
-    }
-  }
-
-  DateTime _resolveSelectedDate() {
-    final today = _normalizeDate(DateTime.now());
-    final targetWeekday = _weekdayFromFrenchDay(widget.day);
-    final currentWeekday = today.weekday;
-    final diff = targetWeekday - currentWeekday;
-
-    return today.add(Duration(days: diff));
-  }
-
   DateTime _combineDateAndTime(DateTime date, String time) {
     final parts = time.split(':');
     final hour = int.tryParse(parts[0]) ?? 0;
@@ -151,7 +123,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
   }
 
   bool _matchesSelectedDay(Activity activity) {
-    final selectedDate = _resolveSelectedDate();
+    final selectedDate = widget.selectedDate;
     final activityStartDateTime = activity.resolvedStartDateTime;
 
     if (activityStartDateTime == null) {
@@ -173,7 +145,7 @@ class _SearchActivityPageState extends State<SearchActivityPage> {
   }
 
   Future<void> _saveSearch() async {
-    final selectedDate = _resolveSelectedDate();
+    final selectedDate = widget.selectedDate;
     final startDateTime = _combineDateAndTime(selectedDate, startTime);
     final endDateTime = _combineDateAndTime(selectedDate, endTime);
 

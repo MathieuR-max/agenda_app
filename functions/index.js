@@ -615,3 +615,102 @@ exports.geocodeActivityOnWrite = onDocumentWritten(
     }
   }
 );
+
+exports.matchSearchesOnActivityCreated = onDocumentCreated(
+  {
+    document: "activities/{activityId}",
+    region: "europe-west1",
+  },
+  async (event) => {
+    try {
+      const snapshot = event.data;
+      if (!snapshot) return;
+
+      const activityId = String(event.params.activityId || "").trim();
+      const activity = snapshot.data() || {};
+
+      // 1. GARDES
+      if (activity.visibility !== "public") return;
+      if (activity.status === "cancelled" || activity.status === "done") return;
+
+      const actStartTs = activity.startDateTime;
+      const actEndTs = activity.endDateTime;
+      if (!actStartTs || !actEndTs) return;
+
+      const actStart = actStartTs.toMillis();
+      const actEnd = actEndTs.toMillis();
+      if (actStart < Date.now()) return;
+
+      const actCategory = String(activity.category || "").trim();
+      const actOwnerId = String(activity.ownerId || "").trim();
+      const actCreatedById = String(activity.createdById || "").trim();
+      const actTitle = String(activity.title || "").trim();
+
+      // 2. RÉCUPÉRER LES RECHERCHES
+      const searchesSnap = await db.collection("searches").limit(200).get();
+
+      for (const searchDoc of searchesSnap.docs) {
+        const search = searchDoc.data() || {};
+        const searchId = searchDoc.id;
+        const searchUserId = String(search.userId || "").trim();
+
+        // a. catégorie
+        if (String(search.category || "").trim() !== actCategory) continue;
+
+        // b/c. pas l'organisateur ni le créateur
+        if (!searchUserId) continue;
+        if (searchUserId === actOwnerId) continue;
+        if (searchUserId === actCreatedById) continue;
+
+        // d. chevauchement temporel
+        const searchStartTs = search.startDateTime;
+        const searchEndTs = search.endDateTime;
+        if (!searchStartTs || !searchEndTs) continue;
+
+        const searchStart = searchStartTs.toMillis();
+        const searchEnd = searchEndTs.toMillis();
+        if (!(actStart < searchEnd && actEnd > searchStart)) continue;
+
+        // e. dédoublonnage
+        const existingSnap = await db
+          .collection("users")
+          .doc(searchUserId)
+          .collection("notifications")
+          .where("activityId", "==", activityId)
+          .where("searchId", "==", searchId)
+          .limit(1)
+          .get();
+
+        if (!existingSnap.empty) continue;
+
+        // 3. CRÉER LA NOTIFICATION
+        await db
+          .collection("users")
+          .doc(searchUserId)
+          .collection("notifications")
+          .add({
+            type: "activity_match",
+            title: "Nouvelle activité trouvée",
+            body: "Une activité correspond à votre recherche",
+            activityId,
+            activityTitle: actTitle,
+            searchId,
+            category: actCategory,
+            read: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+
+        console.log("activity_match notification created.", {
+          activityId,
+          searchId,
+          searchUserId,
+        });
+      }
+    } catch (e) {
+      console.error("matchSearchesOnActivityCreated error.", {
+        activityId: event.params?.activityId,
+        error: String(e),
+      });
+    }
+  }
+);
