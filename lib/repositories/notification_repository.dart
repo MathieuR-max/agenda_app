@@ -41,6 +41,21 @@ class NotificationRepository {
     } catch (_) {}
   }
 
+  Future<void> markNotificationAsRead(String notificationId) async {
+    try {
+      final uid = _uid;
+      if (uid == null || notificationId.trim().isEmpty) return;
+      await _db
+          .collection('users')
+          .doc(uid)
+          .collection('notifications')
+          .doc(notificationId)
+          .update({'read': true});
+    } catch (e) {
+      debugPrint('NOTIF_REPO markNotificationAsRead error: $e');
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getActivityMatchNotifications() async {
     try {
       final uid = _uid;
