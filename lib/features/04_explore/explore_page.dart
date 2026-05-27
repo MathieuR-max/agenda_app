@@ -75,6 +75,7 @@ class _ExplorePageState extends State<ExplorePage> {
     try {
       final notifications = await _notificationRepository.getActivityMatchNotifications();
       final now = DateTime.now();
+      final uid = AuthUser.uidOrNull;
       final seen = <String>{};
       final results = <Activity>[];
 
@@ -88,6 +89,10 @@ class _ExplorePageState extends State<ExplorePage> {
         if (activity.isCancelled || activity.isDone) continue;
         final start = activity.resolvedStartDateTime;
         if (start == null || start.isBefore(now)) continue;
+        if (uid != null &&
+            (activity.ownerId == uid || activity.createdById == uid)) {
+          continue;
+        }
 
         results.add(activity);
         if (results.length >= 5) break;
@@ -324,29 +329,38 @@ class _ExplorePageState extends State<ExplorePage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_matchedActivities.isNotEmpty) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Text(
-              '✨ Correspond à vos recherches',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                color: Colors.teal.shade700,
+        Builder(builder: (context) {
+          final visibleMatches = _matchedActivities
+              .where((a) => !_joinedIds.contains(a.id))
+              .toList();
+          if (visibleMatches.isEmpty) return const SizedBox.shrink();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Text(
+                  '✨ Correspond à vos recherches',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.teal.shade700,
+                  ),
+                ),
               ),
-            ),
-          ),
-          SizedBox(
-            height: 200,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              itemCount: _matchedActivities.length,
-              itemBuilder: (context, index) =>
-                  _buildMatchedActivityCard(_matchedActivities[index]),
-            ),
-          ),
-        ],
+              SizedBox(
+                height: 200,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  itemCount: visibleMatches.length,
+                  itemBuilder: (context, index) =>
+                      _buildMatchedActivityCard(visibleMatches[index]),
+                ),
+              ),
+            ],
+          );
+        }),
         _buildFilterBar(),
         Expanded(
           child: StreamBuilder<List<Activity>>(
