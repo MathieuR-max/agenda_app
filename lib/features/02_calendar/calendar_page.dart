@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:agenda_app/models/friendship.dart';
 import 'package:agenda_app/repositories/friendship_repository.dart';
 import '../../core/utils/temporal_activity_utils.dart';
 import '../../models/activity.dart';
@@ -540,46 +539,18 @@ class _CalendarPageState extends State<CalendarPage> {
     required Activity activity,
   }) {
     if (activity.isCancelled) {
-      return Colors.red.shade100;
+      return const Color(0xFFFFF0EF);
     }
 
     if (activity.isDone) {
-      return Colors.blueGrey.shade100;
+      return const Color(0xFFF1EFEB);
     }
 
-    return isCreated ? Colors.blue[200]! : Colors.purple[200]!;
-  }
-
-  Color _getActivityBorderColor(Activity activity) {
-    if (activity.isCancelled) {
-      return Colors.red.shade300;
-    }
-
-    if (activity.isDone) {
-      return Colors.blueGrey.shade300;
-    }
-
-    return Colors.grey.shade300;
+    return isCreated ? const Color(0xFFB8ECE6) : const Color(0xFFFFD6D3);
   }
 
   Color _getMutedColor(Color baseColor) {
     return Color.lerp(baseColor, Colors.white, 0.62) ?? baseColor;
-  }
-
-  Color _getMutedBorderColor(Color baseColor) {
-    return Color.lerp(baseColor, Colors.grey.shade300, 0.5) ?? baseColor;
-  }
-
-  List<String> _getActivityDisplayIndicators(Activity activity) {
-    final indicators = List<String>.from(activity.calendarIndicators);
-
-    if (activity.isCancelled) {
-      indicators.insert(0, 'Annulée');
-    } else if (activity.isDone) {
-      indicators.insert(0, 'Terminée');
-    }
-
-    return indicators;
   }
 
   int _countFullActivities(
@@ -623,8 +594,13 @@ class _CalendarPageState extends State<CalendarPage> {
     required bool isCreated,
     bool isDimmed = false,
   }) {
-    final indicators = _getActivityDisplayIndicators(activity);
     final isInactive = _isInactiveActivity(activity);
+    final isTonightActivity = TemporalActivityUtils.isTonightActivity(
+      activity.resolvedStartDateTime,
+    );
+    final isWeekendActivity = TemporalActivityUtils.isWeekendActivity(
+      activity.resolvedStartDateTime,
+    );
 
     return Opacity(
       opacity: isDimmed ? 0.38 : (isInactive ? 0.72 : 1),
@@ -636,118 +612,51 @@ class _CalendarPageState extends State<CalendarPage> {
           children: [
             Text(
               activity.title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              height: 1.1,
-              color: isInactive || isDimmed ? Colors.black54 : Colors.black87,
-              decoration: activity.isCancelled
-                  ? TextDecoration.lineThrough
-                  : TextDecoration.none,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+                height: 1.1,
+                color: isInactive || isDimmed ? Colors.black54 : Colors.black87,
+                decoration: activity.isCancelled
+                    ? TextDecoration.lineThrough
+                    : TextDecoration.none,
+              ),
             ),
-          ),
-          const SizedBox(height: 3),
-          Wrap(
-            spacing: 3,
-            runSpacing: 3,
-            children: [
-              _buildMiniBadge(
-                isCreated ? 'Créée' : 'Rejointe',
-                backgroundColor: isCreated
-                    ? Colors.blue.shade700
-                    : Colors.purple.shade700,
-                textColor: Colors.white,
-                isDimmed: isDimmed,
-              ),
-              _buildMiniBadge(
-                activity.activityTypeLabel,
-                backgroundColor: Colors.white.withOpacity(0.85),
-                textColor:
-                    isInactive || isDimmed ? Colors.black54 : Colors.black87,
-                isDimmed: isDimmed,
-              ),
-              if (isDimmed)
+            const SizedBox(height: 3),
+            Wrap(
+              spacing: 3,
+              runSpacing: 3,
+              children: [
                 _buildMiniBadge(
-                  'Hors filtre',
-                  backgroundColor: Colors.grey.shade200,
-                  textColor: Colors.grey.shade700,
-                  isDimmed: false,
-                ),
-              for (final indicator in indicators)
-                _buildMiniBadge(
-                  indicator,
-                  backgroundColor: _getStatusBadgeBackgroundColor(
-                    activity,
-                    indicator,
-                  ),
-                  textColor: _getStatusBadgeTextColor(
-                    activity,
-                    indicator,
-                  ),
+                  isCreated ? 'Créée' : 'Rejointe',
+                  backgroundColor: isCreated
+                      ? const Color(0xFF00B4A6)
+                      : const Color(0xFFF9635E),
+                  textColor: Colors.white,
                   isDimmed: isDimmed,
                 ),
-            ],
-          ),
-          Builder(
-            builder: (context) {
-              final isTonightActivity = TemporalActivityUtils.isTonightActivity(
-                activity.resolvedStartDateTime,
-              );
-              final isWeekendActivity = TemporalActivityUtils.isWeekendActivity(
-                activity.resolvedStartDateTime,
-              );
-              if (isDimmed || (!isTonightActivity && !isWeekendActivity)) {
-                return const SizedBox.shrink();
-              }
-              return Padding(
-                padding: const EdgeInsets.only(top: 3),
-                child: _buildMiniBadge(
-                  isTonightActivity ? 'Ce soir' : 'Ce week-end',
-                  backgroundColor: isTonightActivity
-                      ? Colors.teal.shade100
-                      : Colors.indigo.shade100,
-                  textColor: isTonightActivity
-                      ? Colors.teal.shade800
-                      : Colors.indigo.shade800,
-                  isDimmed: isDimmed,
-                ),
-              );
-            },
-          ),
-        ],
+                if (!isDimmed && isTonightActivity)
+                  _buildMiniBadge(
+                    'Ce soir',
+                    backgroundColor: const Color(0xFFFFF4E6),
+                    textColor: const Color(0xFFF4B266),
+                    isDimmed: false,
+                  ),
+                if (!isDimmed && !isTonightActivity && isWeekendActivity)
+                  _buildMiniBadge(
+                    'Ce week-end',
+                    backgroundColor: const Color(0xFFF0EEFF),
+                    textColor: const Color(0xFF8B80F9),
+                    isDimmed: false,
+                  ),
+              ],
+            ),
+          ],
         ),
       ),
     );
-  }
-
-  Color _getStatusBadgeBackgroundColor(Activity activity, String indicator) {
-    if (indicator == 'Annulée') {
-      return Colors.red.shade200;
-    }
-
-    if (indicator == 'Terminée') {
-      return Colors.blueGrey.shade200;
-    }
-
-    if (_isInactiveActivity(activity)) {
-      return Colors.white.withOpacity(0.7);
-    }
-
-    return Colors.white.withOpacity(0.85);
-  }
-
-  Color _getStatusBadgeTextColor(Activity activity, String indicator) {
-    if (indicator == 'Annulée') {
-      return Colors.red.shade900;
-    }
-
-    if (indicator == 'Terminée') {
-      return Colors.blueGrey.shade900;
-    }
-
-    return _isInactiveActivity(activity) ? Colors.black54 : Colors.black87;
   }
 
   Widget _buildAvailabilityStartContent(
@@ -820,7 +729,7 @@ class _CalendarPageState extends State<CalendarPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Rech. activité',
+              '🔍 Recherche',
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -830,32 +739,15 @@ class _CalendarPageState extends State<CalendarPage> {
                 color: isDimmed ? Colors.black54 : Colors.black87,
               ),
             ),
-            const SizedBox(height: 3),
-            Wrap(
-              spacing: 3,
-              runSpacing: 3,
-              children: [
-                _buildMiniBadge(
-                  'Rech.',
-                  backgroundColor: Colors.white.withOpacity(0.85),
-                  textColor: Colors.black87,
-                  isDimmed: isDimmed,
-                ),
-                if (category.isNotEmpty)
-                  _buildMiniBadge(
-                    category,
-                    backgroundColor: Colors.white.withOpacity(0.85),
-                    textColor: Colors.black87,
-                    isDimmed: isDimmed,
-                  ),
-                if (isDimmed)
-                  _buildMiniBadge(
-                    'Hors filtre',
-                    backgroundColor: Colors.grey.shade200,
-                    textColor: Colors.grey.shade700,
-                  ),
-              ],
-            ),
+            if (category.isNotEmpty) ...[
+              const SizedBox(height: 3),
+              _buildMiniBadge(
+                category,
+                backgroundColor: const Color(0xFFFFF4E6),
+                textColor: const Color(0xFFF4B266),
+                isDimmed: isDimmed,
+              ),
+            ],
           ],
         ),
       ),
@@ -1076,16 +968,16 @@ class _CalendarPageState extends State<CalendarPage> {
       _buildSummaryChip(
         label: 'Tout',
         value: null,
-        backgroundColor: Colors.grey.shade200,
-        textColor: Colors.grey.shade900,
+        backgroundColor: const Color(0xFFF1EFEB),
+        textColor: const Color(0xFF1E1E1E),
         isActive: _activeFilter == CalendarFilterType.none,
         onTap: () => _setActiveFilter(CalendarFilterType.none),
       ),
       _buildSummaryChip(
         label: 'Ce soir',
         value: null,
-        backgroundColor: Colors.teal.shade100,
-        textColor: Colors.teal.shade900,
+        backgroundColor: const Color(0xFFFFF4E6),
+        textColor: const Color(0xFFF4B266),
         isActive: _timeFilter == CalendarFilterType.tonight,
         onTap: () {
           setState(() {
@@ -1099,8 +991,8 @@ class _CalendarPageState extends State<CalendarPage> {
       _buildSummaryChip(
         label: 'Ce week-end',
         value: null,
-        backgroundColor: Colors.indigo.shade100,
-        textColor: Colors.indigo.shade900,
+        backgroundColor: const Color(0xFFF0EEFF),
+        textColor: const Color(0xFF8B80F9),
         isActive: _timeFilter == CalendarFilterType.weekend,
         onTap: () {
           setState(() {
@@ -1114,8 +1006,8 @@ class _CalendarPageState extends State<CalendarPage> {
       _buildSummaryChip(
         label: _friendIds.isEmpty ? 'Amis' : 'Amis (${_friendIds.length})',
         value: null,
-        backgroundColor: Colors.teal.shade100,
-        textColor: Colors.teal.shade900,
+        backgroundColor: const Color(0xFFE6FAF8),
+        textColor: const Color(0xFF00B4A6),
         isActive: _filterByFriends,
         onTap: () {
           if (_friendIds.isEmpty) {
@@ -1133,32 +1025,32 @@ class _CalendarPageState extends State<CalendarPage> {
       _buildSummaryChip(
         label: 'Créées',
         value: createdActivities.length,
-        backgroundColor: Colors.blue.shade100,
-        textColor: Colors.blue.shade900,
+        backgroundColor: const Color(0xFFE6FAF8),
+        textColor: const Color(0xFF00B4A6),
         isActive: _activeFilter == CalendarFilterType.created,
         onTap: () => _setActiveFilter(CalendarFilterType.created),
       ),
       _buildSummaryChip(
         label: 'Rejointes',
         value: joinedActivities.length,
-        backgroundColor: Colors.purple.shade100,
-        textColor: Colors.purple.shade900,
+        backgroundColor: const Color(0xFFFFF0EF),
+        textColor: const Color(0xFFF9635E),
         isActive: _activeFilter == CalendarFilterType.joined,
         onTap: () => _setActiveFilter(CalendarFilterType.joined),
       ),
       _buildSummaryChip(
         label: 'Recherches',
         value: searches.length,
-        backgroundColor: Colors.orange.shade100,
-        textColor: Colors.orange.shade900,
+        backgroundColor: const Color(0xFFFFF4E6),
+        textColor: const Color(0xFFF4B266),
         isActive: _activeFilter == CalendarFilterType.searches,
         onTap: () => _setActiveFilter(CalendarFilterType.searches),
       ),
       _buildSummaryChip(
         label: 'Notes/Dispos',
         value: availabilities.length,
-        backgroundColor: Colors.green.shade100,
-        textColor: Colors.green.shade900,
+        backgroundColor: const Color(0xFFECFDF4),
+        textColor: const Color(0xFF34C759),
         isActive: _activeFilter == CalendarFilterType.availabilities,
         onTap: () => _setActiveFilter(CalendarFilterType.availabilities),
       ),
@@ -1168,32 +1060,32 @@ class _CalendarPageState extends State<CalendarPage> {
       _buildSubSummaryChip(
         label: 'Complètes',
         value: fullCount,
-        backgroundColor: Colors.amber.shade100,
-        textColor: Colors.amber.shade900,
+        backgroundColor: const Color(0xFFFFF4E6),
+        textColor: const Color(0xFFF4B266),
         isActive: _activeFilter == CalendarFilterType.full,
         onTap: () => _setActiveFilter(CalendarFilterType.full),
       ),
       _buildSubSummaryChip(
         label: 'Annulées',
         value: cancelledCount,
-        backgroundColor: Colors.red.shade100,
-        textColor: Colors.red.shade900,
+        backgroundColor: const Color(0xFFFFF0EF),
+        textColor: const Color(0xFFF9635E),
         isActive: _activeFilter == CalendarFilterType.cancelled,
         onTap: () => _setActiveFilter(CalendarFilterType.cancelled),
       ),
       _buildSubSummaryChip(
         label: 'Terminées',
         value: doneCount,
-        backgroundColor: Colors.blueGrey.shade100,
-        textColor: Colors.blueGrey.shade900,
+        backgroundColor: const Color(0xFFF1EFEB),
+        textColor: const Color(0xFF6F6F6F),
         isActive: _activeFilter == CalendarFilterType.done,
         onTap: () => _setActiveFilter(CalendarFilterType.done),
       ),
       _buildSubSummaryChip(
         label: 'Owner requis',
         value: ownerRequiredCount,
-        backgroundColor: Colors.deepOrange.shade100,
-        textColor: Colors.deepOrange.shade900,
+        backgroundColor: const Color(0xFFF0EEFF),
+        textColor: const Color(0xFF8B80F9),
         isActive: _activeFilter == CalendarFilterType.ownerRequired,
         onTap: () => _setActiveFilter(CalendarFilterType.ownerRequired),
       ),
@@ -1557,7 +1449,7 @@ class _CalendarPageState extends State<CalendarPage> {
           children: [
             Container(
               width: 44,
-              height: 56,
+              height: 58,
               alignment: Alignment.center,
               child: Text(
                 hour,
@@ -1634,8 +1526,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     final isSearchDimmed =
                         shouldDimNonMatching && search != null;
 
-                    Color cellColor = Colors.grey[200]!;
-                    Color borderColor = Colors.grey.shade300;
+                    Color cellColor = const Color(0xFFFAF9F7);
                     Widget? cellContent;
 
                     if (search != null) {
@@ -1643,9 +1534,6 @@ class _CalendarPageState extends State<CalendarPage> {
                       cellColor = isSearchDimmed
                           ? _getMutedColor(baseColor)
                           : baseColor;
-                      borderColor = isSearchDimmed
-                          ? _getMutedBorderColor(Colors.orange.shade200)
-                          : Colors.grey.shade300;
 
                       if (hasMultipleSearches) {
                         if (_isSearchStartSlot(rawSearches.first, hour)) {
@@ -1675,9 +1563,6 @@ class _CalendarPageState extends State<CalendarPage> {
                       cellColor = isAvailabilityDimmed
                           ? _getMutedColor(baseColor)
                           : baseColor;
-                      borderColor = isAvailabilityDimmed
-                          ? _getMutedBorderColor(Colors.green.shade200)
-                          : Colors.grey.shade300;
 
                       if (_isAvailabilityStartSlot(availability, hour)) {
                         cellContent = _buildAvailabilityStartContent(
@@ -1696,15 +1581,9 @@ class _CalendarPageState extends State<CalendarPage> {
                         isCreated: false,
                         activity: joinedActivity,
                       );
-                      final baseBorderColor =
-                          _getActivityBorderColor(joinedActivity);
-
                       cellColor = isJoinedDimmed
                           ? _getMutedColor(baseColor)
                           : baseColor;
-                      borderColor = isJoinedDimmed
-                          ? _getMutedBorderColor(baseBorderColor)
-                          : baseBorderColor;
 
                       final isJoinedStartSlot =
                           _isActivityStartSlot(joinedActivity, hour);
@@ -1763,15 +1642,9 @@ class _CalendarPageState extends State<CalendarPage> {
                         isCreated: true,
                         activity: createdActivity,
                       );
-                      final baseBorderColor =
-                          _getActivityBorderColor(createdActivity);
-
                       cellColor = isCreatedDimmed
                           ? _getMutedColor(baseColor)
                           : baseColor;
-                      borderColor = isCreatedDimmed
-                          ? _getMutedBorderColor(baseBorderColor)
-                          : baseBorderColor;
 
                       final isCreatedStartSlot =
                           _isActivityStartSlot(createdActivity, hour);
@@ -1824,6 +1697,16 @@ class _CalendarPageState extends State<CalendarPage> {
                         );
                       }
                     }
+
+                    final cellBorder = createdActivity != null
+                        ? const Border.fromBorderSide(BorderSide(color: Color(0xFFB8ECE6), width: 0.8))
+                        : joinedActivity != null
+                            ? const Border.fromBorderSide(BorderSide(color: Color(0xFFFFB8B4), width: 0.8))
+                            : availability != null
+                                ? const Border.fromBorderSide(BorderSide(color: Color(0xFFB8E8C8), width: 0.8))
+                                : search != null
+                                    ? const Border.fromBorderSide(BorderSide(color: Color(0xFFFFD9A0), width: 0.8))
+                                    : const Border.fromBorderSide(BorderSide(color: Color(0xFFEDE9E3), width: 0.5));
 
                     return GestureDetector(
                       onTap: () {
@@ -1891,19 +1774,27 @@ class _CalendarPageState extends State<CalendarPage> {
                         showSlotActions(context, day, hour);
                       },
                       child: Container(
-                        height: 56,
-                        margin: const EdgeInsets.all(1),
+                        height: 58,
+                        margin: const EdgeInsets.symmetric(horizontal: 1.5, vertical: 1),
                         padding: const EdgeInsets.all(4),
                         decoration: BoxDecoration(
                           color: cellColor,
-                          border: Border.all(
-                            color: borderColor,
-                            width:
-                                createdActivity != null || joinedActivity != null
-                                    ? 1.2
-                                    : 1,
-                          ),
-                          borderRadius: BorderRadius.circular(6),
+                          border: cellBorder,
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: cellContent != null
+                              ? const [
+                                  BoxShadow(
+                                    color: Color(0x0A000000),
+                                    blurRadius: 8,
+                                    offset: Offset(0, 3),
+                                  ),
+                                  BoxShadow(
+                                    color: Color(0x06000000),
+                                    blurRadius: 2,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ]
+                              : null,
                         ),
                         child: cellContent,
                       ),
