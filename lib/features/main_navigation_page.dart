@@ -126,7 +126,7 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
 
     final Widget iconWidget = badgeIconBuilder != null
         ? badgeIconBuilder(color)
-        : Icon(iconData, size: 22, color: color);
+        : Icon(iconData, size: 24, color: color);
 
     return GestureDetector(
       onTap: () => _onTabTapped(index),
@@ -138,12 +138,12 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             if (isActive)
               Container(
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 6,
+                  horizontal: 18,
+                  vertical: 7,
                 ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFE6FAF8),
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(24),
                 ),
                 child: iconWidget,
               )
@@ -372,7 +372,7 @@ class _MyActivitiesNavIcon extends StatelessWidget {
             return _NavBadgeIcon(
               icon: Icon(
                 Icons.grid_view_outlined,
-                size: 22,
+                size: 24,
                 color: iconColor,
               ),
               count: unreadCount + ownerPendingCount,
@@ -402,7 +402,7 @@ class _ExploreNavIcon extends StatelessWidget {
       stream: notificationRepository.watchUnreadMatchCount(),
       builder: (context, snapshot) {
         return _NavBadgeIcon(
-          icon: Icon(Icons.explore_outlined, size: 22, color: iconColor),
+          icon: Icon(Icons.explore_outlined, size: 24, color: iconColor),
           count: snapshot.data ?? 0,
           hideBadge: isCurrentTab,
         );
@@ -437,7 +437,7 @@ class _InvitationsNavIcon extends StatelessWidget {
             final pendingGroupCount = groupSnapshot.data?.length ?? 0;
 
             return _NavBadgeIcon(
-              icon: Icon(Icons.mail_outline, size: 22, color: iconColor),
+              icon: Icon(Icons.mail_outline, size: 24, color: iconColor),
               count: pendingActivityCount + pendingGroupCount,
               hideBadge: isCurrentTab,
             );

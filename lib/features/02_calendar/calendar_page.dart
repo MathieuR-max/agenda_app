@@ -646,7 +646,7 @@ class _CalendarPageState extends State<CalendarPage> {
                   ),
                 if (!isDimmed && !isTonightActivity && isWeekendActivity)
                   _buildMiniBadge(
-                    'Ce week-end',
+                    'Week-end',
                     backgroundColor: const Color(0xFFF0EEFF),
                     textColor: const Color(0xFF8B80F9),
                     isDimmed: false,
@@ -739,7 +739,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 color: isDimmed ? Colors.black54 : Colors.black87,
               ),
             ),
-            if (category.isNotEmpty) ...[
+            if (category.isNotEmpty && category != 'Toutes') ...[
               const SizedBox(height: 3),
               _buildMiniBadge(
                 category,
@@ -1153,7 +1153,8 @@ class _CalendarPageState extends State<CalendarPage> {
   }) {
     final resolvedBackgroundColor =
         isActive ? textColor.withOpacity(0.16) : backgroundColor;
-    final resolvedBorderColor = isActive ? textColor : backgroundColor;
+    final resolvedBorderColor =
+        isActive ? textColor : const Color(0xFFCFCAC2);
     final resolvedTextColor = textColor;
 
     return InkWell(
