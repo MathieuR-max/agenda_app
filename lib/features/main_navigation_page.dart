@@ -21,7 +21,6 @@ import '03_activities/invitations_page.dart';
 import '03_activities/my_activities_page.dart';
 import '04_explore/explore_page.dart';
 import '04_profile/my_profile_page.dart';
-import '05_notifications/notifications_page.dart';
 
 class MainNavigationPage extends StatefulWidget {
   const MainNavigationPage({super.key});
@@ -40,8 +39,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   late final FriendshipFirestoreService _friendshipService;
   late final NotificationRepository _notificationRepository;
   StreamSubscription<dynamic>? _foregroundMessageSub;
-  StreamSubscription<int>? _notifSub;
-  int _unreadNotifCount = 0;
 
   @override
   void initState() {
@@ -52,9 +49,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     _activityService = ActivityFirestoreService();
     _friendshipService = FriendshipFirestoreService();
     _notificationRepository = NotificationRepository();
-    _notifSub = _notificationRepository.watchUnreadMatchCount().listen((count) {
-      if (mounted) setState(() => _unreadNotifCount = count);
-    });
     _foregroundMessageSub = FirebaseMessaging.onMessage.listen((message) {
       final type = (message.data['type'] ?? '').toString();
       if (type == 'private_message_created') {
@@ -71,7 +65,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
   @override
   void dispose() {
     _foregroundMessageSub?.cancel();
-    _notifSub?.cancel();
     super.dispose();
   }
 
@@ -136,47 +129,6 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
             color: Theme.of(context).colorScheme.onSurface,
           ),
           actions: [
-            IconButton(
-              tooltip: 'Notifications',
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const NotificationsPage(),
-                ),
-              ),
-              icon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.notifications_outlined),
-                  if (_unreadNotifCount > 0)
-                    Positioned(
-                      top: -4,
-                      right: -4,
-                      child: Container(
-                        padding: const EdgeInsets.all(2),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Text(
-                          _unreadNotifCount > 9 ? '9+' : '$_unreadNotifCount',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.bold,
-                            height: 1,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
             _ProfileAppBarIcon(
               friendshipService: _friendshipService,
               messageBadgeRepository: _messageBadgeRepository,
