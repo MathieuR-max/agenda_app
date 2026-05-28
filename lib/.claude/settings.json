@@ -3,7 +3,8 @@
     "allow": [
       "Bash(git -C /c/Users/ricau/dev/agenda_app add .)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(flutter analyze *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\ricau\\dev\\agenda_app"

@@ -114,6 +114,60 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
     ];
   }
 
+  Widget _buildPillNavItem(
+    int index,
+    IconData iconData,
+    String label, {
+    Widget Function(Color color)? badgeIconBuilder,
+  }) {
+    final isActive = _currentIndex == index;
+    final color =
+        isActive ? const Color(0xFF00B4A6) : const Color(0xFF6F6F6F);
+
+    final Widget iconWidget = badgeIconBuilder != null
+        ? badgeIconBuilder(color)
+        : Icon(iconData, size: 22, color: color);
+
+    return GestureDetector(
+      onTap: () => _onTabTapped(index),
+      behavior: HitTestBehavior.opaque,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isActive)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE6FAF8),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: iconWidget,
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: iconWidget,
+              ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'PlusJakartaSans',
+                fontSize: 10,
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = _buildPages();
@@ -123,10 +177,26 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
       onPopInvokedWithResult: _handleBackNavigation,
       child: Scaffold(
         appBar: AppBar(
+          backgroundColor: const Color(0xFFFCFBF8),
+          elevation: 0,
+          surfaceTintColor: Colors.transparent,
           title: Text(_currentPageTitle()),
-          titleTextStyle: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w500,
-            color: Theme.of(context).colorScheme.onSurface,
+          titleTextStyle: const TextStyle(
+            fontFamily: 'PlusJakartaSans',
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF181818),
+          ),
+          iconTheme: const IconThemeData(
+            color: Color(0xFF2A2A2A),
+            size: 24,
+          ),
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(0.5),
+            child: Container(
+              color: const Color(0xFFF0ECE6),
+              height: 0.5,
+            ),
           ),
           actions: [
             _ProfileAppBarIcon(
@@ -139,59 +209,68 @@ class _MainNavigationPageState extends State<MainNavigationPage> {
           index: _currentIndex,
           children: pages,
         ),
-        bottomNavigationBar: NavigationBar(
-          selectedIndex: _currentIndex,
-          onDestinationSelected: _onTabTapped,
-          destinations: [
-            const NavigationDestination(
-              icon: Icon(Icons.calendar_today_outlined),
-              selectedIcon: Icon(Icons.calendar_today),
-              label: 'Agenda',
+        bottomNavigationBar: Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              top: BorderSide(color: Color(0xFFEDE9E3), width: 0.5),
             ),
-            NavigationDestination(
-              icon: _MyActivitiesNavIcon(
-                selected: false,
-                isCurrentTab: _currentIndex == 1,
-                messageBadgeRepository: _messageBadgeRepository,
-                activityService: _activityService,
+          ),
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 60,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _buildPillNavItem(
+                      0,
+                      Icons.calendar_today_outlined,
+                      'Agenda',
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildPillNavItem(
+                      1,
+                      Icons.grid_view_outlined,
+                      'Mes activités',
+                      badgeIconBuilder: (color) => _MyActivitiesNavIcon(
+                        isCurrentTab: _currentIndex == 1,
+                        iconColor: color,
+                        messageBadgeRepository: _messageBadgeRepository,
+                        activityService: _activityService,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildPillNavItem(
+                      2,
+                      Icons.explore_outlined,
+                      'Explorer',
+                      badgeIconBuilder: (color) => _ExploreNavIcon(
+                        isCurrentTab: _currentIndex == 2,
+                        iconColor: color,
+                        notificationRepository: _notificationRepository,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: _buildPillNavItem(
+                      3,
+                      Icons.mail_outline,
+                      'Invitations',
+                      badgeIconBuilder: (color) => _InvitationsNavIcon(
+                        isCurrentTab: _currentIndex == 3,
+                        iconColor: color,
+                        invitationService: _invitationService,
+                        groupInvitationService: _groupInvitationService,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              selectedIcon: _MyActivitiesNavIcon(
-                selected: true,
-                isCurrentTab: _currentIndex == 1,
-                messageBadgeRepository: _messageBadgeRepository,
-                activityService: _activityService,
-              ),
-              label: 'Mes activités',
             ),
-            NavigationDestination(
-              icon: _ExploreNavIcon(
-                selected: false,
-                isCurrentTab: _currentIndex == 2,
-                notificationRepository: _notificationRepository,
-              ),
-              selectedIcon: _ExploreNavIcon(
-                selected: true,
-                isCurrentTab: _currentIndex == 2,
-                notificationRepository: _notificationRepository,
-              ),
-              label: 'Explorer',
-            ),
-            NavigationDestination(
-              icon: _InvitationsNavIcon(
-                selected: false,
-                isCurrentTab: _currentIndex == 3,
-                invitationService: _invitationService,
-                groupInvitationService: _groupInvitationService,
-              ),
-              selectedIcon: _InvitationsNavIcon(
-                selected: true,
-                isCurrentTab: _currentIndex == 3,
-                invitationService: _invitationService,
-                groupInvitationService: _groupInvitationService,
-              ),
-              label: 'Invitations',
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -231,14 +310,14 @@ class _ProfileAppBarIcon extends StatelessWidget {
                 final pendingCount = snapshot.data?.length ?? 0;
                 final total = pendingCount + privateUnread;
 
-                final Widget avatarWidget = (photoUrl != null &&
-                        photoUrl.isNotEmpty)
-                    ? CircleAvatar(
-                        radius: 16,
-                        backgroundImage: NetworkImage(photoUrl),
-                        backgroundColor: Colors.transparent,
-                      )
-                    : const Icon(Icons.account_circle);
+                final Widget avatarWidget =
+                    (photoUrl != null && photoUrl.isNotEmpty)
+                        ? CircleAvatar(
+                            radius: 16,
+                            backgroundImage: NetworkImage(photoUrl),
+                            backgroundColor: Colors.transparent,
+                          )
+                        : const Icon(Icons.account_circle);
 
                 return IconButton(
                   tooltip: 'Mon profil',
@@ -264,14 +343,14 @@ class _ProfileAppBarIcon extends StatelessWidget {
 // ─── Nav icons ───────────────────────────────────────────────────────────────
 
 class _MyActivitiesNavIcon extends StatelessWidget {
-  final bool selected;
   final bool isCurrentTab;
+  final Color iconColor;
   final MessageBadgeRepository messageBadgeRepository;
   final ActivityFirestoreService activityService;
 
   const _MyActivitiesNavIcon({
-    required this.selected,
     required this.isCurrentTab,
+    required this.iconColor,
     required this.messageBadgeRepository,
     required this.activityService,
   });
@@ -292,7 +371,9 @@ class _MyActivitiesNavIcon extends StatelessWidget {
 
             return _NavBadgeIcon(
               icon: Icon(
-                selected ? Icons.list_alt : Icons.list_alt_outlined,
+                Icons.grid_view_outlined,
+                size: 22,
+                color: iconColor,
               ),
               count: unreadCount + ownerPendingCount,
               hideBadge: isCurrentTab,
@@ -305,13 +386,13 @@ class _MyActivitiesNavIcon extends StatelessWidget {
 }
 
 class _ExploreNavIcon extends StatelessWidget {
-  final bool selected;
   final bool isCurrentTab;
+  final Color iconColor;
   final NotificationRepository notificationRepository;
 
   const _ExploreNavIcon({
-    required this.selected,
     required this.isCurrentTab,
+    required this.iconColor,
     required this.notificationRepository,
   });
 
@@ -321,7 +402,7 @@ class _ExploreNavIcon extends StatelessWidget {
       stream: notificationRepository.watchUnreadMatchCount(),
       builder: (context, snapshot) {
         return _NavBadgeIcon(
-          icon: Icon(selected ? Icons.explore : Icons.explore_outlined),
+          icon: Icon(Icons.explore_outlined, size: 22, color: iconColor),
           count: snapshot.data ?? 0,
           hideBadge: isCurrentTab,
         );
@@ -331,14 +412,14 @@ class _ExploreNavIcon extends StatelessWidget {
 }
 
 class _InvitationsNavIcon extends StatelessWidget {
-  final bool selected;
   final bool isCurrentTab;
+  final Color iconColor;
   final ActivityInvitationFirestoreService invitationService;
   final GroupInvitationFirestoreService groupInvitationService;
 
   const _InvitationsNavIcon({
-    required this.selected,
     required this.isCurrentTab,
+    required this.iconColor,
     required this.invitationService,
     required this.groupInvitationService,
   });
@@ -356,7 +437,7 @@ class _InvitationsNavIcon extends StatelessWidget {
             final pendingGroupCount = groupSnapshot.data?.length ?? 0;
 
             return _NavBadgeIcon(
-              icon: Icon(selected ? Icons.mail : Icons.mail_outline),
+              icon: Icon(Icons.mail_outline, size: 22, color: iconColor),
               count: pendingActivityCount + pendingGroupCount,
               hideBadge: isCurrentTab,
             );
