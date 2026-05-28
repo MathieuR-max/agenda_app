@@ -655,7 +655,8 @@ exports.matchSearchesOnActivityCreated = onDocumentCreated(
         const searchUserId = String(search.userId || "").trim();
 
         // a. catégorie
-        if (String(search.category || "").trim() !== actCategory) continue;
+        const searchCat = String(search.category || "").trim();
+        if (searchCat !== "Toutes" && searchCat !== actCategory) continue;
 
         // b/c. pas l'organisateur ni le créateur
         if (!searchUserId) continue;
