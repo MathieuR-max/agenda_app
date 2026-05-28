@@ -222,6 +222,91 @@ class _AgendaAppState extends State<AgendaApp> {
       locale: const Locale('fr', 'FR'),
       theme: ThemeData(
         useMaterial3: true,
+        fontFamily: 'PlusJakartaSans',
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFF00B4A6),
+          primary: const Color(0xFF00B4A6),
+          secondary: const Color(0xFFF9635E),
+          surface: const Color(0xFFF8F7F4),
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF8F7F4),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          titleTextStyle: TextStyle(
+            fontFamily: 'PlusJakartaSans',
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF1E1E1E),
+          ),
+          iconTheme: IconThemeData(color: Color(0xFF6F6F6F)),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          margin: EdgeInsets.zero,
+          shadowColor: Color(0x0A000000),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF00B4A6),
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(50),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 24),
+            textStyle: const TextStyle(
+              fontFamily: 'PlusJakartaSans',
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          backgroundColor: Colors.white,
+          selectedItemColor: Color(0xFF00B4A6),
+          unselectedItemColor: Color(0xFFA8A8A8),
+          elevation: 0,
+          type: BottomNavigationBarType.fixed,
+        ),
+        chipTheme: ChipThemeData(
+          backgroundColor: const Color(0xFFF1EFEB),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(50),
+            side: BorderSide.none,
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          labelStyle: const TextStyle(
+            fontFamily: 'PlusJakartaSans',
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        dividerTheme: const DividerThemeData(
+          color: Color(0xFFE6E2DB),
+          thickness: 0.5,
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: const Color(0xFFF1EFEB),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE6E2DB), width: 0.5),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFFE6E2DB), width: 0.5),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: Color(0xFF00B4A6), width: 1.5),
+          ),
+        ),
       ),
       home: StreamBuilder<User?>(
         stream: FirebaseAuth.instance.authStateChanges(),
