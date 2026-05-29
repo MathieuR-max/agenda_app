@@ -377,11 +377,6 @@ service cloud.firestore {
           'updatedAt'
         ])
         && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.name == resource.data.name
-        && request.resource.data.description == resource.data.description
-        && request.resource.data.visibility == resource.data.visibility
-        && request.resource.data.ownerPseudo == resource.data.ownerPseudo
-        && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.memberIds is list
         && resource.data.memberIds is list
         && !(request.auth.uid in resource.data.memberIds)
@@ -621,7 +616,7 @@ service cloud.firestore {
     }
 
     match /groups/{groupId} {
-      allow get: if canReadGroup(resource.data);
+      allow get: if isAuthenticated();
 
       allow list: if isAuthenticated();
 

@@ -331,7 +331,8 @@ class GroupsRepository {
       });
 
       transaction.update(groupRef, {
-        'memberIds': memberIds,
+        'memberIds': FieldValue.arrayUnion([trimmedUserId]),
+        'memberCount': FieldValue.increment(1),
         'updatedAt': FieldValue.serverTimestamp(),
       });
 
