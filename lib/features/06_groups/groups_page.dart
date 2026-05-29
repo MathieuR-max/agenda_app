@@ -31,17 +31,13 @@ class _GroupsPageState extends State<GroupsPage> {
   }
 
   Color _visibilityChipBackground(GroupModel group) {
-    if (group.isFriendsOnly) {
-      return Colors.green.shade100;
-    }
-    return Colors.blueGrey.shade100;
+    if (group.isFriendsOnly) return const Color(0xFFECFDF4);
+    return const Color(0xFFF1EFEB);
   }
 
   Color _visibilityChipTextColor(GroupModel group) {
-    if (group.isFriendsOnly) {
-      return Colors.green.shade800;
-    }
-    return Colors.blueGrey.shade800;
+    if (group.isFriendsOnly) return const Color(0xFF34C759);
+    return const Color(0xFF6F6F6F);
   }
 
   Future<void> _openCreateGroupPage(BuildContext context) async {
@@ -65,55 +61,32 @@ class _GroupsPageState extends State<GroupsPage> {
     );
   }
 
-  Widget _buildUnreadTrailing(String groupId) {
-    return StreamBuilder<int>(
-      stream: _groupChatRepository.watchUnreadCount(groupId),
-      builder: (context, snapshot) {
-        final unreadCount = snapshot.data ?? 0;
-
-        if (unreadCount <= 0) {
-          return const Icon(Icons.chevron_right);
-        }
-
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Badge(
-              label: Text(
-                unreadCount > 99 ? '99+' : '$unreadCount',
-              ),
-              child: const Icon(Icons.chat_bubble_outline),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right),
-          ],
-        );
-      },
-    );
-  }
-
   Widget _buildEmptyState(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.groups,
-              size: 56,
-            ),
+            const Icon(Icons.groups_outlined, size: 64, color: Color(0xFFA8A8A8)),
             const SizedBox(height: 16),
             const Text(
-              'Vous n’avez pas encore de groupe.',
+              "Vous n’avez pas encore de groupe.",
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 16),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Color(0xFF1E1E1E)),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () => _openCreateGroupPage(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00B4A6),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 13),
+              ),
               icon: const Icon(Icons.add),
-              label: const Text('Créer un groupe'),
+              label: const Text("Créer un groupe", style: TextStyle(fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -123,55 +96,115 @@ class _GroupsPageState extends State<GroupsPage> {
 
   Widget _buildGroupsList(BuildContext context, List<GroupModel> groups) {
     return ListView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
       itemCount: groups.length,
       itemBuilder: (context, index) {
         final group = groups[index];
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: ListTile(
-            leading: CircleAvatar(
-              child: Text(
-                group.name.isNotEmpty ? group.name[0].toUpperCase() : '?',
-              ),
-            ),
-            title: Text(group.name),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  group.description.isNotEmpty
-                      ? group.description
-                      : 'Aucune description',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+        return GestureDetector(
+          onTap: () => _openGroupDetailPage(context, group),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF000000).withValues(alpha: 0.04),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
                 ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: _visibilityChipBackground(group),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _visibilityLabel(group),
-                    style: TextStyle(
-                      color: _visibilityChipTextColor(group),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                BoxShadow(
+                  color: const Color(0xFF000000).withValues(alpha: 0.06),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
                 ),
               ],
             ),
-            isThreeLine: true,
-            trailing: _buildUnreadTrailing(group.id),
-            onTap: () => _openGroupDetailPage(context, group),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFB8ECE6),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      group.name.isNotEmpty ? group.name[0].toUpperCase() : '?',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF00B4A6),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        StreamBuilder<int>(
+                          stream: _groupChatRepository.watchUnreadCount(group.id),
+                          builder: (context, snapshot) {
+                            final unreadCount = snapshot.data ?? 0;
+                            return Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    group.name,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF1E1E1E),
+                                    ),
+                                  ),
+                                ),
+                                if (unreadCount > 0) ...[
+                                  const SizedBox(width: 8),
+                                  Badge(
+                                    label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                                    child: const Icon(Icons.chat_bubble_outline, size: 18, color: Color(0xFF6F6F6F)),
+                                  ),
+                                ],
+                              ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          group.description.isNotEmpty ? group.description : 'Aucune description',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, color: Color(0xFF6F6F6F)),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: _visibilityChipBackground(group),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            _visibilityLabel(group),
+                            style: TextStyle(
+                              color: _visibilityChipTextColor(group),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       },
@@ -186,6 +219,9 @@ class _GroupsPageState extends State<GroupsPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openCreateGroupPage(context),
+        backgroundColor: const Color(0xFF00B4A6),
+        foregroundColor: Colors.white,
+        elevation: 0,
         child: const Icon(Icons.add),
       ),
       body: StreamBuilder<List<GroupModel>>(
