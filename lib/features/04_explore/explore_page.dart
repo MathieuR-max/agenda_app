@@ -288,9 +288,10 @@ class _ExplorePageState extends State<ExplorePage> {
               Tab(text: 'Découverte'),
               Tab(text: 'Sponsors'),
             ],
-            labelColor: Theme.of(context).colorScheme.primary,
-            unselectedLabelColor: Colors.grey,
-            indicatorColor: Theme.of(context).colorScheme.primary,
+            labelColor: const Color(0xFF00B4A6),
+            unselectedLabelColor: const Color(0xFF6F6F6F),
+            indicatorColor: const Color(0xFF00B4A6),
+            labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           ),
           Expanded(
             child: TabBarView(
@@ -341,15 +342,15 @@ class _ExplorePageState extends State<ExplorePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Text(
                   '✨ Correspond à vos recherches',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: Colors.teal.shade700,
+                    color: Color(0xFF00B4A6),
                   ),
                 ),
               ),
               SizedBox(
-                height: 200,
+                height: 118,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -422,7 +423,7 @@ class _ExplorePageState extends State<ExplorePage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
           child: Row(
             children: [
               TextButton.icon(
@@ -457,6 +458,17 @@ class _ExplorePageState extends State<ExplorePage> {
                                   _requestLocationAndSort();
                                 }
                               },
+                              backgroundColor: const Color(0xFFF1EFEB),
+                              selectedColor: const Color(0xFFB8ECE6),
+                              labelStyle: TextStyle(
+                                color: _sortByDistance
+                                    ? const Color(0xFF00B4A6)
+                                    : const Color(0xFF6F6F6F),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              side: BorderSide.none,
+                              showCheckmark: false,
                             ),
                       ...([2, 5, 10, 25].map((km) => Padding(
                             padding: const EdgeInsets.only(left: 6),
@@ -464,6 +476,17 @@ class _ExplorePageState extends State<ExplorePage> {
                               label: Text('$km km'),
                               selected: _radiusKm == km,
                               onSelected: (_) => _selectRadius(km),
+                              backgroundColor: const Color(0xFFF1EFEB),
+                              selectedColor: const Color(0xFFB8ECE6),
+                              labelStyle: TextStyle(
+                                color: _radiusKm == km
+                                    ? const Color(0xFF00B4A6)
+                                    : const Color(0xFF6F6F6F),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              side: BorderSide.none,
+                              showCheckmark: false,
                             ),
                           ))),
                     ],
@@ -475,7 +498,7 @@ class _ExplorePageState extends State<ExplorePage> {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
+                    color: const Color(0xFF00B4A6),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
@@ -524,7 +547,7 @@ class _ExplorePageState extends State<ExplorePage> {
                 // Filtre jour de la semaine
                 const Text(
                   'Jour',
-                  style: TextStyle(fontSize: 12, color: Colors.grey),
+                  style: TextStyle(fontSize: 12, color: Color(0xFF6F6F6F)),
                 ),
                 const SizedBox(height: 4),
                 Wrap(
@@ -535,12 +558,34 @@ class _ExplorePageState extends State<ExplorePage> {
                       selected: _selectedWeekday == null,
                       onSelected: (_) =>
                           setState(() => _selectedWeekday = null),
+                      backgroundColor: const Color(0xFFF1EFEB),
+                      selectedColor: const Color(0xFFB8ECE6),
+                      labelStyle: TextStyle(
+                        color: _selectedWeekday == null
+                            ? const Color(0xFF00B4A6)
+                            : const Color(0xFF6F6F6F),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      side: BorderSide.none,
+                      showCheckmark: false,
                     ),
                     ..._dayChips.map((d) => FilterChip(
                           label: Text(d.label),
                           selected: _selectedWeekday == d.weekday,
                           onSelected: (_) => setState(
                               () => _selectedWeekday = d.weekday),
+                          backgroundColor: const Color(0xFFF1EFEB),
+                          selectedColor: const Color(0xFFB8ECE6),
+                          labelStyle: TextStyle(
+                            color: _selectedWeekday == d.weekday
+                                ? const Color(0xFF00B4A6)
+                                : const Color(0xFF6F6F6F),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          side: BorderSide.none,
+                          showCheckmark: false,
                         )),
                   ],
                 ),
@@ -561,7 +606,7 @@ class _ExplorePageState extends State<ExplorePage> {
               : CrossFadeState.showFirst,
           duration: const Duration(milliseconds: 200),
         ),
-        const Divider(height: 1),
+        const Divider(height: 1, color: Color(0xFFEDE9E3)),
       ],
     );
   }
@@ -579,7 +624,7 @@ class _ExplorePageState extends State<ExplorePage> {
             Icon(
               hasFilters ? Icons.filter_list_off : Icons.explore_outlined,
               size: 64,
-              color: Colors.grey.shade400,
+              color: const Color(0xFFA8A8A8),
             ),
             const SizedBox(height: 16),
             Text(
@@ -613,54 +658,130 @@ class _ExplorePageState extends State<ExplorePage> {
           builder: (_) => ActivityDetailPage(activity: activity),
         ),
       ),
-      child: Card(
+      child: Container(
+        width: 220,
         margin: const EdgeInsets.only(right: 10),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-          side: BorderSide(color: Colors.teal.shade300, width: 1.5),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFB8ECE6), width: 1.5),
         ),
-        child: SizedBox(
-          width: 220,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Titre + chip catégorie
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  activity.title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
+                Expanded(
+                  child: Text(
+                    activity.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E1E1E),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  activity.scheduleLabel,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  activity.location,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 8),
-                Chip(
-                  label: const Text(
-                    'Correspond à votre recherche',
-                    style: TextStyle(fontSize: 10),
+                if (activity.category.isNotEmpty && activity.category != 'Toutes') ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0EEFF),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      activity.category,
+                      style: const TextStyle(
+                        color: Color(0xFF8B80F9),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
-                  backgroundColor: Colors.teal.shade50,
-                  labelStyle: TextStyle(color: Colors.teal.shade700),
-                  padding: EdgeInsets.zero,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+            // Horaire
+            Row(
+              children: [
+                const Icon(Icons.schedule, size: 12, color: Color(0xFF6F6F6F)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    activity.scheduleLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF6F6F6F)),
+                  ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 3),
+            // Lieu
+            Row(
+              children: [
+                const Icon(Icons.place_outlined, size: 12, color: Color(0xFF6F6F6F)),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    activity.location,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF6F6F6F)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF4),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    activity.hasUnlimitedPlaces
+                        ? '${_pluralParticipants(activity.participantCount)} • Illimité'
+                        : '${activity.participantCount} / ${activity.maxParticipants} places',
+                    style: const TextStyle(
+                      color: Color(0xFF34C759),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: activity.isFull
+                        ? const Color(0xFFFFF0EF)
+                        : const Color(0xFFECFDF4),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    activity.isFull ? 'Complète' : 'Ouverte',
+                    style: TextStyle(
+                      color: activity.isFull
+                          ? const Color(0xFFF9635E)
+                          : const Color(0xFF34C759),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -687,14 +808,37 @@ class _ExplorePageState extends State<ExplorePage> {
       buttonLabel = 'Rejoindre';
     }
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ActivityDetailPage(activity: activity),
+        ),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF000000).withValues(alpha: 0.04),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+          BoxShadow(
+            color: const Color(0xFF000000).withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Titre + chip catégorie
+            // Titre
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -707,12 +851,6 @@ class _ExplorePageState extends State<ExplorePage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 8),
-                _buildChip(
-                  label: activity.category,
-                  backgroundColor: Colors.indigo.shade50,
-                  textColor: Colors.indigo.shade700,
-                ),
               ],
             ),
             const SizedBox(height: 6),
@@ -720,7 +858,7 @@ class _ExplorePageState extends State<ExplorePage> {
             // Organisateur
             Text(
               activity.organizerDisplayLabel,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+              style: const TextStyle(color: Color(0xFF6F6F6F), fontSize: 13),
             ),
             const SizedBox(height: 4),
 
@@ -728,7 +866,7 @@ class _ExplorePageState extends State<ExplorePage> {
             if (activity.scheduleLabel.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.schedule, size: 14, color: Colors.grey),
+                  const Icon(Icons.schedule, size: 14, color: Color(0xFF6F6F6F)),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
@@ -745,7 +883,7 @@ class _ExplorePageState extends State<ExplorePage> {
             if (activity.location.isNotEmpty) ...[
               Row(
                 children: [
-                  const Icon(Icons.place_outlined, size: 14, color: Colors.grey),
+                  const Icon(Icons.place_outlined, size: 14, color: Color(0xFF6F6F6F)),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
@@ -765,48 +903,54 @@ class _ExplorePageState extends State<ExplorePage> {
               const SizedBox(height: 8),
             ],
 
-            // Chips : participants + statut
+            // Chips : catégorie + participants + statut
             Wrap(
               spacing: 8,
               runSpacing: 6,
               children: [
+                if (activity.category.isNotEmpty && activity.category != 'Toutes')
+                  _buildChip(
+                    label: activity.category,
+                    backgroundColor: const Color(0xFFF0EEFF),
+                    textColor: const Color(0xFF8B80F9),
+                  ),
                 if (TemporalActivityUtils.isTonightActivity(activity.resolvedStartDateTime))
                   _buildChip(
                     label: 'Ce soir',
-                    backgroundColor: Colors.teal.shade100,
-                    textColor: Colors.teal.shade800,
+                    backgroundColor: const Color(0xFFFFF4E6),
+                    textColor: const Color(0xFFF4B266),
                   ),
                 if (TemporalActivityUtils.isWeekendActivity(activity.resolvedStartDateTime))
                   _buildChip(
                     label: 'Ce week-end',
-                    backgroundColor: Colors.indigo.shade100,
-                    textColor: Colors.indigo.shade800,
+                    backgroundColor: const Color(0xFFF0EEFF),
+                    textColor: const Color(0xFF8B80F9),
                   ),
                 if (_friendIds.isNotEmpty && _friendIds.contains(activity.ownerId))
                   _buildChip(
                     label: '👥 Organisé par un ami',
-                    backgroundColor: Colors.teal.shade50,
-                    textColor: Colors.teal.shade700,
+                    backgroundColor: const Color(0xFFB8ECE6),
+                    textColor: const Color(0xFF00B4A6),
                   ),
                 _buildChip(
                   label: activity.hasUnlimitedPlaces
-                      ? '${activity.participantCount} participant(s) • Illimité'
-                      : '${activity.participantCount} / ${activity.maxParticipants}',
+                      ? '${_pluralParticipants(activity.participantCount)} • Illimité'
+                      : '${_pluralParticipants(activity.participantCount)} • ${activity.maxParticipants} places',
                   backgroundColor: activity.isFull
-                      ? Colors.red.shade50
-                      : Colors.blue.shade50,
+                      ? const Color(0xFFFFF0EF)
+                      : const Color(0xFFECFDF4),
                   textColor: activity.isFull
-                      ? Colors.red.shade700
-                      : Colors.blue.shade700,
+                      ? const Color(0xFFF9635E)
+                      : const Color(0xFF34C759),
                 ),
                 _buildChip(
                   label: activity.isFull ? 'Complète' : 'Ouverte',
                   backgroundColor: activity.isFull
-                      ? Colors.orange.shade100
-                      : Colors.green.shade100,
+                      ? const Color(0xFFFFF0EF)
+                      : const Color(0xFFECFDF4),
                   textColor: activity.isFull
-                      ? Colors.orange.shade800
-                      : Colors.green.shade800,
+                      ? const Color(0xFFF9635E)
+                      : const Color(0xFF34C759),
                 ),
               ],
             ),
@@ -817,13 +961,37 @@ class _ExplorePageState extends State<ExplorePage> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: canJoin ? () => _join(activity) : null,
-                child: Text(buttonLabel),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: canJoin
+                      ? const Color(0xFF00B4A6)
+                      : const Color(0xFFF1EFEB),
+                  foregroundColor: canJoin
+                      ? Colors.white
+                      : const Color(0xFFA8A8A8),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: Text(
+                  buttonLabel,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ),
           ],
         ),
       ),
+    ),
     );
+  }
+
+  String _pluralParticipants(int count) {
+    return count <= 1 ? '$count participant' : '$count participants';
   }
 
   Widget _buildChip({
