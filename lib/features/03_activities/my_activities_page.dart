@@ -101,7 +101,6 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     return joined.where((a) => !createdIds.contains(a.id)).toList();
   }
 
-  // Applique le filtre temporel puis le filtre de statut avancé.
   List<Activity> _applyActivityFilters(List<Activity> activities) {
     final now = DateTime.now();
     var result = activities;
@@ -138,7 +137,6 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     return result;
   }
 
-  // Pour les recherches : filtre temporel uniquement (pas de statut).
   List<Map<String, dynamic>> _applySearchFilters(
     List<Map<String, dynamic>> searches,
   ) {
@@ -185,7 +183,6 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
       final aFuture = !aDate.isBefore(now);
       final bFuture = !bDate.isBefore(now);
 
-      // Futures d'abord (ASC), passées ensuite (DESC)
       if (aFuture && bFuture) return aDate.compareTo(bDate);
       if (!aFuture && !bFuture) return bDate.compareTo(aDate);
       return aFuture ? -1 : 1;
@@ -194,35 +191,39 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     return items;
   }
 
-  // ─── Chip de filtre ───────────────────────────────────────────────────────
+  // ─── Helpers visuels ─────────────────────────────────────────────────────
+
+  Widget _chip({required String label, required Color bg, required Color fg}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Text(label, style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w600)),
+    );
+  }
 
   Widget _buildFilterChip({
     required String label,
-    required Color backgroundColor,
-    required Color textColor,
+    required Color bg,
+    required Color fg,
     required bool isActive,
     required VoidCallback onTap,
   }) {
     return InkWell(
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
         decoration: BoxDecoration(
-          color: isActive ? textColor.withValues(alpha: 0.16) : backgroundColor,
-          borderRadius: BorderRadius.circular(12),
+          color: isActive ? fg.withValues(alpha: 0.15) : bg,
+          borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: isActive ? textColor : backgroundColor,
-            width: isActive ? 1.5 : 1,
+            color: isActive ? fg : Colors.transparent,
+            width: 1.5,
           ),
         ),
         child: Text(
           label,
-          style: TextStyle(
-            fontSize: 11.5,
-            fontWeight: FontWeight.w600,
-            color: textColor,
-          ),
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: fg),
         ),
       ),
     );
@@ -234,55 +235,52 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Ligne 1 : chips principaux (type)
         SizedBox(
           height: 42,
           child: ListView(
             scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             children: [
               _buildFilterChip(
                 label: 'Tout',
-                backgroundColor: Colors.grey.shade200,
-                textColor: Colors.grey.shade900,
+                bg: const Color(0xFFF1EFEB),
+                fg: const Color(0xFF1E1E1E),
                 isActive: _activeFilter == _Filter.all,
                 onTap: () => setState(() => _activeFilter = _Filter.all),
               ),
               const SizedBox(width: 8),
               _buildFilterChip(
                 label: 'Créées',
-                backgroundColor: Colors.blue.shade100,
-                textColor: Colors.blue.shade900,
+                bg: const Color(0xFFB8ECE6),
+                fg: const Color(0xFF00B4A6),
                 isActive: _activeFilter == _Filter.created,
                 onTap: () => setState(() => _activeFilter = _Filter.created),
               ),
               const SizedBox(width: 8),
               _buildFilterChip(
                 label: 'Rejointes',
-                backgroundColor: Colors.purple.shade100,
-                textColor: Colors.purple.shade900,
+                bg: const Color(0xFFFFD6D3),
+                fg: const Color(0xFFF9635E),
                 isActive: _activeFilter == _Filter.joined,
                 onTap: () => setState(() => _activeFilter = _Filter.joined),
               ),
               const SizedBox(width: 8),
               _buildFilterChip(
                 label: 'Recherches',
-                backgroundColor: Colors.orange.shade100,
-                textColor: Colors.orange.shade900,
+                bg: const Color(0xFFFFF4E6),
+                fg: const Color(0xFFF4B266),
                 isActive: _activeFilter == _Filter.searches,
                 onTap: () => setState(() => _activeFilter = _Filter.searches),
               ),
             ],
           ),
         ),
-
-        // Ligne 2 : bouton "Afficher / Masquer les filtres"
         Padding(
           padding: const EdgeInsets.only(left: 10, top: 2),
           child: TextButton(
-            onPressed: () =>
-                setState(() => _showAdvancedFilters = !_showAdvancedFilters),
+            onPressed: () => setState(() => _showAdvancedFilters = !_showAdvancedFilters),
             style: TextButton.styleFrom(
+              foregroundColor: const Color(0xFF00B4A6),
               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -293,9 +291,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                 const Icon(Icons.tune, size: 18),
                 const SizedBox(width: 4),
                 Text(
-                  _showAdvancedFilters
-                      ? 'Moins de filtres'
-                      : 'Filtres avancés',
+                  _showAdvancedFilters ? 'Moins de filtres' : 'Filtres avancés',
                   style: const TextStyle(fontSize: 13),
                 ),
                 const SizedBox(width: 4),
@@ -308,21 +304,18 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
             ),
           ),
         ),
-
         if (_showAdvancedFilters) ...[
           const SizedBox(height: 4),
-
-          // Ligne 3 : chips temporels
           SizedBox(
             height: 42,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
                 _buildFilterChip(
                   label: 'À venir',
-                  backgroundColor: Colors.teal.shade100,
-                  textColor: Colors.teal.shade900,
+                  bg: const Color(0xFFB8ECE6),
+                  fg: const Color(0xFF00B4A6),
                   isActive: _showUpcomingOnly,
                   onTap: () => setState(() {
                     _showUpcomingOnly = true;
@@ -332,8 +325,8 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                 const SizedBox(width: 8),
                 _buildFilterChip(
                   label: 'Passées',
-                  backgroundColor: Colors.teal.shade100,
-                  textColor: Colors.teal.shade900,
+                  bg: const Color(0xFFF1EFEB),
+                  fg: const Color(0xFF6F6F6F),
                   isActive: _showPastOnly,
                   onTap: () => setState(() {
                     _showUpcomingOnly = false;
@@ -343,8 +336,8 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                 const SizedBox(width: 8),
                 _buildFilterChip(
                   label: 'Toutes les dates',
-                  backgroundColor: Colors.teal.shade100,
-                  textColor: Colors.teal.shade900,
+                  bg: const Color(0xFFF1EFEB),
+                  fg: const Color(0xFF6F6F6F),
                   isActive: !_showUpcomingOnly && !_showPastOnly,
                   onTap: () => setState(() {
                     _showUpcomingOnly = false;
@@ -354,20 +347,17 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
               ],
             ),
           ),
-
           const SizedBox(height: 4),
-
-          // Ligne 4 : chips statut (alternatifs aux chips principaux)
           SizedBox(
             height: 42,
             child: ListView(
               scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
                 _buildFilterChip(
                   label: 'Complètes',
-                  backgroundColor: Colors.amber.shade100,
-                  textColor: Colors.amber.shade900,
+                  bg: const Color(0xFFFFF4E6),
+                  fg: const Color(0xFFF4B266),
                   isActive: _activeFilter == _Filter.full,
                   onTap: () => setState(() => _activeFilter =
                       _activeFilter == _Filter.full ? _Filter.all : _Filter.full),
@@ -375,19 +365,17 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                 const SizedBox(width: 8),
                 _buildFilterChip(
                   label: 'Annulées',
-                  backgroundColor: Colors.red.shade100,
-                  textColor: Colors.red.shade900,
+                  bg: const Color(0xFFFFF0EF),
+                  fg: const Color(0xFFF9635E),
                   isActive: _activeFilter == _Filter.cancelled,
                   onTap: () => setState(() => _activeFilter =
-                      _activeFilter == _Filter.cancelled
-                          ? _Filter.all
-                          : _Filter.cancelled),
+                      _activeFilter == _Filter.cancelled ? _Filter.all : _Filter.cancelled),
                 ),
                 const SizedBox(width: 8),
                 _buildFilterChip(
                   label: 'Terminées',
-                  backgroundColor: Colors.blueGrey.shade100,
-                  textColor: Colors.blueGrey.shade900,
+                  bg: const Color(0xFFF1EFEB),
+                  fg: const Color(0xFF6F6F6F),
                   isActive: _activeFilter == _Filter.done,
                   onTap: () => setState(() => _activeFilter =
                       _activeFilter == _Filter.done ? _Filter.all : _Filter.done),
@@ -395,45 +383,18 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                 const SizedBox(width: 8),
                 _buildFilterChip(
                   label: 'Owner requis',
-                  backgroundColor: Colors.deepOrange.shade100,
-                  textColor: Colors.deepOrange.shade900,
+                  bg: const Color(0xFFFFF0EF),
+                  fg: const Color(0xFFF9635E),
                   isActive: _activeFilter == _Filter.ownerPending,
                   onTap: () => setState(() => _activeFilter =
-                      _activeFilter == _Filter.ownerPending
-                          ? _Filter.all
-                          : _Filter.ownerPending),
+                      _activeFilter == _Filter.ownerPending ? _Filter.all : _Filter.ownerPending),
                 ),
               ],
             ),
           ),
         ],
-
         const SizedBox(height: 4),
       ],
-    );
-  }
-
-  // ─── Mini badge texte ─────────────────────────────────────────────────────
-
-  Widget _buildBadge(
-    String label, {
-    required Color backgroundColor,
-    required Color textColor,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          color: textColor,
-        ),
-      ),
     );
   }
 
@@ -447,18 +408,31 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
       activity.resolvedEndDateTime,
     );
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ActivityDetailPage(activity: activity),
-          ),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: activity)),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF000000).withValues(alpha: 0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+            BoxShadow(
+              color: const Color(0xFF000000).withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
         ),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: StreamBuilder<int>(
             stream: _chatRepository.watchUnreadCountForActivity(activity.id),
             builder: (context, unreadSnapshot) {
@@ -474,59 +448,68 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                         child: Text(
                           activity.title,
                           style: const TextStyle(
-                            fontSize: 15,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
+                            color: Color(0xFF1E1E1E),
                           ),
                         ),
                       ),
-                      if (unreadCount > 0)
+                      if (unreadCount > 0) ...[
+                        const SizedBox(width: 8),
                         Badge(
-                          label: Text(
-                            unreadCount > 99 ? '99+' : '$unreadCount',
-                          ),
+                          label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
                           child: const Icon(
                             Icons.chat_bubble_outline,
                             size: 18,
+                            color: Color(0xFF6F6F6F),
                           ),
                         ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    dateLabel,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
+                  const SizedBox(height: 6),
+                  Row(
                     children: [
-                      _buildBadge(
-                        isOwner ? 'Organisateur' : 'Rejointe',
-                        backgroundColor: isOwner
-                            ? Colors.blue.shade700
-                            : Colors.purple.shade700,
-                        textColor: Colors.white,
+                      const Icon(Icons.schedule, size: 14, color: Color(0xFF6F6F6F)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          dateLabel,
+                          style: const TextStyle(fontSize: 13, color: Color(0xFF6F6F6F)),
+                        ),
                       ),
-                      _buildBadge(
-                        activity.activityTypeLabel,
-                        backgroundColor: Colors.grey.shade200,
-                        textColor: Colors.grey.shade800,
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      _chip(
+                        label: isOwner ? 'Organisateur' : 'Rejointe',
+                        bg: isOwner ? const Color(0xFFB8ECE6) : const Color(0xFFFFD6D3),
+                        fg: isOwner ? const Color(0xFF00B4A6) : const Color(0xFFF9635E),
+                      ),
+                      _chip(
+                        label: activity.activityTypeLabel,
+                        bg: const Color(0xFFF1EFEB),
+                        fg: const Color(0xFF6F6F6F),
                       ),
                       for (final indicator in activity.calendarIndicators)
-                        _buildBadge(
-                          indicator,
-                          backgroundColor: Colors.grey.shade100,
-                          textColor: Colors.black87,
+                        _chip(
+                          label: indicator,
+                          bg: indicator.contains('soir')
+                              ? const Color(0xFFFFF4E6)
+                              : const Color(0xFFF0EEFF),
+                          fg: indicator.contains('soir')
+                              ? const Color(0xFFF4B266)
+                              : const Color(0xFF8B80F9),
                         ),
                       if (activity.ownerPending)
-                        _buildBadge(
-                          'Owner requis',
-                          backgroundColor: Colors.deepOrange.shade100,
-                          textColor: Colors.deepOrange.shade900,
+                        _chip(
+                          label: 'Owner requis',
+                          bg: const Color(0xFFFFF0EF),
+                          fg: const Color(0xFFF9635E),
                         ),
                     ],
                   ),
@@ -543,30 +526,45 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
 
   Widget _buildSearchCard(Map<String, dynamic> search) {
     final category = (search['category'] as String? ?? '').trim();
-    final title =
-        category.isNotEmpty ? 'Recherche · $category' : 'Recherche';
+    final displayCategory = (category.isEmpty || category == 'Toutes') ? '' : category;
+    final title = displayCategory.isNotEmpty ? 'Recherche · $displayCategory' : 'Recherche';
     final startDt = search['startDateTime'] as DateTime?;
     final endDt = search['endDateTime'] as DateTime?;
     final dateLabel = _formatActivityDateTime(startDt, endDt);
 
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(12),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => SearchDetailPage(
-              searchId: (search['id'] as String? ?? ''),
-              day: (search['day'] as String? ?? ''),
-              startTime: (search['startTime'] as String? ?? ''),
-              endTime: (search['endTime'] as String? ?? ''),
-              category: category,
-            ),
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => SearchDetailPage(
+            searchId: (search['id'] as String? ?? ''),
+            day: (search['day'] as String? ?? ''),
+            startTime: (search['startTime'] as String? ?? ''),
+            endTime: (search['endTime'] as String? ?? ''),
+            category: category,
           ),
         ),
+      ),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF000000).withValues(alpha: 0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+            BoxShadow(
+              color: const Color(0xFF000000).withValues(alpha: 0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(16),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -577,30 +575,36 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                     Text(
                       title,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
+                        color: Color(0xFF1E1E1E),
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      dateLabel,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade700,
-                      ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        const Icon(Icons.schedule, size: 14, color: Color(0xFF6F6F6F)),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            dateLabel,
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF6F6F6F)),
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    _buildBadge(
-                      'Recherche',
-                      backgroundColor: Colors.orange.shade700,
-                      textColor: Colors.white,
+                    const SizedBox(height: 10),
+                    _chip(
+                      label: displayCategory.isNotEmpty ? displayCategory : 'Toutes catégories',
+                      bg: const Color(0xFFFFF4E6),
+                      fg: const Color(0xFFF4B266),
                     ),
                   ],
                 ),
               ),
               IconButton(
                 icon: const Icon(Icons.delete_outline),
-                color: Colors.grey.shade600,
+                color: const Color(0xFFA8A8A8),
                 tooltip: 'Supprimer cette recherche',
                 onPressed: () => _confirmDeleteSearch(search),
               ),
@@ -683,14 +687,11 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.event_busy, size: 64, color: Colors.grey.shade400),
+            const Icon(Icons.event_busy, size: 64, color: Color(0xFFA8A8A8)),
             const SizedBox(height: 16),
             Text(
               message,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-              ),
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               textAlign: TextAlign.center,
             ),
           ],
@@ -715,6 +716,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
       case _Filter.created:
         if (filteredCreated.isEmpty) return _buildEmptyState();
         return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           itemCount: filteredCreated.length,
           itemBuilder: (_, i) => _buildActivityCard(filteredCreated[i], true),
         );
@@ -722,19 +724,19 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
       case _Filter.joined:
         if (filteredJoined.isEmpty) return _buildEmptyState();
         return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           itemCount: filteredJoined.length,
-          itemBuilder: (_, i) =>
-              _buildActivityCard(filteredJoined[i], false),
+          itemBuilder: (_, i) => _buildActivityCard(filteredJoined[i], false),
         );
 
       case _Filter.searches:
         if (filteredSearches.isEmpty) return _buildEmptyState();
         return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           itemCount: filteredSearches.length,
           itemBuilder: (_, i) => _buildSearchCard(filteredSearches[i]),
         );
 
-      // Filtres de statut : activités créées + rejointes fusionnées
       case _Filter.full:
       case _Filter.cancelled:
       case _Filter.done:
@@ -742,6 +744,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
         final merged = [...filteredCreated, ...filteredJoined];
         if (merged.isEmpty) return _buildEmptyState();
         return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           itemCount: merged.length,
           itemBuilder: (_, i) {
             final a = merged[i];
@@ -757,6 +760,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
         );
         if (items.isEmpty) return _buildEmptyState();
         return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           itemCount: items.length,
           itemBuilder: (_, i) {
             final item = items[i];
@@ -781,9 +785,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
             stream: _activityService.getCreatedActivities(),
             builder: (context, createdSnapshot) {
               if (createdSnapshot.hasError) {
-                return Center(
-                  child: Text('Erreur : ${createdSnapshot.error}'),
-                );
+                return Center(child: Text('Erreur : ${createdSnapshot.error}'));
               }
               if (!createdSnapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
@@ -793,9 +795,7 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                 stream: _activityService.getJoinedActivities(),
                 builder: (context, joinedSnapshot) {
                   if (joinedSnapshot.hasError) {
-                    return Center(
-                      child: Text('Erreur : ${joinedSnapshot.error}'),
-                    );
+                    return Center(child: Text('Erreur : ${joinedSnapshot.error}'));
                   }
                   if (!joinedSnapshot.hasData) {
                     return const Center(child: CircularProgressIndicator());
@@ -805,14 +805,10 @@ class _MyActivitiesPageState extends State<MyActivitiesPage> {
                     stream: _searchService.getSearches(),
                     builder: (context, searchSnapshot) {
                       if (searchSnapshot.hasError) {
-                        return Center(
-                          child: Text('Erreur : ${searchSnapshot.error}'),
-                        );
+                        return Center(child: Text('Erreur : ${searchSnapshot.error}'));
                       }
                       if (!searchSnapshot.hasData) {
-                        return const Center(
-                          child: CircularProgressIndicator(),
-                        );
+                        return const Center(child: CircularProgressIndicator());
                       }
 
                       final created = createdSnapshot.data!;

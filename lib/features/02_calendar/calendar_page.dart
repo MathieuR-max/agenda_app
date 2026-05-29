@@ -1004,10 +1004,10 @@ class _CalendarPageState extends State<CalendarPage> {
         },
       ),
       _buildSummaryChip(
-        label: _friendIds.isEmpty ? 'Amis' : 'Amis (${_friendIds.length})',
+        label: _friendIds.isEmpty ? '👥 Amis' : '👥 Amis (${_friendIds.length})',
         value: null,
-        backgroundColor: const Color(0xFFE6FAF8),
-        textColor: const Color(0xFF00B4A6),
+        backgroundColor: const Color(0xFFF0EEFF),
+        textColor: const Color(0xFF8B80F9),
         isActive: _filterByFriends,
         onTap: () {
           if (_friendIds.isEmpty) {
