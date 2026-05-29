@@ -37,20 +37,20 @@ class GroupDetailPage extends StatelessWidget {
   Color _groupVisibilityChipBackground(String visibility) {
     switch (visibility) {
       case GroupModel.visibilityFriends:
-        return Colors.green.shade100;
+        return const Color(0xFFECFDF4);
       case GroupModel.visibilityPrivate:
       default:
-        return Colors.indigo.shade100;
+        return const Color(0xFFF0EEFF);
     }
   }
 
   Color _groupVisibilityChipTextColor(String visibility) {
     switch (visibility) {
       case GroupModel.visibilityFriends:
-        return Colors.green.shade800;
+        return const Color(0xFF34C759);
       case GroupModel.visibilityPrivate:
       default:
-        return Colors.indigo.shade800;
+        return const Color(0xFF8B80F9);
     }
   }
 
@@ -70,7 +70,18 @@ class GroupDetailPage extends StatelessWidget {
     return BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: Colors.grey.shade200, width: 0.5),
+      boxShadow: [
+        BoxShadow(
+          color: const Color(0xFF000000).withValues(alpha: 0.04),
+          blurRadius: 4,
+          offset: const Offset(0, 2),
+        ),
+        BoxShadow(
+          color: const Color(0xFF000000).withValues(alpha: 0.06),
+          blurRadius: 16,
+          offset: const Offset(0, 6),
+        ),
+      ],
     );
   }
 
@@ -134,23 +145,24 @@ class GroupDetailPage extends StatelessWidget {
           Text(
             group.name,
             style: const TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w500,
+              fontSize: 22,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1E1E1E),
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            group.description.isNotEmpty
-                ? '${group.description} • $memberCount membre${memberCount > 1 ? 's' : ''}'
-                : '$memberCount membre${memberCount > 1 ? 's' : ''}',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 12),
+          if (group.description.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              group.description,
+              style: const TextStyle(fontSize: 14, color: Color(0xFF6F6F6F)),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 10),
           Wrap(
             spacing: 8,
-            runSpacing: 8,
+            runSpacing: 6,
             children: [
               _buildChip(
                 label: _groupVisibilityLabel(group.visibility),
@@ -158,9 +170,24 @@ class GroupDetailPage extends StatelessWidget {
                 textColor: _groupVisibilityChipTextColor(group.visibility),
               ),
               _buildChip(
-                label: 'Créateur : ${group.ownerPseudo}',
-                backgroundColor: Colors.grey.shade100,
-                textColor: Colors.grey.shade700,
+                label: '$memberCount membre${memberCount > 1 ? 's' : ''}',
+                backgroundColor: const Color(0xFFF1EFEB),
+                textColor: const Color(0xFF6F6F6F),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Icon(Icons.person_outline, size: 15, color: Color(0xFF6F6F6F)),
+              const SizedBox(width: 6),
+              Text(
+                'Créateur : ${group.ownerPseudo}',
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF00B4A6),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ],
           ),
@@ -174,13 +201,12 @@ class GroupDetailPage extends StatelessWidget {
   Widget _buildActivitiesSection(
     BuildContext context,
     List<Activity> activities,
+    bool isOwner,
+    GroupModel group,
+    GroupChatRepository groupChatRepository,
   ) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.green.shade600, width: 2),
-      ),
+      decoration: _sectionDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -200,13 +226,13 @@ class GroupDetailPage extends StatelessWidget {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.green.shade50,
+                      color: const Color(0xFFB8ECE6),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
                       '${activities.length}',
-                      style: TextStyle(
-                        color: Colors.green.shade700,
+                      style: const TextStyle(
+                        color: Color(0xFF00B4A6),
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
                       ),
@@ -220,16 +246,37 @@ class GroupDetailPage extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
               child: Column(
                 children: [
-                  Icon(Icons.event_outlined, size: 40, color: Colors.grey.shade300),
+                  const Icon(Icons.event_outlined, size: 40, color: Color(0xFFA8A8A8)),
                   const SizedBox(height: 8),
-                  Text(
+                  const Text(
                     'Aucune activité pour ce groupe',
-                    style: TextStyle(color: Colors.grey.shade500, fontSize: 14),
+                    style: TextStyle(color: Color(0xFF6F6F6F), fontSize: 14),
+                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Créez la première activité !',
-                    style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _openCreateGroupActivityPage(
+                        context,
+                        group,
+                        groupChatRepository,
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF00B4A6),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                      icon: const Icon(Icons.add),
+                      label: const Text(
+                        'Créer une activité',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -267,12 +314,12 @@ class GroupDetailPage extends StatelessWidget {
                             width: 40,
                             height: 40,
                             decoration: BoxDecoration(
-                              color: Colors.green.shade50,
+                              color: const Color(0xFFB8ECE6),
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            child: Icon(
+                            child: const Icon(
                               Icons.event,
-                              color: Colors.green.shade600,
+                              color: Color(0xFF00B4A6),
                               size: 20,
                             ),
                           ),
@@ -295,9 +342,9 @@ class GroupDetailPage extends StatelessWidget {
                                   activity.location.trim().isNotEmpty
                                       ? '$scheduleText • ${activity.location.trim()}'
                                       : scheduleText,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 12,
-                                    color: Colors.grey.shade500,
+                                    color: Color(0xFF6F6F6F),
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -312,22 +359,22 @@ class GroupDetailPage extends StatelessWidget {
                               vertical: 4,
                             ),
                             decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
+                              color: const Color(0xFFECFDF4),
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: Text(
                               participantsText,
-                              style: TextStyle(
+                              style: const TextStyle(
                                 fontSize: 11,
-                                color: Colors.blue.shade700,
+                                color: Color(0xFF34C759),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                           const SizedBox(width: 4),
-                          Icon(
+                          const Icon(
                             Icons.chevron_right,
-                            color: Colors.grey.shade400,
+                            color: Color(0xFFA8A8A8),
                             size: 18,
                           ),
                         ],
@@ -335,47 +382,17 @@ class GroupDetailPage extends StatelessWidget {
                     ),
                   ),
                   if (!isLast)
-                    Divider(
+                    const Divider(
                       height: 1,
                       indent: 68,
                       endIndent: 16,
-                      color: Colors.grey.shade100,
+                      color: Color(0xFFF1EFEB),
                     ),
                 ],
               );
             }),
           const SizedBox(height: 4),
         ],
-      ),
-    );
-  }
-
-  // ─── Section 3 : CTA créer activité (owner only) ─────────────────────────
-
-  Widget _buildCreateActivityButton(
-    BuildContext context,
-    GroupModel group,
-    GroupChatRepository groupChatRepository,
-  ) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: () =>
-            _openCreateGroupActivityPage(context, group, groupChatRepository),
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text(
-          'Créer une activité pour ce groupe',
-          style: TextStyle(color: Colors.white),
-        ),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.green.shade600,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 0,
-        ),
       ),
     );
   }
@@ -406,14 +423,14 @@ class GroupDetailPage extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade100,
+                  color: const Color(0xFFF1EFEB),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '${members.length}',
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
-                    color: Colors.grey.shade600,
+                    color: Color(0xFF6F6F6F),
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -422,7 +439,7 @@ class GroupDetailPage extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (members.isEmpty)
-            Text('Aucun membre', style: TextStyle(color: Colors.grey.shade500))
+            const Text('Aucun membre', style: TextStyle(color: Color(0xFF6F6F6F)))
           else
             ...members.asMap().entries.map((entry) {
               final index = entry.key;
@@ -482,14 +499,14 @@ class GroupDetailPage extends StatelessWidget {
                                     vertical: 1,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
+                                    color: const Color(0xFFB8ECE6),
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Text(
+                                  child: const Text(
                                     'Organisateur',
                                     style: TextStyle(
                                       fontSize: 11,
-                                      color: Colors.green.shade700,
+                                      color: Color(0xFF00B4A6),
                                       fontWeight: FontWeight.w500,
                                     ),
                                   ),
@@ -497,9 +514,9 @@ class GroupDetailPage extends StatelessWidget {
                               else
                                 Text(
                                   _memberRoleLabel(role),
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                     fontSize: 11,
-                                    color: Colors.grey.shade500,
+                                    color: Color(0xFF6F6F6F),
                                   ),
                                 ),
                             ],
@@ -508,9 +525,9 @@ class GroupDetailPage extends StatelessWidget {
                         if (canRemove)
                           IconButton(
                             tooltip: 'Retirer du groupe',
-                            icon: Icon(
+                            icon: const Icon(
                               Icons.more_horiz,
-                              color: Colors.grey.shade400,
+                              color: Color(0xFFA8A8A8),
                             ),
                             onPressed: () => _confirmRemoveMember(
                               context,
@@ -524,7 +541,7 @@ class GroupDetailPage extends StatelessWidget {
                     ),
                   ),
                   if (!isLast)
-                    Divider(height: 1, color: Colors.grey.shade100),
+                    const Divider(height: 1, color: Color(0xFFF1EFEB)),
                 ],
               );
             }),
@@ -539,6 +556,7 @@ class GroupDetailPage extends StatelessWidget {
                   ),
                 );
               },
+              style: TextButton.styleFrom(foregroundColor: const Color(0xFF00B4A6)),
               icon: const Icon(Icons.person_add, size: 18),
               label: const Text('Ajouter un ami au groupe'),
             ),
@@ -556,53 +574,71 @@ class GroupDetailPage extends StatelessWidget {
     GroupChatRepository groupChatRepository,
   ) {
     return Container(
+      padding: const EdgeInsets.all(16),
       decoration: _sectionDecoration(),
-      child: StreamBuilder<int>(
-        stream: groupChatRepository.watchUnreadCount(groupId),
-        builder: (context, snapshot) {
-          final unreadCount = snapshot.data ?? 0;
-
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Discussion',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF1E1E1E),
             ),
-            leading: Badge(
-              isLabelVisible: unreadCount > 0,
-              label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
-              child: const Icon(Icons.chat_bubble_outline),
-            ),
-            title: Text(
-              unreadCount > 0
-                  ? 'Chat du groupe ($unreadCount)'
-                  : 'Chat du groupe',
-              style: const TextStyle(
-                fontWeight: FontWeight.w500,
-                fontSize: 14,
-              ),
-            ),
-            subtitle: Text(
-              "Proposez une activité plutôt qu'une longue discussion.",
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.grey.shade400,
-                fontStyle: FontStyle.italic,
-              ),
-            ),
-            trailing: Icon(Icons.chevron_right, color: Colors.grey.shade400),
-            onTap: () async {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => GroupChatPage(
-                    groupId: groupId,
-                    groupName: group.name,
+          ),
+          const SizedBox(height: 12),
+          StreamBuilder<int>(
+            stream: groupChatRepository.watchUnreadCount(groupId),
+            builder: (context, snapshot) {
+              final unreadCount = snapshot.data ?? 0;
+              return SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GroupChatPage(
+                          groupId: groupId,
+                          groupName: group.name,
+                        ),
+                      ),
+                    );
+                  },
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFF00B4A6),
+                    side: const BorderSide(color: Color(0xFF00B4A6), width: 1.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                  ),
+                  icon: Badge(
+                    isLabelVisible: unreadCount > 0,
+                    label: Text(unreadCount > 99 ? '99+' : '$unreadCount'),
+                    child: const Icon(Icons.chat_bubble_outline),
+                  ),
+                  label: Text(
+                    unreadCount > 0
+                        ? 'Ouvrir le chat ($unreadCount)'
+                        : 'Ouvrir le chat',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),
               );
             },
-          );
-        },
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            "Proposez une activité plutôt qu'une longue discussion.",
+            style: TextStyle(
+              fontSize: 12,
+              color: Color(0xFFA8A8A8),
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -615,23 +651,24 @@ class GroupDetailPage extends StatelessWidget {
     GroupChatRepository groupChatRepository,
     String currentUserPseudo,
   ) {
-    return Container(
-      decoration: _sectionDecoration(),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-        leading: Icon(Icons.exit_to_app, color: Colors.red.shade600),
-        title: Text(
-          'Quitter le groupe',
-          style: TextStyle(
-            color: Colors.red.shade600,
-            fontWeight: FontWeight.w500,
+    return GestureDetector(
+      onTap: () => _confirmLeaveGroup(
+        context,
+        repository,
+        groupChatRepository,
+        currentUserPseudo,
+      ),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: Text(
+            'Quitter le groupe',
+            style: TextStyle(
+              color: Color(0xFFF9635E),
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
           ),
-        ),
-        onTap: () => _confirmLeaveGroup(
-          context,
-          repository,
-          groupChatRepository,
-          currentUserPseudo,
         ),
       ),
     );
@@ -883,16 +920,12 @@ class GroupDetailPage extends StatelessWidget {
                       const SizedBox(height: 12),
 
                       // 2. Activités à venir
-                      _buildActivitiesSection(context, groupActivities),
+                      _buildActivitiesSection(context, groupActivities, isOwner, group, groupChatRepository),
                       const SizedBox(height: 12),
 
-                      // 3. CTA créer activité (owner only)
-                      if (isOwner) ...[
-                        _buildCreateActivityButton(
-                          context,
-                          group,
-                          groupChatRepository,
-                        ),
+                      // 3. Discussion (avant Membres)
+                      if (isMember) ...[
+                        _buildChatTile(context, group, groupChatRepository),
                         const SizedBox(height: 12),
                       ],
 
@@ -907,14 +940,9 @@ class GroupDetailPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 12),
 
-                      // 5. Chat (membre only)
-                      if (isMember) ...[
-                        _buildChatTile(context, group, groupChatRepository),
-                        const SizedBox(height: 12),
-                      ],
-
                       // 6. Quitter le groupe (non-owner only)
                       if (canLeaveGroup) ...[
+                        const SizedBox(height: 20),
                         _buildLeaveGroupTile(
                           context,
                           repository,
