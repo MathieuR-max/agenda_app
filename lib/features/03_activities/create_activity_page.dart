@@ -231,6 +231,14 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
     return '$year-$month-$day';
   }
 
+  String _formatDisplayDateLong(DateTime value) {
+    const weekdays = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi',
+        'Vendredi', 'Samedi', 'Dimanche'];
+    const months = ['', 'janvier', 'février', 'mars', 'avril', 'mai',
+        'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    return '${weekdays[value.weekday]} ${value.day} ${months[value.month]} ${value.year}';
+  }
+
   String _formatDisplayDate(DateTime value) {
     final day = value.day.toString().padLeft(2, '0');
     final month = value.month.toString().padLeft(2, '0');
@@ -967,7 +975,7 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                       ),
                       const SizedBox(height: 16),
                     ],
-                    InkWell(
+                    GestureDetector(
                       onTap: isSaving
                           ? null
                           : () async {
@@ -990,7 +998,6 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                                 });
                               }
                             },
-                      borderRadius: BorderRadius.circular(12),
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
@@ -998,58 +1005,54 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                           vertical: 14,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.indigo.shade50,
+                          color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: Colors.indigo.shade200,
-                            width: 1.5,
+                            color: const Color(0xFFE6E2DB),
+                            width: 1,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF000000).withValues(alpha: 0.04),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
                         ),
                         child: Row(
                           children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Colors.indigo.shade100,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(
-                                Icons.calendar_today,
-                                size: 20,
-                                color: Colors.indigo.shade600,
-                              ),
-                            ),
-                            const SizedBox(width: 14),
+                            const Icon(Icons.calendar_today, size: 18, color: Color(0xFF6F6F6F)),
+                            const SizedBox(width: 12),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
+                                  const Text(
                                     "Date de l'activité",
                                     style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.indigo.shade400,
-                                      letterSpacing: 0.3,
+                                      fontSize: 12,
+                                      color: Color(0xFF6F6F6F),
                                     ),
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    _formatDisplayDate(selectedDate),
-                                    style: TextStyle(
-                                      fontSize: 17,
+                                    _formatDisplayDateLong(selectedDate),
+                                    style: const TextStyle(
+                                      fontSize: 15,
                                       fontWeight: FontWeight.w600,
-                                      color: Colors.indigo.shade800,
+                                      color: Color(0xFF1E1E1E),
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            Icon(
-                              Icons.edit_outlined,
-                              size: 18,
-                              color: Colors.indigo.shade400,
+                            const Text(
+                              'Modifier',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Color(0xFF00B4A6),
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ],
                         ),
@@ -1106,87 +1109,84 @@ class _CreateActivityPageState extends State<CreateActivityPage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: endDate == null
-                              ? OutlinedButton.icon(
-                                  onPressed: isSaving
-                                      ? null
-                                      : () async {
-                                          final picked =
-                                              await showDatePicker(
-                                            context: context,
-                                            initialDate: selectedDate.add(
-                                              const Duration(days: 1),
-                                            ),
-                                            firstDate: selectedDate.add(
-                                              const Duration(days: 1),
-                                            ),
-                                            lastDate: selectedDate.add(
-                                              const Duration(days: 7),
-                                            ),
-                                            locale:
-                                                const Locale('fr', 'FR'),
-                                            helpText:
-                                                "Date de fin de l'activité",
-                                          );
-                                          if (picked != null) {
-                                            setState(() {
-                                              endDate = DateTime(
-                                                picked.year,
-                                                picked.month,
-                                                picked.day,
-                                              );
-                                            });
-                                          }
-                                        },
-                                  icon: const Icon(
-                                    Icons.date_range,
-                                    size: 16,
-                                  ),
-                                  label:
-                                      const Text('Activité multi-jours ?'),
-                                )
-                              : InputDecorator(
-                                  decoration: InputDecoration(
-                                    labelText: 'Date de fin',
-                                    border: const OutlineInputBorder(),
-                                    suffixIcon: IconButton(
-                                      icon: const Icon(
-                                        Icons.close,
-                                        size: 18,
-                                      ),
-                                      tooltip: 'Revenir à overnight auto',
-                                      onPressed: isSaving
-                                          ? null
-                                          : () {
-                                              setState(
-                                                () => endDate = null,
-                                              );
-                                            },
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _formatDisplayDate(endDate!),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: endDate != null ? const Color(0xFFF1EFEB) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Activité multi-jours',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: endDate != null
+                                        ? const Color(0xFF1E1E1E)
+                                        : const Color(0xFF6F6F6F),
+                                    fontWeight: endDate != null
+                                        ? FontWeight.w500
+                                        : FontWeight.normal,
                                   ),
                                 ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _schedulePreview(),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blueGrey.shade600,
-                        fontStyle: endDate == null &&
-                                timeToMinutes(endTime) <=
-                                    timeToMinutes(startTime)
-                            ? FontStyle.italic
-                            : FontStyle.normal,
+                              ),
+                              Switch(
+                                value: endDate != null,
+                                activeThumbColor: const Color(0xFF00B4A6),
+                                activeTrackColor: const Color(0xFFB8ECE6),
+                                onChanged: isSaving ? null : (value) async {
+                                  if (value) {
+                                    final picked = await showDatePicker(
+                                      context: context,
+                                      initialDate: selectedDate.add(const Duration(days: 1)),
+                                      firstDate: selectedDate.add(const Duration(days: 1)),
+                                      lastDate: selectedDate.add(const Duration(days: 7)),
+                                      locale: const Locale('fr', 'FR'),
+                                      helpText: "Date de fin de l'activité",
+                                    );
+                                    if (picked != null) {
+                                      setState(() {
+                                        endDate = DateTime(picked.year, picked.month, picked.day);
+                                      });
+                                    }
+                                  } else {
+                                    setState(() => endDate = null);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                          if (endDate != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Fin : ${_formatDisplayDateLong(endDate!)}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF00B4A6),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
+                    const SizedBox(height: 8),
+                    if (endDate != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          _schedulePreview(),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF00B4A6),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 15),
                     TextField(
                       controller: titleController,

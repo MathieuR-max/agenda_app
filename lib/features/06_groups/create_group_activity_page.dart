@@ -26,7 +26,7 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
 
   final ActivityRepository activityRepository = ActivityRepository();
 
-  String selectedDay = 'Lundi';
+  late DateTime selectedDate;
   String category = 'Sport';
   String level = 'Tous niveaux';
   String groupType = 'Privé';
@@ -36,16 +36,6 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
   late String endTime;
 
   bool isSaving = false;
-
-  final List<String> days = const [
-    'Lundi',
-    'Mardi',
-    'Mercredi',
-    'Jeudi',
-    'Vendredi',
-    'Samedi',
-    'Dimanche',
-  ];
 
   final List<String> categories = const [
     'Sport',
@@ -104,60 +94,30 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
   String getNextSlot(String currentHour) {
     final slots = generateTimeSlots();
     final index = slots.indexOf(currentHour);
-
     if (index != -1 && index < slots.length - 1) {
       return slots[index + 1];
     }
-
     return currentHour;
   }
 
-  DateTime _normalizeDate(DateTime date) {
-    return DateTime(date.year, date.month, date.day);
+  String _formatDisplayDateLong(DateTime value) {
+    const weekdays = ['', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi',
+        'Vendredi', 'Samedi', 'Dimanche'];
+    const months = ['', 'janvier', 'février', 'mars', 'avril', 'mai',
+        'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+    return '${weekdays[value.weekday]} ${value.day} ${months[value.month]} ${value.year}';
   }
 
-  int _weekdayFromFrenchDay(String day) {
-    switch (day.trim().toLowerCase()) {
-      case 'lundi':
-        return DateTime.monday;
-      case 'mardi':
-        return DateTime.tuesday;
-      case 'mercredi':
-        return DateTime.wednesday;
-      case 'jeudi':
-        return DateTime.thursday;
-      case 'vendredi':
-        return DateTime.friday;
-      case 'samedi':
-        return DateTime.saturday;
-      case 'dimanche':
-        return DateTime.sunday;
-      default:
-        return DateTime.monday;
-    }
-  }
 
-  DateTime _resolveSelectedDate() {
-    final today = _normalizeDate(DateTime.now());
-    final targetWeekday = _weekdayFromFrenchDay(selectedDay);
-    final currentWeekday = today.weekday;
-    final diff = targetWeekday - currentWeekday;
-
-    return today.add(Duration(days: diff));
+  String _formatDateOnly(DateTime value) {
+    return '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')}';
   }
 
   DateTime _combineDateAndTime(DateTime date, String time) {
     final parts = time.split(':');
     final hour = int.tryParse(parts[0]) ?? 0;
     final minute = int.tryParse(parts[1]) ?? 0;
-
-    return DateTime(
-      date.year,
-      date.month,
-      date.day,
-      hour,
-      minute,
-    );
+    return DateTime(date.year, date.month, date.day, hour, minute);
   }
 
   String _groupActivityInfoText() {
@@ -178,13 +138,13 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
     if (groupActivityAccess == 'group_and_public') {
       return 'Les membres du groupe et de nouveaux participants pourront rejoindre cette activité.';
     }
-
     return 'Seuls les membres du groupe pourront rejoindre cette activité.';
   }
 
   @override
   void initState() {
     super.initState();
+    selectedDate = DateTime.now();
     startTime = '18:00';
     endTime = getNextSlot(startTime);
   }
@@ -223,7 +183,7 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'L’heure de fin doit être après l’heure de début',
+            "L'heure de fin doit être après l'heure de début",
           ),
         ),
       );
@@ -248,9 +208,8 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
       }
     }
 
-    final baseDate = _resolveSelectedDate();
-    final startDateTime = _combineDateAndTime(baseDate, startTime);
-    final endDateTime = _combineDateAndTime(baseDate, endTime);
+    final startDateTime = _combineDateAndTime(selectedDate, startTime);
+    final endDateTime = _combineDateAndTime(selectedDate, endTime);
 
     final effectiveVisibility =
         groupActivityAccess == 'group_and_public'
@@ -266,7 +225,7 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
         title: trimmedTitle,
         description: trimmedDescription,
         category: category,
-        day: selectedDay,
+        day: _formatDateOnly(selectedDate),
         startTime: startTime,
         endTime: endTime,
         startDateTime: startDateTime,
@@ -294,7 +253,7 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Erreur lors de l’enregistrement : $e'),
+          content: Text('Erreur lors de l\'enregistrement : $e'),
         ),
       );
     } finally {
@@ -334,27 +293,73 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
               ),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<String>(
-              initialValue: selectedDay,
-              items: days
-                  .map(
-                    (day) => DropdownMenuItem(
-                      value: day,
-                      child: Text(day),
+            GestureDetector(
+              onTap: isSaving ? null : () async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: selectedDate,
+                  firstDate: DateTime.now(),
+                  lastDate: DateTime.now().add(const Duration(days: 365)),
+                  locale: const Locale('fr', 'FR'),
+                );
+                if (picked != null) {
+                  setState(() {
+                    selectedDate = DateTime(picked.year, picked.month, picked.day);
+                  });
+                }
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE6E2DB), width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF000000).withValues(alpha: 0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
                     ),
-                  )
-                  .toList(),
-              onChanged: isSaving
-                  ? null
-                  : (value) {
-                      if (value == null) return;
-                      setState(() {
-                        selectedDay = value;
-                      });
-                    },
-              decoration: const InputDecoration(
-                labelText: 'Jour',
-                border: OutlineInputBorder(),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calendar_today, size: 18, color: Color(0xFF6F6F6F)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            "Date de l'activité",
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6F6F6F),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            _formatDisplayDateLong(selectedDate),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1E1E1E),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Text(
+                      'Modifier',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF00B4A6),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 15),
@@ -372,13 +377,10 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
                   ? null
                   : (value) {
                       if (value == null) return;
-
                       setState(() {
                         startTime = value;
-
                         final startMinutes = timeToMinutes(startTime);
                         final endMinutes = timeToMinutes(endTime);
-
                         if (endMinutes <= startMinutes) {
                           endTime = getNextSlot(startTime);
                         }
@@ -546,7 +548,7 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
                       });
                     },
               decoration: const InputDecoration(
-                labelText: 'Accès à l’activité',
+                labelText: "Accès à l'activité",
                 border: OutlineInputBorder(),
               ),
             ),
@@ -555,8 +557,8 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
               alignment: Alignment.centerLeft,
               child: Text(
                 _accessHelperText(),
-                style: TextStyle(
-                  color: Colors.grey.shade700,
+                style: const TextStyle(
+                  color: Color(0xFF6F6F6F),
                   fontSize: 13,
                 ),
               ),
@@ -572,7 +574,7 @@ class _CreateGroupActivityPageState extends State<CreateGroupActivityPage> {
                         width: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Text('Créer l’activité du groupe'),
+                    : const Text("Créer l'activité du groupe"),
               ),
             ),
           ],
