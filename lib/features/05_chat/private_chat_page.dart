@@ -135,8 +135,13 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         padding: const EdgeInsets.all(12),
         constraints: const BoxConstraints(maxWidth: 300),
         decoration: BoxDecoration(
-          color: isMine ? Colors.blue.shade100 : Colors.grey.shade200,
-          borderRadius: BorderRadius.circular(12),
+          color: isMine ? const Color(0xFF00B4A6) : const Color(0xFFF1EFEB),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isMine ? 16 : 4),
+            bottomRight: Radius.circular(isMine ? 4 : 16),
+          ),
         ),
         child: Column(
           crossAxisAlignment:
@@ -148,17 +153,29 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                     ? message.senderPseudo
                     : widget.otherUserPseudo,
                 style: const TextStyle(
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w600,
                   fontSize: 12,
+                  color: Color(0xFF00B4A6),
                 ),
               ),
             if (!isMine) const SizedBox(height: 4),
-            Text(message.text),
+            Text(
+              message.text,
+              style: TextStyle(
+                color: isMine ? Colors.white : const Color(0xFF1E1E1E),
+                fontSize: 14,
+              ),
+            ),
             if (message.createdAt != null) ...[
-              const SizedBox(height: 6),
+              const SizedBox(height: 4),
               Text(
                 _formatTime(message.createdAt),
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: isMine
+                      ? Colors.white.withValues(alpha: 0.7)
+                      : const Color(0xFFA8A8A8),
+                ),
               ),
             ],
           ],
@@ -168,14 +185,15 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
   }
 
   Widget _buildActivityCta() {
-    return InkWell(
+    return GestureDetector(
       onTap: () {
         final now = DateTime.now();
         final hour = now.hour;
         final minute = now.minute >= 30 ? 30 : 0;
         final timeSlot =
             '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
-        final days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+        final days = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi',
+            'Vendredi', 'Samedi', 'Dimanche'];
         final dayLabel = days[now.weekday - 1];
 
         Navigator.push(
@@ -191,28 +209,35 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
         );
       },
       child: Container(
-        height: 52,
-        color: Colors.indigo.shade50,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.start,
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1EFEB),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
           children: [
-            Text(
-              'Discutez, puis organisez.',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade500,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Discutez, puis organisez.',
+                    style: TextStyle(fontSize: 13, color: Color(0xFF6F6F6F)),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Créer une activité avec ${widget.otherUserPseudo} →',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: Color(0xFF00B4A6),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
             ),
-            Text(
-              'Créer une activité avec ${widget.otherUserPseudo} →',
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.indigo.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            const Icon(Icons.event_available, color: Color(0xFF00B4A6), size: 20),
           ],
         ),
       ),
@@ -257,7 +282,7 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                   return Center(
                     child: Text(
                       'Démarrez la conversation avec $displayName',
-                      style: TextStyle(color: Colors.grey.shade500),
+                      style: const TextStyle(color: Color(0xFFA8A8A8)),
                     ),
                   );
                 }
@@ -289,22 +314,46 @@ class _PrivateChatPageState extends State<PrivateChatPage> {
                       onSubmitted: (_) {
                         if (!_isSending) _sendMessage();
                       },
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         hintText: 'Écrire un message...',
-                        border: OutlineInputBorder(),
+                        hintStyle: const TextStyle(color: Color(0xFFA8A8A8)),
+                        filled: true,
+                        fillColor: const Color(0xFFF1EFEB),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(20),
+                          borderSide: const BorderSide(color: Color(0xFF00B4A6), width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  IconButton(
-                    onPressed: _isSending ? null : _sendMessage,
-                    icon: _isSending
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.send),
+                  Container(
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF00B4A6),
+                      shape: BoxShape.circle,
+                    ),
+                    child: IconButton(
+                      onPressed: _isSending ? null : _sendMessage,
+                      icon: _isSending
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.send, color: Colors.white, size: 20),
+                    ),
                   ),
                 ],
               ),
