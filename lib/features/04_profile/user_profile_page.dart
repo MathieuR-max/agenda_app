@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:agenda_app/models/activity.dart';
+import 'package:agenda_app/services/firestore/activity_firestore_service.dart';
+import 'package:agenda_app/features/03_activities/activity_detail_page.dart';
 import '../../models/user_model.dart';
 import '../../models/friendship.dart';
 import '../../repositories/friendship_repository.dart';
@@ -127,6 +130,16 @@ class UserProfilePage extends StatelessWidget {
 
   // ─── Helpers ─────────────────────────────────────────────────────────────
 
+  String _formatActivityDate(DateTime? date) {
+    if (date == null) return '';
+    const weekdays = ['', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.', 'dim.'];
+    const months = ['', 'jan.', 'fév.', 'mars', 'avr.', 'mai', 'juin',
+        'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+    final h = date.hour.toString().padLeft(2, '0');
+    final m = date.minute.toString().padLeft(2, '0');
+    return '${weekdays[date.weekday]} ${date.day} ${months[date.month]} • $h:$m';
+  }
+
   String _computeAge(String? dateNaissance) {
     if (dateNaissance == null || dateNaissance.trim().isEmpty) return '';
     try {
@@ -219,6 +232,118 @@ class UserProfilePage extends StatelessWidget {
         decoration: BoxDecoration(color: const Color(0xFFF0EEFF), borderRadius: BorderRadius.circular(20)),
         child: Text(value, style: const TextStyle(color: Color(0xFF8B80F9), fontSize: 12, fontWeight: FontWeight.w600)),
       )).toList(),
+    );
+  }
+
+  // ─── Section À venir ─────────────────────────────────────────────────────
+
+  Widget _buildUpcomingSection(String profileUserId, bool isCurrentUser) {
+    final activityService = ActivityFirestoreService();
+    final now = DateTime.now();
+
+    return StreamBuilder<List<Activity>>(
+      stream: activityService.getCreatedActivities(),
+      builder: (context, createdSnapshot) {
+        return StreamBuilder<List<Activity>>(
+          stream: activityService.getJoinedActivities(),
+          builder: (context, joinedSnapshot) {
+            final created = createdSnapshot.data ?? [];
+            final joined = joinedSnapshot.data ?? [];
+            final createdIds = created.map((a) => a.id).toSet();
+            final joinedDeduped = joined.where((a) => !createdIds.contains(a.id)).toList();
+            final all = [...created, ...joinedDeduped];
+
+            final upcoming = all.where((a) {
+              final start = a.resolvedStartDateTime;
+              return start != null && start.isAfter(now) && !a.isCancelled && !a.isDone;
+            }).toList();
+
+            upcoming.sort((a, b) => a.resolvedStartDateTime!.compareTo(b.resolvedStartDateTime!));
+
+            final display = upcoming.take(3).toList();
+
+            if (display.isEmpty) {
+              return _sectionCard(
+                title: 'À venir',
+                children: [
+                  const Text('Aucune activité prévue.',
+                      style: TextStyle(fontSize: 13, color: Color(0xFFA8A8A8))),
+                ],
+              );
+            }
+
+            return _sectionCard(
+              title: 'À venir',
+              children: [
+                ...display.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final activity = entry.value;
+                  final isCreated = createdIds.contains(activity.id);
+
+                  return Column(
+                    children: [
+                      InkWell(
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => ActivityDetailPage(activity: activity)),
+                        ),
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: isCreated ? const Color(0xFFB8ECE6) : const Color(0xFFFFD6D3),
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Icon(Icons.event, size: 18,
+                                    color: isCreated ? const Color(0xFF00B4A6) : const Color(0xFFF9635E)),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(activity.title,
+                                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF1E1E1E)),
+                                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    const SizedBox(height: 2),
+                                    Text(_formatActivityDate(activity.resolvedStartDateTime),
+                                        style: const TextStyle(fontSize: 12, color: Color(0xFF6F6F6F))),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isCreated ? const Color(0xFFB8ECE6) : const Color(0xFFFFD6D3),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  isCreated ? 'Créée' : 'Rejointe',
+                                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+                                      color: isCreated ? const Color(0xFF00B4A6) : const Color(0xFFF9635E)),
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              const Icon(Icons.chevron_right, size: 16, color: Color(0xFFA8A8A8)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (index < display.length - 1)
+                        const Divider(height: 1, color: Color(0xFFF1EFEB)),
+                    ],
+                  );
+                }),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 
@@ -592,6 +717,10 @@ class UserProfilePage extends StatelessWidget {
                 currentUserId,
                 isCurrentUser,
               ),
+              const SizedBox(height: 12),
+
+              // ── Section À venir ──
+              _buildUpcomingSection(profileUserId, isCurrentUser),
               const SizedBox(height: 12),
 
               // ── Section À propos ──
