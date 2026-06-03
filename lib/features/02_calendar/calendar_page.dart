@@ -483,22 +483,6 @@ class _CalendarPageState extends State<CalendarPage> {
     return _friendIds.contains(activity.ownerId);
   }
 
-  void _jumpToCurrentWeek() {
-    setState(() {
-      _displayedWeekAnchor = _normalizeDate(DateTime.now());
-    });
-  }
-
-  void _jumpToWeekendWeek() {
-    final now = _normalizeDate(DateTime.now());
-    final weekday = now.weekday;
-    final daysUntilSaturday = weekday <= 6 ? 6 - weekday : 0;
-    final saturday = now.add(Duration(days: daysUntilSaturday));
-    setState(() {
-      _displayedWeekAnchor = saturday;
-    });
-  }
-
   bool _matchesTimeFilter(Activity activity) {
     if (_timeFilter == null) return true;
 
@@ -974,37 +958,7 @@ class _CalendarPageState extends State<CalendarPage> {
         onTap: () => _setActiveFilter(CalendarFilterType.none),
       ),
       _buildSummaryChip(
-        label: 'Ce soir',
-        value: null,
-        backgroundColor: const Color(0xFFFFF4E6),
-        textColor: const Color(0xFFF4B266),
-        isActive: _timeFilter == CalendarFilterType.tonight,
-        onTap: () {
-          setState(() {
-            _timeFilter = _timeFilter == CalendarFilterType.tonight
-                ? null
-                : CalendarFilterType.tonight;
-          });
-          if (_timeFilter == CalendarFilterType.tonight) _jumpToCurrentWeek();
-        },
-      ),
-      _buildSummaryChip(
-        label: 'Ce week-end',
-        value: null,
-        backgroundColor: const Color(0xFFF0EEFF),
-        textColor: const Color(0xFF8B80F9),
-        isActive: _timeFilter == CalendarFilterType.weekend,
-        onTap: () {
-          setState(() {
-            _timeFilter = _timeFilter == CalendarFilterType.weekend
-                ? null
-                : CalendarFilterType.weekend;
-          });
-          if (_timeFilter == CalendarFilterType.weekend) _jumpToWeekendWeek();
-        },
-      ),
-      _buildSummaryChip(
-        label: _friendIds.isEmpty ? '👥 Amis' : '👥 Amis (${_friendIds.length})',
+        label: '👥 Amis',
         value: null,
         backgroundColor: const Color(0xFFF0EEFF),
         textColor: const Color(0xFF8B80F9),
