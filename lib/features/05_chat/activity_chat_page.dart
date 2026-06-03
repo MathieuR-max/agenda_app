@@ -144,7 +144,7 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 20),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Colors.grey.shade200,
+          color: const Color(0xFFF1EFEB),
           borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
@@ -152,8 +152,8 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
             Text(
               message.content,
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade800,
+              style: const TextStyle(
+                color: Color(0xFF6F6F6F),
                 fontStyle: FontStyle.italic,
                 fontSize: 13,
               ),
@@ -162,8 +162,8 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
               const SizedBox(height: 4),
               Text(
                 time,
-                style: TextStyle(
-                  color: Colors.grey.shade600,
+                style: const TextStyle(
+                  color: Color(0xFFA8A8A8),
                   fontSize: 11,
                 ),
               ),
@@ -187,8 +187,13 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: isMe ? Colors.blue.shade100 : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(14),
+          color: isMe ? const Color(0xFF00B4A6) : const Color(0xFFF1EFEB),
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(isMe ? 16 : 4),
+            bottomRight: Radius.circular(isMe ? 4 : 16),
+          ),
         ),
         child: Column(
           crossAxisAlignment:
@@ -197,17 +202,20 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
             if (!isMe && senderPseudo.trim().isNotEmpty) ...[
               Text(
                 senderPseudo,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
                   fontSize: 12,
-                  color: Colors.blueGrey.shade700,
+                  color: Color(0xFF00B4A6),
                 ),
               ),
               const SizedBox(height: 4),
             ],
             Text(
               text,
-              style: const TextStyle(fontSize: 15),
+              style: TextStyle(
+                fontSize: 14,
+                color: isMe ? Colors.white : const Color(0xFF1E1E1E),
+              ),
             ),
             if (time.isNotEmpty) ...[
               const SizedBox(height: 4),
@@ -215,7 +223,9 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
                 time,
                 style: TextStyle(
                   fontSize: 11,
-                  color: Colors.grey.shade700,
+                  color: isMe
+                      ? Colors.white.withValues(alpha: 0.7)
+                      : const Color(0xFFA8A8A8),
                 ),
               ),
             ],
@@ -294,22 +304,32 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
-                  color: Colors.orange.shade100,
+                  color: const Color(0xFFFFF4E6),
                   child: const Text(
                     'Cette activité recherche un organisateur.',
                     textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFFF4B266),
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               if (chatReadOnly)
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(12),
-                  color: Colors.grey.shade300,
+                  color: const Color(0xFFF1EFEB),
                   child: Text(
                     currentActivity.isCancelled
                         ? 'Cette activité est annulée. Le chat est en lecture seule.'
                         : 'Cette activité est terminée. Le chat est en lecture seule.',
                     textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF6F6F6F),
+                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
               Expanded(
@@ -338,7 +358,10 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
 
                     if (messages.isEmpty) {
                       return const Center(
-                        child: Text('Aucun message pour le moment'),
+                        child: Text(
+                          'Aucun message pour le moment',
+                          style: TextStyle(color: Color(0xFFA8A8A8)),
+                        ),
                       );
                     }
 
@@ -368,35 +391,49 @@ class _ActivityChatPageState extends State<ActivityChatPage> {
                           enabled: !chatReadOnly && !isSending,
                           textInputAction: TextInputAction.newline,
                           decoration: InputDecoration(
-                            hintText: chatReadOnly
-                                ? 'Envoi désactivé'
-                                : 'Écrire un message...',
+                            hintText: chatReadOnly ? 'Envoi désactivé' : 'Écrire un message...',
+                            hintStyle: const TextStyle(color: Color(0xFFA8A8A8)),
+                            filled: true,
+                            fillColor: const Color(0xFFF1EFEB),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: BorderSide.none,
                             ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: BorderSide.none,
+                            ),
+                            disabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              borderSide: const BorderSide(color: Color(0xFF00B4A6), width: 1.5),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                           ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: chatReadOnly
-                            ? null
-                            : () => _sendMessage(currentActivity),
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 16,
-                          ),
+                      Container(
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF00B4A6),
+                          shape: BoxShape.circle,
                         ),
-                        child: isSending
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.send),
+                        child: IconButton(
+                          onPressed: chatReadOnly ? null : () => _sendMessage(currentActivity),
+                          icon: isSending
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.send, color: Colors.white, size: 20),
+                        ),
                       ),
                     ],
                   ),
